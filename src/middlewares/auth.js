@@ -1,0 +1,111 @@
+const jwt = require('jsonwebtoken');
+const catchAsync = require('../helpers/catchAsync');
+const { status } = require("http-status");
+const ApiError = require('../helpers/ApiError');
+const { getUserById } = require('../modules/Auth/auth.service');
+
+const auth = (userRoles, { optional = false } = {}) => {
+  return catchAsync(async (req, res, next) => {
+    const { authorization } = req.headers;
+
+    // No token case
+    if (!authorization || !authorization.startsWith("Bearer ")) {
+      if (optional) {
+        req.User = null;
+        return next();
+      }
+      throw new ApiError(status.UNAUTHORIZED, "Unauthorized");
+    }
+
+    const token = authorization.split(" ")[1];
+
+    let decodedData;
+
+    try {
+      decodedData = jwt.verify(token, process.env.JWT_ACCESS_TOKEN);
+    } catch (err) {
+      if (optional) {
+        req.User = null;
+        return next();
+      }
+      throw new ApiError(status.UNAUTHORIZED, "Invalid or expired token");
+    }
+
+    const user = await getUserById(decodedData._id);
+    if (!user) throw new ApiError(status.NOT_FOUND, "Unauthorized User");
+
+    if (userRoles && !userRoles.includes(decodedData.role)) {
+      throw new ApiError(status.UNAUTHORIZED, "You are not authorized");
+    }
+
+    if (decodedData.isLoginToken === false) {
+      throw new ApiError(status.FORBIDDEN, "You are not authorized");
+    }
+
+    req.User = decodedData;
+    next();
+  });
+};
+
+
+const resetTokenCheck = (req, res, next) => {
+
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader?.startsWith("Bearer "))
+    return res.status(401).json({ message: "Unauthorized" });
+
+  try {
+    const token = authHeader.split(" ")[1];
+
+    const decoded = jwt.verify(
+      token,
+      process.env.JWT_ACCESS_TOKEN
+    );
+
+    if (decoded.purpose !== "reset-password")
+      throw new Error();
+
+    req.ResetUser = decoded;
+
+    next();
+
+  } catch {
+    throw new ApiError(status.UNAUTHORIZED, 'Invalid or expired token');
+  }
+};
+
+
+
+const tokenCheck = catchAsync(async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1];
+
+    if (token && token !== "null") {
+      try {
+        req.User = jwt.verify(token, process.env.JWT_ACCESS_TOKEN);
+      } catch (error) {
+        req.User = null;
+      }
+    }
+  }
+  next();
+});
+
+
+
+const requirePermission = catchAsync((permission) => {
+  return async (req, res, next) => {
+    const admin = await adminModel.findOne({ user: req.User._id });
+    if (!admin || !admin.categoryPermissions.includes(permission)) {
+      return res.status(403).json({ message: 'Permission denied, you are not authorized for that' });
+    }
+    next();
+  };
+});
+
+
+
+module.exports = { auth, tokenCheck, requirePermission, resetTokenCheck };

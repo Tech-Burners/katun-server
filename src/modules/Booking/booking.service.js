@@ -1,0 +1,1746 @@
+const { default: mongoose } = require("mongoose");
+const serviceModel = require("../Service/service.model");
+const bookingModel = require("./booking.model");
+const { default: status } = require("http-status");
+const ApiError = require("../../helpers/ApiError");
+const generate4DigitPin = require("../../helpers/generatepin");
+const Api = require("twilio/lib/rest/Api");
+const feedbackModel = require("../FeedBack/feedback.model");
+const User = require("../User/user.model");
+const Transaction = require("../Transaction/transaction.model");
+const userModel = require("../User/user.model");
+const transactionModel = require("../Transaction/transaction.model");
+const commissionModel = require("../Commission/commission.model");
+
+
+
+const bookingService = async (data) => {
+
+    const service = await serviceModel.findById(data.service);
+
+    if (!service) {
+        throw new ApiError(status.NOT_FOUND, "Service not found");
+    }
+
+    if (!data.isOneTime) {
+        data.sessionLeft = service.pass.noOfSessions;
+        data.expireDate = new Date(
+            new Date(data.date).getTime() +
+            service.pass.validity * 24 * 60 * 60 * 1000
+        );
+    }
+
+    if (data.isOneTime) {
+        data.sessionLeft = 1;
+        data.expireDate = new Date(
+            new Date(data.date).getTime() +
+            1 * 24 * 60 * 60 * 1000
+        );
+    }
+
+    data.pin = generate4DigitPin();
+
+    /**
+     * --------------------------------
+     * CASH PAYMENT
+     * --------------------------------
+     */
+    if (data.paymentMethod === "cash") {
+        data.paymentStatus = "pending";
+        return await bookingModel.create(data);
+    }
+
+    /**
+     * --------------------------------
+     * WALLET PAYMENT
+     * --------------------------------
+     */
+    if (data.paymentMethod === "wallet") {
+
+        const user = await User.findById(data.user);
+
+        if (!user) {
+            throw new ApiError(status.NOT_FOUND, "User not found");
+        }
+
+        if (user.digitalWallet < data.totalPrice) {
+            throw new ApiError(
+                status.BAD_REQUEST,
+                "Insufficient wallet balance"
+            );
+        }
+
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+
+            user.digitalWallet = Number(
+                (user.digitalWallet - data.totalPrice).toFixed(2)
+            );
+
+            await user.save({ session });
+
+            data.paymentStatus = "paid";
+
+            //  booking now contains providerLocation
+            const booking = await bookingModel.create([data], { session });
+
+            const commissionRate = 0.10;
+            const grossAmount = Number(data.totalPrice);
+            const commission = grossAmount * commissionRate;
+            const netAmount = grossAmount - commission;
+
+            const tx_ref = `txn_${Date.now()}_${data.user}`;
+
+            const transaction = await Transaction.create([{
+                tx_ref,
+                user: data.user,
+                partner: data.provider,
+                service: data.service,
+                user_email: user.email,
+                amount: grossAmount,
+                currency: "NGN",
+                gross_amount: grossAmount,
+                commission,
+                net_amount: netAmount,
+                payout_status: "pending",
+                status: "successful",
+                payment_method: "wallet",
+                booking: booking[0]._id,
+                description: "Wallet payment for service booking"
+            }], { session });
+
+            booking[0].transaction = transaction[0]._id;
+            await booking[0].save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+
+            return booking[0];
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
+        }
+    }
+
+    /**
+     * --------------------------------
+     * DIGITAL PAYMENT
+     * --------------------------------
+     */
+    console.log("digital:::", { data })
+    return await bookingModel.create(data);
+};
+
+
+
+
+
+const modifyBookingService = async (bookingId, loginUser, data) => {
+    console.log({ bookingId, loginUser, data })
+    const booking = await bookingModel.findById(bookingId);
+    if (loginUser != booking.user.toString() || booking.status != "approved") {
+        console.log("Unauthorized modification attempt", { loginUser, bookingUser: booking.user.toString(), bookingStatus: booking.status })
+        throw new ApiError(status.BAD_REQUEST, "You can't modify this booking");
+    }
+    return await bookingModel.findByIdAndUpdate(bookingId, data, { new: true });
+}
+
+
+const markAsCompletedService = async (id, data) => {
+    const booking = await bookingModel.findById(id);
+    if (booking.pin == data.pin && booking.status == "approved") {
+        if (booking.sessionLeft <= 0) {
+            throw new ApiError(status.BAD_REQUEST, 'No sessions left in this booking');
+        }
+        booking.sessionLeft -= 1;
+        booking.checkin = new Date();
+        if (booking.sessionLeft == 0) {
+            booking.status = "completed";
+        }
+        await booking.save();
+        return true
+    }
+    else {
+        throw new ApiError(status.BAD_REQUEST, 'Pin not matched');
+    }
+}
+
+
+const bookingFeedbackService = async (data) => {
+    const booking = await bookingModel.findById(data.booking);
+    const service = await serviceModel.findById(booking.service);
+    console.log({ booking, service })
+    const feedback = await feedbackModel.findOne({ booking: data.booking, sender: data.user });
+    if (feedback) {
+        throw new ApiError(status.BAD_REQUEST, 'You already give feedback');
+    }
+
+    await feedbackModel.create({
+        sender: data.user,
+        targetUser: data.targetUser,
+        service: booking.service,
+        booking: data.booking,
+        rating: data.rating,
+        text: data.review,
+        isAppFeedback: false
+    })
+    const newRating = data.rating;
+
+    // First time rating only
+    if (newRating) {
+        service.totalRating += newRating;
+        service.ratingCount += 1;
+    }
+
+    // Calculate average
+    service.avgRating =
+        service.ratingCount > 0
+            ? service.totalRating / service.ratingCount
+            : 0;
+
+    await service.save();
+
+    return true;
+};
+
+
+
+// const serviceFeedbackService = async (data) => {
+//     const feedback = await feedbackModel.findOne({ service: data.service, sender: data.user });
+//     if(feedback){
+//         throw new ApiError(status.BAD_REQUEST, 'You already give feedback');
+//     }
+
+
+//     const service = await serviceModel.findById(data.service);
+
+//     if (!service) {
+//         throw new ApiError(status.NOT_FOUND, 'Service not found');
+//     }
+
+
+//     await feedbackModel.create({
+//         sender: data.user,
+//         targetUser: data.targetUser,
+//         service: data.service,
+//         rating: data.rating,
+//         text: data.review,
+//         isAppFeedback: false
+//     })
+//     const newRating = data.rating;
+
+//     // First time rating only
+//     if (newRating) {
+//         service.totalRating += newRating;
+//         service.ratingCount += 1;
+//     }
+
+//     // Calculate average
+//     service.avgRating =
+//         service.ratingCount > 0
+//             ? service.totalRating / service.ratingCount
+//             : 0;
+
+//     await service.save();
+
+//     return true;
+// };
+
+
+const approveBookingService = async (id) => {
+    const result = await bookingModel.findOneAndUpdate(
+        { _id: id, status: "pending" },
+        { status: "approved" },
+        { new: true }
+    );
+    if (!result) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+    return result;
+}
+
+const cancelBookingService = async (id) => {
+    const result = await bookingModel.findOneAndUpdate(
+        { _id: id, status: "pending" },
+        { status: "cancelled" },
+        { new: true }
+    );
+    if (!result) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+    return result;
+}
+
+const assignStuffService = async (id, stuff) => {
+    console.log({ id, stuff })
+    const result = await bookingModel.findByIdAndUpdate(id, { assignedTo: stuff, status: "approved" }, { new: true });
+    return result;
+}
+
+const completeBookingService = async (id) => {
+    const booking = await bookingModel.findById(id);
+    // console.log({ booking })
+    const provider = await userModel.findOne({ _id: booking.provider })
+    // console.log({ provider })
+    const service = await serviceModel.findOne({ _id: booking.service })
+    // console.log({ service })
+    const comission = await commissionModel.findOne({ category: service.category })
+    console.log({ comission })
+    comissionAmount = booking.totalPrice * comission.commission
+    if (booking.paymentMethod === 'cash') {
+        if (provider.digitalWallet < comissionAmount) {
+            throw new ApiError(412, "insufficient provider balance")
+        } else {
+            provider.digitalWallet -= comissionAmount;
+        }
+    }
+    if (booking.paymentMethod === 'wallet') {
+        provider.digitalWallet += comissionAmount;
+    }
+    provider.save();
+    const updatedBooking = await bookingModel.findOneAndUpdate(
+        {
+            _id: id,
+            status: "approved"
+        },
+        {
+            status: "completed"
+        },
+        {
+            new: true
+        }
+    );
+
+    if (!updatedBooking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+    return updatedBooking;
+}
+
+
+const bookingDetailsService = async (id, loginUserId) => {
+
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+        throw new Error("Invalid booking id");
+    }
+
+    if (!loginUserId || !mongoose.Types.ObjectId.isValid(loginUserId)) {
+        throw new Error("Invalid user id");
+    }
+
+    const objectBookingId = new mongoose.Types.ObjectId(id);
+    const objectUserId = new mongoose.Types.ObjectId(loginUserId);
+
+    const result = await bookingModel.aggregate([
+        {
+            $match: {
+                _id: objectBookingId
+            }
+        },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "serviceData.user",
+                foreignField: "_id",
+                as: "partnerData"
+            }
+        },
+        { $unwind: { path: "$partnerData", preserveNullAndEmptyArrays: true } },
+
+        // {
+        //     $lookup: {
+        //         from: 'partners',
+        //         localField: 'serviceData.user',
+        //         foreignField: 'user',
+        //         as: 'partnerData'
+        //     }
+        // },
+        // {
+        //     $unwind: {
+        //         path: '$partnerData',
+        //         preserveNullAndEmptyArrays: true
+        //     }
+        // },
+
+        {
+            $lookup: {
+                from: 'feedbacks',
+                localField: '_id',
+                foreignField: 'booking',
+                as: 'feedbackData'
+            }
+        },
+        {
+            $addFields: {
+                myFeedback: {
+                    $arrayElemAt: [
+                        {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: "$feedbackData",
+                                        as: "fb",
+                                        cond: { $eq: ["$$fb.sender", objectUserId] }
+                                    }
+                                },
+                                as: "fb",
+                                in: {
+                                    text: "$$fb.text",
+                                    rating: "$$fb.rating"
+                                }
+                            }
+                        },
+                        0
+                    ]
+                },
+
+                oppositeFeedback: {
+                    $arrayElemAt: [
+                        {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: "$feedbackData",
+                                        as: "fb",
+                                        cond: { $ne: ["$$fb.sender", objectUserId] }
+                                    }
+                                },
+                                as: "fb",
+                                in: {
+                                    text: "$$fb.text",
+                                    rating: "$$fb.rating"
+                                }
+                            }
+                        },
+                        0
+                    ]
+                }
+            }
+        },
+
+        {
+            $project: {
+                bookingId: '$_id',
+                serviceName: '$serviceData.name',
+                serviceId: '$serviceData._id',
+                endTime: 1,
+                tips: 1,
+                startTime: 1,
+                providerName: '$partnerData.fullName',
+                providerId: '$partnerData._id',
+                phoneNumber: '$partnerData.phoneNumber',
+                location: '$partnerData.location',
+                address: '$partnerData.address',
+                servicePrice: 1,
+                totalPrice: 1,
+                sessionLeft: 1,
+                date: 1,
+                pin: 1,
+                addons: 1,
+                status: 1,
+                isOneTime: 1,
+                createdAt: 1,
+                myFeedback: 1,
+                oppositeFeedback: 1
+            }
+        }
+    ]);
+
+    return result[0] || null;
+};
+
+
+const bookingDetailsAdminEndService = async (id, loginUserId) => {
+
+    const objectBookingId = new mongoose.Types.ObjectId(String(id));
+    const objectUserId = new mongoose.Types.ObjectId(String(loginUserId));
+
+    const result = await bookingModel.aggregate([
+        {
+            $match: {
+                _id: objectBookingId
+            }
+        },
+
+        {
+            $lookup: {
+                from: 'services',
+                localField: 'service',
+                foreignField: '_id',
+                as: 'serviceData'
+            }
+        },
+        {
+            $unwind: {
+                path: '$serviceData',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'user',
+                foreignField: '_id',
+                as: 'userData'
+            }
+        },
+        {
+            $unwind: {
+                path: '$userData',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        // partner
+        {
+            $lookup: {
+                from: 'partners',
+                let: { serviceUserId: '$serviceData.user' },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: { $eq: ['$user', '$$serviceUserId'] }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: 'partnerData'
+            }
+        },
+        {
+            $unwind: {
+                path: '$partnerData',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: 'staffs',
+                localField: 'assignedTo',
+                foreignField: '_id',
+                as: 'assignedToData'
+            }
+        },
+        {
+            $unwind: {
+                path: '$assignedToData',
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        // ❗ KEEP ARRAY (IMPORTANT FIX)
+        {
+            $lookup: {
+                from: 'feedbacks',
+                localField: '_id',
+                foreignField: 'booking',
+                as: 'feedbackData'
+            }
+        },
+
+        // ✅ ADD FEEDBACK SPLIT LOGIC
+        {
+            $addFields: {
+                myFeedback: {
+                    $arrayElemAt: [
+                        {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: "$feedbackData",
+                                        as: "fb",
+                                        cond: { $eq: ["$$fb.sender", objectUserId] }
+                                    }
+                                },
+                                as: "fb",
+                                in: {
+                                    text: "$$fb.text",
+                                    rating: "$$fb.rating"
+                                }
+                            }
+                        },
+                        0
+                    ]
+                },
+
+                oppositeFeedback: {
+                    $arrayElemAt: [
+                        {
+                            $map: {
+                                input: {
+                                    $filter: {
+                                        input: "$feedbackData",
+                                        as: "fb",
+                                        cond: { $ne: ["$$fb.sender", objectUserId] }
+                                    }
+                                },
+                                as: "fb",
+                                in: {
+                                    text: "$$fb.text",
+                                    rating: "$$fb.rating"
+                                }
+                            }
+                        },
+                        0
+                    ]
+                }
+            }
+        },
+
+        {
+            $project: {
+                bookingId: '$_id',
+                serviceName: '$serviceData.name',
+                serviceId: '$serviceData._id',
+                userName: '$userData.fullName',
+                userId: '$userData._id',
+                userImage: '$userData.image',
+                userPhone: '$userData.phoneNumber',
+                phoneNumber: '$userData.phoneNumber',
+                assignedStaff: '$assignedToData.name',
+                addons: 1,
+                servicefee: '$serviceData.servicefee',
+                duration: '$serviceData.duration',
+                totalPrice: 1,
+                sessionLeft: 1,
+                date: 1,
+                pin: 1,
+                tips: 1,
+                status: 1,
+                isOneTime: 1,
+                pass: 1,
+                createdAt: 1,
+
+                myFeedback: 1,
+                oppositeFeedback: 1
+            }
+        }
+    ]);
+
+    return result[0] || null;
+};
+
+const pendingBookingService = async (user, option) => {
+    const { page, limit } = option;
+    const skip = (page - 1) * limit;
+    const [result, total] = await Promise.all([
+        bookingModel.aggregate([
+            {
+                $match: {
+                    user: new mongoose.Types.ObjectId(String(user)),
+                    status: "approved",
+                    $or: [
+                        { paymentStatus: "paid" },
+                        { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }
+                    ]
+                }
+            },
+            {
+                $sort: {
+                    createdAt: -1
+                }
+            },
+            {
+                $skip: skip
+            },
+            {
+                $limit: limit
+            },
+            {
+                $lookup: {
+                    from: 'services',
+                    localField: 'service',
+                    foreignField: '_id',
+                    as: 'serviceData'
+                }
+            },
+            {
+                $unwind: {
+                    path: '$serviceData',
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'serviceData.user',
+                    foreignField: '_id',
+                    as: 'userData'
+                }
+            },
+            {
+                $unwind: {
+                    path: '$userData',
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $project: {
+                    image: '$serviceData.image',
+                    serviceName: '$serviceData.name',
+                    serviceId: '$serviceData._id',
+                    providerName: '$userData.fullName',
+                    sessionLeft: 1,
+                    date: 1,
+                    startTime: 1,
+                    endTime: 1,
+                    createdAt: 1
+                }
+            }
+        ]),
+        bookingModel.countDocuments({
+            user: new mongoose.Types.ObjectId(String(user)),
+            status: "approved",
+            $or: [
+                { paymentStatus: "paid" },
+                { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }
+            ]
+        })
+    ])
+    return { result, pagination: { totalResults: total, totalPages: Math.ceil(total / limit), currentPage: page, limit } }
+}
+
+
+
+const allPendingBookingService = async (user, option) => {
+
+    const { page, limit, search, isOneTime } = option;
+    const skip = (page - 1) * limit;
+
+    const matchStage = {
+        provider: new mongoose.Types.ObjectId(String(user)),
+        status: "pending",
+        $or: [
+            { paymentStatus: "paid" },
+            { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }
+        ]
+    };
+
+    if (isOneTime !== undefined) {
+        matchStage.isOneTime = isOneTime === "true";
+    }
+
+    let searchMatch = {};
+
+    if (search) {
+        searchMatch = {
+            $or: [
+                { "userData.phoneNumber": { $regex: search, $options: "i" } },
+                { "userData.fullName": { $regex: search, $options: "i" } },
+                { "serviceData.name": { $regex: search, $options: "i" } }
+            ]
+        };
+    }
+
+    const pipeline = [
+
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        { $sort: { createdAt: -1 } },
+
+        { $skip: skip },
+        { $limit: limit },
+
+        {
+            $project: {
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+                userName: "$userData.fullName",
+                userImage: "$serviceData.image",
+                phoneNumber: "$userData.phoneNumber",
+                date: 1,
+                startTime: 1,
+                endTime: 1,
+                isOneTime: 1,
+                createdAt: 1
+            }
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+        bookingModel.aggregate(pipeline),
+
+        bookingModel.aggregate([
+            { $match: matchStage },
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+            ...(search ? [{ $match: searchMatch }] : []),
+
+            { $count: "total" }
+        ])
+    ]);
+
+    const total = totalCount[0]?.total || 0;
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const allBookingService = async (option) => {
+    const { page, limit, search, isOneTime, status } = option;
+    const skip = (page - 1) * limit;
+
+    const matchStage = {
+        $or: [
+            { paymentStatus: "paid" }, // digital payments
+            {
+                paymentMethod: "cash",
+                paymentStatus: "pending"
+            } // cash bookings
+        ]
+    };
+    if (status) {
+        matchStage.status = status
+    }
+
+    if (isOneTime !== undefined) {
+        matchStage.isOneTime = isOneTime === "true";
+    }
+
+    let searchMatch = {};
+
+    if (search) {
+        searchMatch = {
+            $or: [
+                { "userData.phoneNumber": { $regex: search, $options: "i" } },
+                { "userData.fullName": { $regex: search, $options: "i" } },
+                { "providerData.fullName": { $regex: search, $options: "i" } },
+                { "serviceData.name": { $regex: search, $options: "i" } }
+            ]
+        };
+    }
+
+    const pipeline = [
+
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+        {
+            $lookup: {
+                from: "users",
+                localField: "serviceData.user",
+                foreignField: "_id",
+                as: "providerData"
+            }
+        },
+        {
+            $unwind: { path: "$providerData", preserveNullAndEmptyArrays: true }
+        },
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        { $sort: { createdAt: -1 } },
+
+        { $skip: skip },
+        { $limit: limit },
+
+        {
+            $project: {
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+                userName: "$userData.fullName",
+                userImage: "$serviceData.image",
+                phoneNumber: "$userData.phoneNumber",
+                providerName: "$providerData.fullName",
+                totalPrice: 1,
+                paymentMethod: 1,
+                isOneTime: 1,
+                status: 1,
+                createdAt: 1
+            }
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+        bookingModel.aggregate(pipeline),
+
+        bookingModel.aggregate([
+            { $match: matchStage },
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+            ...(search ? [{ $match: searchMatch }] : []),
+
+            { $count: "total" }
+        ])
+    ]);
+
+    const total = totalCount[0]?.total || 0;
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const allActiveBookingService = async (user, option) => {
+
+    const { page, limit, search, isOneTime } = option;
+
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    // const matchStage = {
+    //     provider: new mongoose.Types.ObjectId(String(user)),
+    //     status: "approved",
+    //     paymentStatus: "paid",
+    //     expireDate: { $gte: now }
+    // };
+    const matchStage = {
+        provider: new mongoose.Types.ObjectId(String(user)),
+        status: "approved",
+        expireDate: { $gte: now },
+        $or: [
+            // cash bookings allowed even if pending
+            {
+                paymentMethod: "cash",
+                paymentStatus: "pending"
+            },
+
+            // all other methods must be paid
+            {
+                paymentMethod: { $ne: "cash" },
+                paymentStatus: "paid"
+            }
+        ]
+    };
+
+    if (isOneTime !== undefined) {
+        matchStage.isOneTime = isOneTime === "true";
+    }
+
+    let searchMatch = {};
+
+    if (search) {
+        searchMatch = {
+            $or: [
+                { "serviceData.name": { $regex: search, $options: "i" } },
+                { "userData.fullName": { $regex: search, $options: "i" } },
+                { phoneNumberString: { $regex: search, $options: "i" } },
+                { "assignedToData.fullName": { $regex: search, $options: "i" } }
+            ]
+        };
+    }
+
+    const pipeline = [
+
+        { $match: matchStage },
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+        { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $addFields: {
+                phoneNumberString: { $toString: "$userData.phoneNumber" }
+            }
+        },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        { $sort: { updatedAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        {
+            $project: {
+                name: "$serviceData.image",
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+                userName: "$userData.fullName",
+                userImage: "$userData.image",
+                phoneNumber: "$userData.phoneNumber",
+                assignedStaff: "$assignedToData.name",
+                isOneTime: 1,
+                startTime: 1,
+                endTime: 1,
+                date: 1,
+                checkin: 1,
+                createdAt: 1,
+
+            }
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+        bookingModel.aggregate(pipeline),
+
+        bookingModel.aggregate([
+            { $match: matchStage },
+
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "assignedTo",
+                    foreignField: "_id",
+                    as: "assignedToData"
+                }
+            },
+            { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
+
+            {
+                $addFields: {
+                    phoneNumberString: { $toString: "$userData.phoneNumber" }
+                }
+            },
+
+            ...(search ? [{ $match: searchMatch }] : []),
+
+            { $count: "total" }
+        ])
+    ]);
+
+    const total = totalCount[0]?.total || 0;
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const allCompletedBookingService = async (user, option) => {
+
+    const { page = 1, limit = 10, search, isOneTime } = option;
+
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    // const matchStage = {
+    //     provider: new mongoose.Types.ObjectId(String(user)),
+    //     status: "completed",
+    //     paymentStatus: "paid",
+    // };
+    const matchStage = {
+        provider: new mongoose.Types.ObjectId(String(user)),
+        status: "completed",
+        $or: [
+            // cash bookings allowed even if pending
+            { paymentMethod: "cash", paymentStatus: "pending" },
+
+            // all other methods must be paid
+            {
+                paymentMethod: { $ne: "cash" },
+                paymentStatus: "paid"
+            }
+        ]
+    };
+
+    if (isOneTime !== undefined) {
+        matchStage.isOneTime = isOneTime === "true";
+    }
+
+    let searchMatch = {};
+
+    if (search) {
+        searchMatch = {
+            $or: [
+                { "serviceData.name": { $regex: search, $options: "i" } },
+                { "userData.fullName": { $regex: search, $options: "i" } },
+                { phoneNumberString: { $regex: search, $options: "i" } },
+                { "assignedToData.fullName": { $regex: search, $options: "i" } }
+            ]
+        };
+    }
+
+    const pipeline = [
+
+        { $match: matchStage },
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+        { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
+        {
+            $addFields: {
+                phoneNumberString: { $toString: "$userData.phoneNumber" }
+            }
+        },
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+        {
+            $project: {
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+                userName: "$userData.fullName",
+                userImage: "$userData.image",
+                phoneNumber: "$userData.phoneNumber",
+                assignedStaff: "$assignedToData.name",
+                isOneTime: 1,
+                date: 1,
+                startTime: 1,
+                endTime: 1,
+                checkin: 1,
+                createdAt: 1,
+                review: 1,
+                rating: 1
+            }
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+
+        bookingModel.aggregate(pipeline),
+
+        bookingModel.aggregate([
+            { $match: matchStage },
+
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "assignedTo",
+                    foreignField: "_id",
+                    as: "assignedToData"
+                }
+            },
+            { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
+
+            {
+                $addFields: {
+                    phoneNumberString: { $toString: "$userData.phoneNumber" }
+                }
+            },
+
+            ...(search ? [{ $match: searchMatch }] : []),
+
+            { $count: "total" }
+        ])
+    ]);
+
+    const total = totalCount[0]?.total || 0;
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const allCancelledBookingService = async (user, option) => {
+    console.log({ user, option })
+    const { page, limit, search, paymentMethod } = option;
+
+    const skip = (page - 1) * limit;
+
+    const matchStage = {
+        provider: new mongoose.Types.ObjectId(String(user)),
+        status: "cancelled"
+    };
+
+    //  payment method filter
+    if (paymentMethod) {
+        matchStage.paymentMethod = paymentMethod;
+    }
+
+    let searchMatch = {};
+
+    if (search) {
+        searchMatch = {
+            $or: [
+                { "serviceData.name": { $regex: search, $options: "i" } },
+                { "userData.fullName": { $regex: search, $options: "i" } },
+                { phoneNumberString: { $regex: search, $options: "i" } }
+            ]
+        };
+    }
+
+    const pipeline = [
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+        { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
+        {
+            $addFields: {
+                phoneNumberString: { $toString: "$userData.phoneNumber" }
+            }
+        },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit },
+
+        {
+            $project: {
+                image: "$serviceData.image",
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+                userName: "$userData.fullName",
+                phoneNumber: "$userData.phoneNumber",
+                assignedStaff: "$assignedToData.name",
+                paymentMethod: 1,
+                date: 1,
+                startTime: 1,
+                endTime: 1,
+                addons: 1,
+                updatedAt: 1
+            }
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+        bookingModel.aggregate(pipeline),
+
+        bookingModel.aggregate([
+            { $match: matchStage },
+
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            { $unwind: "$serviceData" },
+
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            { $unwind: "$userData" },
+
+            {
+                $addFields: {
+                    phoneNumberString: { $toString: "$userData.phoneNumber" }
+                }
+            },
+
+            ...(search ? [{ $match: searchMatch }] : []),
+
+            { $count: "total" }
+        ])
+    ]);
+
+    const total = totalCount[0]?.total || 0;
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+
+const activeBookingService = async (user, option) => {
+    const { page, limit } = option;
+    const skip = (page - 1) * limit;
+
+    const now = new Date();
+
+    const [result, total] = await Promise.all([
+        bookingModel.aggregate([
+            {
+                // $match: {
+                //     user: new mongoose.Types.ObjectId(String(user)),
+                //     status: "approved",
+                //     paymentStatus: "paid",
+                //     sessionLeft: { $gt: 0 },
+                //     $expr: {
+                //         $and: [
+                //             // { $lte: ["$date", now] },       // booking started
+                //             { $gte: ["$expireDate", now] }  // not expired
+                //         ]
+                //     }
+                // }
+
+                $match: {
+                    user: new mongoose.Types.ObjectId(String(user)),
+                    status: "approved",
+                    sessionLeft: { $gt: 0 },
+                    $expr: {
+                        $and: [
+                            { $gte: ["$expireDate", now] }
+                        ]
+                    },
+                    $or: [
+                        // cash bookings allowed even if pending
+                        {
+                            paymentMethod: "cash",
+                            paymentStatus: "pending"
+                        },
+
+                        // other methods must be paid
+                        {
+                            paymentMethod: { $ne: "cash" },
+                            paymentStatus: "paid"
+                        }
+                    ]
+
+                }
+            },
+            { $sort: { createdAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$serviceData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "serviceData.user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$userData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $project: {
+                    image: 1,
+                    name: "$serviceData.image",
+                    serviceName: "$serviceData.name",
+                    serviceId: "$serviceData._id",
+                    providerName: '$userData.fullName',
+                    sessionLeft: 1,
+                    date: 1,
+                    startTime: 1,
+                    endTime: 1,
+                    createdAt: 1
+                }
+            }
+        ]),
+
+        bookingModel.countDocuments({
+            user: new mongoose.Types.ObjectId(String(user)),
+            status: "approved",
+            sessionLeft: { $gt: 0 },
+            $expr: {
+                $and: [
+                    { $gte: ["$expireDate", now] }
+                ]
+            },
+            $or: [
+                // cash bookings allowed even if pending
+                {
+                    paymentMethod: "cash",
+                    paymentStatus: "pending"
+                },
+
+                // other methods must be paid
+                {
+                    paymentMethod: { $ne: "cash" },
+                    paymentStatus: "paid"
+                }
+            ]
+        })
+    ]);
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const pastBookingService = async (user, option) => {
+    const { page, limit } = option;
+    const skip = (page - 1) * limit;
+
+    const now = new Date();
+
+    const [result, total] = await Promise.all([
+        bookingModel.aggregate([
+            // {
+            //     $match: {
+            //         user: new mongoose.Types.ObjectId(String(user)),
+            //         status: { $in: ["completed", "approved"] },
+            //         paymentStatus: "paid",
+            //         expireDate: { $lt: now }
+            //     }
+            // },
+            {
+                $match: {
+                    user: new mongoose.Types.ObjectId(String(user)),
+                    $or: [
+                        // non-cash payments must be paid
+                        {
+                            paymentMethod: { $ne: "cash" },
+                            paymentStatus: "paid"
+                        },
+
+                        // cash payments can stay pending (but still valid booking logic)
+                        {
+                            paymentMethod: "cash"
+                        }
+                    ],
+                    $or: [
+                        { status: "completed" },
+                        {
+                            status: "approved",
+                            expireDate: { $lt: now }
+                        }
+                    ]
+                }
+            },
+            { $sort: { updatedAt: -1 } },
+            { $skip: skip },
+            { $limit: limit },
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$serviceData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "serviceData.user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$userData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $project: {
+                    image: 1,
+                    name: "$serviceData.image",
+                    serviceName: "$serviceData.name",
+                    serviceId: "$serviceData._id",
+                    providerName: '$userData.fullName',
+                    sessionLeft: 1,
+                    date: 1,
+                    status: 1,
+                    startTime: 1,
+                    endTime: 1,
+                    createdAt: 1
+                }
+            }
+        ]),
+
+        bookingModel.countDocuments({
+            // user: new mongoose.Types.ObjectId(String(user)),
+            // status: { $in: ["completed", "approved"] },
+            // paymentStatus: "paid",
+            // expireDate: { $lt: now }
+
+
+            user: new mongoose.Types.ObjectId(String(user)),
+            $or: [
+                // non-cash payments must be paid
+                {
+                    paymentMethod: { $ne: "cash" },
+                    paymentStatus: "paid"
+                },
+
+                // cash payments can stay pending (but still valid booking logic)
+                {
+                    paymentMethod: "cash"
+                }
+            ],
+            $or: [
+                { status: "completed" },
+                {
+                    status: "approved",
+                    expireDate: { $lt: now }
+                }
+            ]
+        })
+    ]);
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+module.exports = {
+    bookingService,
+    pendingBookingService,
+    activeBookingService,
+    pastBookingService,
+    bookingDetailsService,
+    allPendingBookingService,
+    bookingFeedbackService,
+    allActiveBookingService,
+    allCompletedBookingService,
+    allCancelledBookingService,
+    bookingDetailsAdminEndService,
+    approveBookingService,
+    completeBookingService,
+    allBookingService,
+    assignStuffService,
+    markAsCompletedService,
+    modifyBookingService,
+    cancelBookingService
+}
