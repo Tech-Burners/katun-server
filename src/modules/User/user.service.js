@@ -13,7 +13,14 @@ const giveFlagService=async(id)=>{
 }
 
 
+const deleteFcmTokenService = async (id) => {
+  return await userModel.findByIdAndUpdate(id, { fcmToken: '' }, { new: true });
+}
 
+const fcmTokenService = async (id, fcm) => {
+    console.log({ id, fcm });
+  return await userModel.findByIdAndUpdate(id, { fcmToken: fcm }, { new: true });
+}
 
 const giveNoteService=async(id,note)=>{
     return await userModel.findOneAndUpdate({ _id: id }, { note: note }, { new: true });
@@ -28,5 +35,7 @@ module.exports={
     activeUserService,
     giveFlagService,
     giveNoteService,
-    giveCreditService
+    giveCreditService,
+    fcmTokenService,
+    deleteFcmTokenService
 }

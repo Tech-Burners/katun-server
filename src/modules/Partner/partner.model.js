@@ -27,6 +27,10 @@ const partnerSchema = new mongoose.Schema({
     review: { type: String, required: false },
     isDeleted: { type: Boolean, default: false },
     serviceAutoApproved: { type: Boolean, default: false },
+    enabledPushNotification: {
+    type: Boolean,
+    default: true
+  },
     category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: false },
     subcategory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SubCategory', required: false }],
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

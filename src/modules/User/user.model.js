@@ -27,23 +27,23 @@ const userSchema = new mongoose.Schema({
   },
   address: { type: String, required: false },
   payoutFrequency: {
-  type: String,
-  enum: ["weekly", "monthly", "instant"],
-  default: "monthly",
-},
+    type: String,
+    enum: ["weekly", "monthly", "instant"],
+    default: "monthly",
+  },
 
-lastFrequencyChange: {
-  type: Date
-},
-fcmToken: {
-  type: String,
-  required: false,
-},
+  lastFrequencyChange: {
+    type: Date
+  },
+  fcmToken: {
+    type: String,
+    required: false,
+  },
 
-activePayoutCycle: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "PayoutCycle",
-},
+  activePayoutCycle: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "PayoutCycle",
+  },
 },
   {
     timestamps: true

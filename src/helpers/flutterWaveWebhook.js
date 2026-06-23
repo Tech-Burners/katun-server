@@ -2,6 +2,8 @@ const Transaction = require("../modules/Transaction/transaction.model");
 const bookingModel = require("../modules/Booking/booking.model");
 const serviceModel = require("../modules/Service/service.model");
 const userModel = require("../modules/User/user.model");
+const partnerModel = require("../modules/Partner/partner.model");
+const { sendNotificationByFcmToken } = require("./sendNotificationByFcmToken");
 
 
 
@@ -145,9 +147,30 @@ const flutterwaveWebhook = async (req, res) => {
           );
       }
 
-      const booking = await bookingModel.create(bookingPayload);
+      // const booking = await bookingModel.create(bookingPayload);
 
-      transaction.booking = booking._id;
+      // transaction.booking = booking._id;
+      // AFTER (create + notifications):
+const booking = await bookingModel.create(bookingPayload);
+transaction.booking = booking._id;
+
+// ── Push Notifications ──────────────────────────────────────
+const partnerDetails = await partnerModel.findOne({
+  user: data.provider,
+  isDeleted: false,
+});
+
+if (partnerDetails?.enabledPushNotification === true) {
+  if (data.status === "approved") {
+    // Auto-accept was ON: notify partner of scheduled job, customer of approval
+    await sendNotificationByFcmToken(data.provider, "New Booking schedule");
+    await sendNotificationByFcmToken(data.user, "Booking approved");
+  } else {
+    // Auto-accept was OFF: notify partner to review the request
+    await sendNotificationByFcmToken(data.provider, "New Booking waiting for approval");
+  }
+}
+// ────────────────────────────────────────────────────────────
     }
 
     transaction.payment_status = "successful";

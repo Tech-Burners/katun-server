@@ -10,7 +10,7 @@ const { default: status } = require("http-status");
 const response = require("../../helpers/response");
 const generate4DigitPin = require("../../helpers/generatepin");
 const { search } = require("./transaction.route");
-
+const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
 
 
 
@@ -27,7 +27,7 @@ const payoutCycleModel = require("../Payout/payoutCycle.model");
 
 const getBanks = catchAsync(async (req, res) => {
   // const { country} = req.query; // default Nigeria
-// console.log(`https://api.flutterwave.com/v3/banks/${country}`)
+  // console.log(`https://api.flutterwave.com/v3/banks/${country}`)
   const response = await axios.get(
     `https://api.flutterwave.com/v3/banks/NG`,
     {
@@ -35,7 +35,7 @@ const getBanks = catchAsync(async (req, res) => {
     }
   );
 
-;
+  ;
   res.json(response.data); // returns { status, message, data: [{ id, code, name }] }
 });
 
@@ -61,122 +61,106 @@ const bookController = catchAsync(async (req, res) => {
   const partnerDetails = await partnerModel.findOne({ user: partner, isDeleted: false });
   const isAutoApproved = Boolean(partnerDetails?.serviceAutoApproved);
 
-  // // Handle Cash and Wallet payments directly - NO PAYMENT LINK
-  // if (paymentMethod === 'cash' || paymentMethod === 'wallet') {
-  //   const bookingData = {
-  //     user: userId,
-  //     service,
-  //     provider: partner,
-  //     date,
-  //     startTime,
-  //     endTime,
-  //     isOneTime,
-  //     servicePrice,
-  //     totalPrice,
-  //     addons,
-  //     paymentMethod,
-  //     status: isAutoApproved ? "approved" : "pending"
-  //   };
-
-  //   const booking = await bookingService(bookingData);
-
-  //   return res.status(status.CREATED).json(response({
-  //     status: 'success',
-  //     statusCode: status.CREATED,
-  //     type: "Booking",
-  //     message: "Booking created successfully",
-  //     data: booking
-  //   }));
-  // }
 
   // Handle Cash and Wallet payments
-if (paymentMethod === "cash" || paymentMethod === "wallet") {
+  if (paymentMethod === "cash" || paymentMethod === "wallet") {
 
-  const bookingData = {
-    user: userId,
-    service,
-    provider: partner,
-    date,
-    startTime,
-    endTime,
-    isOneTime,
-    servicePrice,
-    totalPrice,
-    addons,
-    paymentMethod,
-    status: isAutoApproved ? "approved" : "pending"
-  };
-
-  const booking = await bookingService(bookingData);
-
-  // Only wallet should create payout transaction
-  if (paymentMethod === "wallet") {
-
-    const commissionRate = 0.10;
-
-    const grossAmount = Number(totalPrice);
-    const commission = grossAmount * commissionRate;
-    const netAmount = grossAmount - commission;
-
-    const partnerUser = await userModel.findById(partner);
-
-    const cycleType =
-      partnerUser.payoutFrequency === "instant"
-        ? "weekly"
-        : partnerUser.payoutFrequency;
-
-    const cycle = await getOrCreateCycle(partner, cycleType);
-
-    const transaction = await Transaction.create({
-      tx_ref: `wallet_${Date.now()}_${userId}`,
-
+    const bookingData = {
       user: userId,
-      partner,
       service,
+      provider: partner,
+      date,
+      startTime,
+      endTime,
+      isOneTime,
+      servicePrice,
+      totalPrice,
+      addons,
+      paymentMethod,
+      status: isAutoApproved ? "approved" : "pending"
+    };
 
-      booking: booking._id,
-      user_email: req.User.email,
+    const booking = await bookingService(bookingData);
 
-      currency: "NGN",
+    // Only wallet should create payout transaction
+    if (paymentMethod === "wallet") {
 
-      gross_amount: grossAmount,
-      commission,
-      net_amount: netAmount,
+      const commissionRate = 0.10;
 
-      status: "successful",
-      payment_status: "successful",
+      const grossAmount = Number(totalPrice);
+      const commission = grossAmount * commissionRate;
+      const netAmount = grossAmount - commission;
 
-      payout_status: "pending",
-      payoutCycle: cycle._id,
+      const partnerUser = await userModel.findById(partner);
 
-      payment_method: "wallet",
+      const cycleType =
+        partnerUser.payoutFrequency === "instant"
+          ? "weekly"
+          : partnerUser.payoutFrequency;
 
-      booking_data: bookingData
-    });
+      const cycle = await getOrCreateCycle(partner, cycleType);
 
-    await payoutCycleModel.updateOne(
-      { _id: cycle._id },
-      {
-        $addToSet: {
-          transactions: transaction._id
-        },
-        $inc: {
-          totalAmount: netAmount
+      const transaction = await Transaction.create({
+        tx_ref: `wallet_${Date.now()}_${userId}`,
+
+        user: userId,
+        partner,
+        service,
+
+        booking: booking._id,
+        user_email: req.User.email,
+
+        currency: "NGN",
+
+        gross_amount: grossAmount,
+        commission,
+        net_amount: netAmount,
+
+        status: "successful",
+        payment_status: "successful",
+
+        payout_status: "pending",
+        payoutCycle: cycle._id,
+
+        payment_method: "wallet",
+
+        booking_data: bookingData
+      });
+
+      await payoutCycleModel.updateOne(
+        { _id: cycle._id },
+        {
+          $addToSet: {
+            transactions: transaction._id
+          },
+          $inc: {
+            totalAmount: netAmount
+          }
         }
-      }
+      );
+    }
+
+    // REPLACE the existing notification block (cash/wallet section) with this:
+console.log({partnerDetails})
+if (partnerDetails?.enabledPushNotification === true) {
+  if (isAutoApproved === true) {
+    await sendNotificationByFcmToken(partner, "New Booking schedule");
+    await sendNotificationByFcmToken(userId, "Booking approved");
+  } else {
+    await sendNotificationByFcmToken(partner, "New Booking waiting for approval");
+  }
+}
+
+    return res.status(status.CREATED).json(
+      response({
+        status: "success",
+        statusCode: status.CREATED,
+        type: "Booking",
+        message: "Booking created successfully",
+        data: booking
+      })
     );
   }
-
-  return res.status(status.CREATED).json(
-    response({
-      status: "success",
-      statusCode: status.CREATED,
-      type: "Booking",
-      message: "Booking created successfully",
-      data: booking
-    })
-  );
-}
 
   // Digital Payment flow - create payment link
   const user = await getUserById(userId);
@@ -199,60 +183,60 @@ if (paymentMethod === "cash" || paymentMethod === "wallet") {
 
   const userData = await userModel.findById(partner);
 
-const cycleType = userData.payoutFrequency === "instant"
-  ? "weekly"
-  : userData.payoutFrequency;
+  const cycleType = userData.payoutFrequency === "instant"
+    ? "weekly"
+    : userData.payoutFrequency;
 
-const cycle = await getOrCreateCycle(partner, cycleType);
+  const cycle = await getOrCreateCycle(partner, cycleType);
 
-const transaction = await Transaction.create({
-  tx_ref,
-  user: userId,
-  partner,
-  service,
-
-  user_email: user.email,
-  currency: "NGN",
-
-  gross_amount: grossAmount,
-  commission,
-  net_amount: netAmount,
-
-  payout_status: "pending",
-  payoutCycle: cycle._id,   
-
-  status: "pending",
-  paymentMethod,
-
-  booking_data: {
+  const transaction = await Transaction.create({
+    tx_ref,
     user: userId,
+    partner,
     service,
-    provider: partner,
-    date,
-    startTime,
-    endTime,
-    isOneTime,
-    servicePrice,
-    totalPrice,
-    addons,
-    pin,
+
+    user_email: user.email,
+    currency: "NGN",
+
+    gross_amount: grossAmount,
+    commission,
+    net_amount: netAmount,
+
+    payout_status: "pending",
+    payoutCycle: cycle._id,
+
+    status: "pending",
     paymentMethod,
-    status: isAutoApproved ? "approved" : "pending"
-  },
-});
 
-// await payoutCycleModel.findByIdAndUpdate(cycle._id, {
-//   $push: { transactions: transaction._id },
-//   $inc: { totalAmount: netAmount }
-// });
+    booking_data: {
+      user: userId,
+      service,
+      provider: partner,
+      date,
+      startTime,
+      endTime,
+      isOneTime,
+      servicePrice,
+      totalPrice,
+      addons,
+      pin,
+      paymentMethod,
+      status: isAutoApproved ? "approved" : "pending"
+    },
+  });
 
-await payoutCycleModel.updateOne(
-  { _id: cycle._id },
-  {
-    $addToSet: { transactions: transaction._id },
-    $inc: { totalAmount: netAmount }
-  }
-);
+  // await payoutCycleModel.findByIdAndUpdate(cycle._id, {
+  //   $push: { transactions: transaction._id },
+  //   $inc: { totalAmount: netAmount }
+  // });
+
+  await payoutCycleModel.updateOne(
+    { _id: cycle._id },
+    {
+      $addToSet: { transactions: transaction._id },
+      $inc: { totalAmount: netAmount }
+    }
+  );
 
   // await Transaction.create({
   //   tx_ref,
@@ -370,7 +354,7 @@ const purchaseCreditController = catchAsync(async (req, res) => {
       amount: grossAmount,
       currency: "NGN",
       redirect_url: process.env.FLW_SUCCESS_URL,
-      payment_options:paymentMethod,
+      payment_options: paymentMethod,
       customer: {
         email: user.email,
         name: user.fullName,
@@ -427,7 +411,7 @@ const tipsController = catchAsync(async (req, res) => {
       currency: "NGN",
       redirect_url: process.env.FLW_SUCCESS_URL,
       payment_options: paymentMethod,
-      meta: { providerId }, 
+      meta: { providerId },
       customer: {
         email: user.email,
         name: user.fullName,

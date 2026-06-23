@@ -35,7 +35,7 @@ const sendNotificationByFcmToken = async (receiverId, textMessage) => {
     },
     token: fcmToken,
   };
-
+console.log({message})
   try {
     const response = await getMessaging().send(message);
     console.log("Successfully sent message:", response);
