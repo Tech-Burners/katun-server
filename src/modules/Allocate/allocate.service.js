@@ -2,6 +2,7 @@ const { default: mongoose } = require('mongoose');
 const allocationManagementModel = require('../AllocationManagement/allocationManagement.model');
 const employeeModel = require('../Employee/employee.model');
 const allocatedModel = require('./allocate.model');
+const employerModel = require('../Employer/employer.model');
 
 
 // const addAllocatedService = async (data) => {
@@ -103,9 +104,21 @@ const allocatedModel = require('./allocate.model');
 
 
 
-const addAllocatedService = async (data, companyId) => {
+const addAllocatedService = async (data) => {
+    console.log({ data });
     const session = await mongoose.startSession();
     session.startTransaction();
+    
+    if(data.role==='hr'){ 
+        const company = await employerModel.findOne({ user: data.user });
+        console.log({ company })
+        data.companyId = company._id ,
+        data.isCreatedByAdmin = false
+    }
+    else if(data.role === 'sub_hr_admin' || data.role === 'admin'){ 
+        data.isCreatedByAdmin = true
+    }
+    const companyId = data.companyId
 
     try {
         // Calculate expireDate for recurring or non-recurring
@@ -160,6 +173,7 @@ const addAllocatedService = async (data, companyId) => {
 const getAllAllocateService = async (options, filters) => {
     const { page = 1, limit = 10 } = options;
     const skip = (page - 1) * limit;
+    console.log({ filters });
 
     const [result, totalResults] = await Promise.all([
         allocatedModel.aggregate([

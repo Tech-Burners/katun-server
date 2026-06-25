@@ -11,8 +11,8 @@ const Transaction = require("../Transaction/transaction.model");
 const userModel = require("../User/user.model");
 const transactionModel = require("../Transaction/transaction.model");
 const commissionModel = require("../Commission/commission.model");
-
-
+const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
+const {addNotificationService} = require("../Notification/notification.service");
 
 const bookingService = async (data) => {
 
@@ -260,24 +260,85 @@ const approveBookingService = async (id) => {
     if (!result) {
         throw new ApiError(status.NOT_FOUND, 'Booking not found');
     }
+    if (result) {
+        const service = await serviceModel.findById(result.service);
+        console.log({ service })
+    }
+    await sendNotificationByFcmToken(
+        result.user,
+        'approval',
+        `your booking for ${service.name} has been approved`,
+        result._id,
+        'booking'
+    )
+    addNotificationService(
+        {
+            sender: result.provider,
+            targetUser: result.user,
+            title: `your booking for ${service.name} has been approved`,
+            message: `your booking for ${service.name} has been approved`,
+            type: "booking",
+        }
+    )
     return result;
 }
 
-const cancelBookingService = async (id) => {
-    const result = await bookingModel.findOneAndUpdate(
-        { _id: id, status: "pending" },
-        { status: "cancelled" },
-        { new: true }
-    );
-    if (!result) {
-        throw new ApiError(status.NOT_FOUND, 'Booking not found');
-    }
-    return result;
-}
+
+// const cancelBookingService = async (id) => {
+//     const result = await bookingModel.findOneAndUpdate(
+//         { _id: id, status: "pending" },
+//         { status: "cancelled" },
+//         { new: true }
+//     );
+//     if (!result) {
+//         throw new ApiError(status.NOT_FOUND, 'Booking not found');
+//     }
+//     if(result.status === "cancelled"){
+//         const service = await serviceModel.findById(result.service);
+//         console.log({ service })
+//     }
+//     await sendNotificationByFcmToken(
+//         result.user,
+//         'booking cancellation',
+//         `your booking for ${service.name} has been cancelled`,
+//         result._id,
+//         'booking'
+//     )
+//     await addNotificationService(
+//         {
+//             sender: result.provider,
+//             targetUser: result.user,
+//             title: `your booking for ${service.name} has been cancelled`,
+//             message: `your booking for ${service.name} has been cancelled`,
+//             type: "booking",
+//         }
+//     )
+//     return result;
+// }
 
 const assignStuffService = async (id, stuff) => {
-    console.log({ id, stuff })
     const result = await bookingModel.findByIdAndUpdate(id, { assignedTo: stuff, status: "approved" }, { new: true });
+    let service;
+    if(result.status === "approved"){
+        service = await serviceModel.findById(result.service);
+        console.log({ service })
+    }
+    await sendNotificationByFcmToken(
+        result.user,
+        'booking approval',
+        `your booking for ${service.name} has been approved`,
+        result._id,
+        'booking'
+    )
+    await addNotificationService(
+        {
+            sender: result.provider,
+            targetUser: result.user,
+            title: `booking approval`,
+            message: `your booking for ${service.name} has been approved`,
+            type: "booking",
+        }
+    )
     return result;
 }
 
@@ -318,6 +379,22 @@ const completeBookingService = async (id) => {
     if (!updatedBooking) {
         throw new ApiError(status.NOT_FOUND, 'Booking not found');
     }
+    await sendNotificationByFcmToken(
+        updatedBooking.user,
+        'booking completion',
+        `your booking for ${service.name} has been completed`,
+        updatedBooking._id,
+        'booking'
+    )
+    await addNotificationService(
+        {
+            sender: updatedBooking.provider,
+            targetUser: updatedBooking.user,
+            title: `booking completion`,
+            message: `your booking for ${service.name} has been completed`,
+            type: "booking",
+        }
+    )
     return updatedBooking;
 }
 
@@ -1742,5 +1819,5 @@ module.exports = {
     assignStuffService,
     markAsCompletedService,
     modifyBookingService,
-    cancelBookingService
+    // cancelBookingService
 }

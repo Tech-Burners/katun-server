@@ -1,7 +1,8 @@
 const { default: status } = require("http-status");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
-const {  editAllocateService, deleteAllocateService, getAllocateByIdService, addAllocatedService, getAllAllocateService, pauseUnpauseAllocateService } = require("./allocate.service");
+const { editAllocateService, deleteAllocateService, getAllocateByIdService, addAllocatedService, getAllAllocateService, pauseUnpauseAllocateService } = require("./allocate.service");
+const employerModel = require("../Employer/employer.model");
 
 
 const addAllocateController = catchAsync(async (req, res) => {
@@ -36,7 +37,22 @@ const getAllAllocateController = catchAsync(async (req, res) => {
 
     const filters = {};
 
-    // 🔎 Search filter
+    // Role based filtering
+    if (req.User.role === "hr") {
+        const company = await employerModel.findOne({ user: req.User._id });
+        // HR can only see allocations for their company
+        filters.companyId =company._id;
+    }
+
+    if (
+        req.User.role === "admin" ||
+        req.User.role === "sub_hr_admin"
+    ) {
+        // Admin and Sub HR Admin can only see admin-created allocations
+        filters.isCreatedByAdmin = true;
+    }
+
+    // Search filter
     if (req.query.search) {
         const searchRegex = { $regex: req.query.search, $options: 'i' };
         filters.$or = [

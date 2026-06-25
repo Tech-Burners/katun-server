@@ -12,6 +12,8 @@ const allocateSchema = new mongoose.Schema({
     expireDate: { type: Date, required: false },
     isRecurring: { type: Boolean, default: false },
     status : { type: String, enum: ['active', 'paused'], default: 'active' },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', required: false },
+    isCreatedByAdmin: { type: Boolean, default: false },
 }, { timestamps: true });
 
 module.exports = mongoose.model("Allocate", allocateSchema);

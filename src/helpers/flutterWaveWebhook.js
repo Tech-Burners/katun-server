@@ -90,27 +90,70 @@ const flutterwaveWebhook = async (req, res) => {
     }
 
 
-    if (transaction.paymentType === "tip") {
-      await userModel.findByIdAndUpdate(
-        transaction.partner, // already on the transaction, no meta needed
-        { $inc: { digitalWallet: transaction.net_amount } },
-        { new: true }
-      );
-      //tips
+  //   if (transaction.paymentType === "tip") {
+  //     await userModel.findByIdAndUpdate(
+  //       transaction.partner, // already on the transaction, no meta needed
+  //       { $inc: { digitalWallet: transaction.net_amount } },
+  //       { new: true }
+  //     );
+  //     //tips
+  // if (transaction.booking) {
+  //   await bookingModel.findByIdAndUpdate(
+  //     transaction.booking,
+  //     {
+  //       $inc: { tips: transaction.net_amount }
+  //     }
+  //   );
+  // }
+
+  //     transaction.payment_status = "successful";
+  //     await transaction.save();
+
+  //     return res.status(200).end();
+  //   }
+
+  if (transaction.paymentType === "tip") {
+  await userModel.findByIdAndUpdate(
+    transaction.partner,
+    {
+      $inc: {
+        digitalWallet: transaction.net_amount,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+
+  // Update booking tips
   if (transaction.booking) {
     await bookingModel.findByIdAndUpdate(
       transaction.booking,
       {
-        $inc: { tips: transaction.net_amount }
+        $inc: {
+          tips: transaction.net_amount,
+        },
       }
     );
   }
 
-      transaction.payment_status = "successful";
-      await transaction.save();
+  // Send push notification to partner
+  const sender = await userModel.findById(transaction.user);
 
-      return res.status(200).end();
-    }
+  await sendNotificationByFcmToken(
+    transaction.partner,
+    "New Tip Received",
+    `${sender?.fullName || "A customer"} sent you a tip of ₦${transaction.net_amount}.`,
+    transaction.booking,
+    "tip"
+  );
+
+  transaction.payment_status = "successful";
+
+  await transaction.save();
+
+  return res.status(200).end();
+}
 
 
     // =====================================================

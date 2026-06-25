@@ -11,13 +11,17 @@ const getNotificationService = async (options, filters) => {
     const { page = 1, limit = 10 } = options;
     const totalResults = await notificationModel.countDocuments(filters);
     const totalPages = Math.ceil(totalResults / limit);
-    const notification = await notificationModel.find(filters).skip((page - 1) * limit).limit(limit).populate('targetUser', 'fullName image');
+    const notification = await notificationModel.find(filters).skip((page - 1) * limit).limit(limit);
     return { notification, pagination: { totalResults, totalPages, currentPage : page, limit } };
 }
 
-
+ 
 const updateNotificationService = async (id, data) => {
     return await notificationModel.findOneAndUpdate({ _id: id }, data, { new: true });
+}
+
+const readAllNotificationService = async () => {
+    return await notificationModel.updateMany({ isRead: false }, { isRead: true });
 }
 
 const sentNotificationByFcmService = async (data) => {
@@ -31,4 +35,10 @@ const sentNotificationByFcmService = async (data) => {
 }
 
 
-module.exports = { addNotificationService, getNotificationService, updateNotificationService , sentNotificationByFcmService}
+module.exports = { 
+    addNotificationService, 
+    getNotificationService,
+     updateNotificationService , 
+    sentNotificationByFcmService,
+    readAllNotificationService
+}

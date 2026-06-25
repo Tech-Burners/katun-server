@@ -4,8 +4,8 @@ const { auth } = require("../../middlewares/auth");
 const router = express.Router();
 
 
-router.post("/add", auth(['hr']), addAllocateController);
-router.get("/all", getAllAllocateController);
+router.post("/add", auth(['hr', 'sub_hr_admin', 'admin']), addAllocateController);
+router.get("/all",auth(['hr','sub_hr_admin','admin']), getAllAllocateController);
 router.put("/edit/:id", editAllocateController);
 router.delete("/delete/:id", deleteAllocateController);
 router.patch("/pause-unpause/:id", auth(['hr']), pauseUnpauseAllocateController);

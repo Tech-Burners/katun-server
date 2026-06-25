@@ -1,6 +1,4 @@
 //company
-
-const { de } = require('date-fns/locale/de');
 const mongoose = require('mongoose');
 
 const employerSchema = new mongoose.Schema({

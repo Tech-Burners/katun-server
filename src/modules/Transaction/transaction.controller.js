@@ -22,6 +22,7 @@ const { add } = require("date-fns");
 const { addAuditReport } = require("../Audit/audit.service");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
+const { addNotificationService } = require("../Notification/notification.service");
 
 
 
@@ -141,15 +142,59 @@ const bookController = catchAsync(async (req, res) => {
     }
 
     // REPLACE the existing notification block (cash/wallet section) with this:
-console.log({partnerDetails})
-if (partnerDetails?.enabledPushNotification === true) {
-  if (isAutoApproved === true) {
-    await sendNotificationByFcmToken(partner, "New Booking schedule");
-    await sendNotificationByFcmToken(userId, "Booking approved");
-  } else {
-    await sendNotificationByFcmToken(partner, "New Booking waiting for approval");
-  }
-}
+    // console.log({ partnerDetails })
+    if (partnerDetails?.enabledPushNotification === true) {
+      if (isAutoApproved === true) {
+        await sendNotificationByFcmToken(
+          partner,
+          "New Booking",
+          "New Booking schedule",
+          booking._id,
+          "booking"
+        );
+        await addNotificationService({
+          sender: userId,
+          targetUser: partner,
+          title: "New Booking",
+          message: "New Booking schedule",
+          type: "booking",
+          bookingId: booking._id
+        });
+
+        await sendNotificationByFcmToken(
+          userId,
+          "New Booking",
+          "Booking approved",
+          booking._id,
+          "booking"
+        );
+        await addNotificationService({
+          sender: partner,
+          targetUser: userId,
+          title: "New Booking",
+          message: "Booking approved",
+          type: "booking",
+          bookingId: booking._id
+        });
+        
+      } else {
+        await sendNotificationByFcmToken(
+          partner,
+          "New Booking",
+          "New Booking waiting for approval",
+          booking._id,
+          "booking"
+        );
+        await addNotificationService({
+          sender: userId,
+          targetUser: partner,
+          title: "New Booking",
+          message: "New Booking waiting for approval",
+          type: "booking",
+          bookingId: booking._id
+        });
+      }
+    }
 
     return res.status(status.CREATED).json(
       response({
@@ -1059,6 +1104,39 @@ const cancelBooking = catchAsync(async (req, res) => {
       refundedAmount > 0 ? "refunded" : "failed";
 
     await booking.save();
+  }
+  if (cancelledBy === "partner") {
+    await sendNotificationByFcmToken(
+      booking.user,
+      'booking cancellation',
+      "Booking cancelled by partner",
+      booking._id,
+      'booking'
+    )
+    await addNotificationService({
+      sender: booking.provider,
+      targetUser: booking.user,
+      title: "Booking cancelled",
+      message: "Booking cancelled by partner",
+      type: "booking",
+      bookingId: booking._id
+    })
+  } else if (cancelledBy === "user") {
+    await sendNotificationByFcmToken(
+      booking.provider,
+      'booking cancellation',
+      "Booking cancelled by user",
+      booking._id,
+      'booking'
+    )
+    await addNotificationService({
+      sender: booking.user,
+      targetUser: booking.provider,
+      title: "Booking cancelled",
+      message: "Booking cancelled by user",
+      type: "booking",
+      bookingId: booking._id
+    })
   }
 
   // =====================================

@@ -1,14 +1,14 @@
 const mongoose = require("mongoose");
 
-const localizedStringSchema = new mongoose.Schema({
-  en: { type: String, required: false },
-  es: { type: String, required: false }
-}, { _id: false });
+
 
 const notificationSchema = new mongoose.Schema({
   sender: { type: mongoose.Types.ObjectId, ref: 'User', required: false },
   targetUser: { type: mongoose.Types.ObjectId, ref: 'User', required: false },
-  message: { type: localizedStringSchema, required: true },
+  title : { type: String, required: true },
+  message: { type: String, required: true },
+  bookingId : { type: mongoose.Types.ObjectId, ref: 'Booking', required: false },
+  type: { type: String, required: true },
   isRead: { type: Boolean, default: false },
 }, { timestamps: true });
 

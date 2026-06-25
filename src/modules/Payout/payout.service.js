@@ -5,6 +5,9 @@ const transactionModel = require("../Transaction/transaction.model");
 const userModel = require("../User/user.model");
 const { default: mongoose } = require("mongoose");
 const ApiError = require("../../helpers/ApiError");
+const {sendNotificationByFcmToken} = require("../../helpers/sendNotificationByFcmToken");
+const { addNotificationService } = require("../Notification/notification.service");
+
 
 /**
  * MAIN: Create payout from cycle
@@ -510,6 +513,20 @@ const completePayoutService = async (cycleId, adminId) => {
       },
       { session }
     );
+    await sendNotificationByFcmToken(
+        cycle.partner,
+        'payment',
+        `Your payout has been completed and will reflect in your account shortly.`
+    )
+    await addNotificationService(
+        {
+            sender: adminId,
+            targetUser: cycle.partner,
+            title: `payment`,
+            message: `Your payout has been completed and will reflect in your account shortly.`,
+            type: "payment",
+        }
+    )
 
     await session.commitTransaction();
 

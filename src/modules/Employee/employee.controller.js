@@ -127,7 +127,7 @@ const getCompanyAllEmployeeController = catchAsync(async (req, res) => {
 
     const result = await getCompanyAllEmployeeService(req.User._id, option);
 
-    console.log({ result });
+    // console.log({ result });
 
     return res.status(status.OK).json(
         response({

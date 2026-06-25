@@ -11,7 +11,13 @@ if (!getApps().length) {
 }
 
 // Function to send notification to a user
-const sendNotificationByFcmToken = async (receiverId, textMessage) => {
+const sendNotificationByFcmToken = async (
+  receiverId,
+  title,
+  textMessage,
+  bookingId,
+  type
+) => {
   console.log({ receiverId, textMessage });
 
   const findUser = await userModel.findOne({ _id: receiverId });
@@ -29,13 +35,25 @@ const sendNotificationByFcmToken = async (receiverId, textMessage) => {
     return;
   }
 
+  const data = {};
+
+  if (type) {
+    data.type = String(type);
+  }
+
+  if (bookingId) {
+    data.bookingId = String(bookingId);
+  }
+
   const message = {
     notification: {
+      title,
       body: textMessage,
     },
+    data,
     token: fcmToken,
   };
-console.log({message})
+  console.log({ message })
   try {
     const response = await getMessaging().send(message);
     console.log("Successfully sent message:", response);
