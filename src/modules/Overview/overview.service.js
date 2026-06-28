@@ -9,6 +9,7 @@ const Partner = require('../Partner/partner.model');
 const Employer = require('../Employer/employer.model');
 const Employee = require('../Employee/employee.model');
 const AllocationManagement = require('../AllocationManagement/allocationManagement.model');
+const employerModel = require('../Employer/employer.model');
 
 const getCountCardsService = async () => {
   const today = new Date();
@@ -617,10 +618,17 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
 
 
 
-const creditWalletService = async (hrUserId, options = {}) => {
+const creditWalletService = async (hrUserId, options = {}, role) => {
   const { page = 1, limit = 10 } = options;
   const skip = (page - 1) * limit;
-  const employer = await Employer.findOne({ user: hrUserId, isDeleted: false });
+  // const employer = await Employer.findOne({ user: hrUserId, isDeleted: false });
+  let employer;
+  if (role === "hr" || role === "sub_hr_admin") {
+    employer = await employerModel.findOne({
+      user: { $in: [hrUserId] },
+      isDeleted: false
+    });
+  }
   const credit = employer ? employer.creditBalance || 0 : 0;
   const matchState = {
     user: new mongoose.Types.ObjectId(employer._id),

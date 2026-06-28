@@ -4,8 +4,8 @@ const { addDepartmentController , getDepartmentController, updateDepartmentContr
 const router = express.Router();
 
 router.post("/add", auth(['hr','sub_hr_admin']), addDepartmentController);
-router.get("/all", auth(['hr','sub_hr_admin']), getDepartmentController);
+router.get("/all", auth(['hr','sub_hr_admin', 'admin', 'sub_admin']), getDepartmentController);
 router.put("/edit/:id", auth(['hr','sub_hr_admin']), updateDepartmentController);
-router.patch("/delete/:id", auth(['hr','sub_hr_admin']), deleteDepartmentController);
+router.patch("/delete/:id", auth(['hr','sub_hr_admin','admin', 'sub_admin']), deleteDepartmentController);
 
 module.exports = router;

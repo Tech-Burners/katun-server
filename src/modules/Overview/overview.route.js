@@ -3,17 +3,17 @@ const { auth } = require('../../middlewares/auth');
 const { getCountCards, userRatio, getCategoryServiceCount, getPending, getHrCard, getHrCreditSpentTrendController, getPartnerCount, getPartnerBookingTrendController, getPartnerEarningOverviewController, getUserWalletAndTransactionsController, creditWalletController } = require('./overview.controller');
 const router = express.Router();
 
-router.get('/admin/count-cards', auth(['admin']), getCountCards);
-router.get('/admin/pending-stats', auth(['admin']), getPending);
-router.get('/user-ratio', auth(['admin']), userRatio);
-router.get('/category-service-ratio', auth(['admin', 'hr']), getCategoryServiceCount);
+router.get('/admin/count-cards', auth(['admin', 'sub_admin']), getCountCards);
+router.get('/admin/pending-stats', auth(['admin','sub_admin']), getPending);
+router.get('/user-ratio', auth(['admin', 'sub_admin']), userRatio);
+router.get('/category-service-ratio', auth(['admin', 'hr', 'sub_hr_admin', 'sub_admin']), getCategoryServiceCount);
 router.get('/partner/count', auth(['partner']), getPartnerCount);
 router.get('/partner/booking-trend', auth(['partner']), getPartnerBookingTrendController);
 router.get('/partner/earning-overview', auth(['partner']), getPartnerEarningOverviewController);
 router.get('/user/wallet-transactions', auth(['user']), getUserWalletAndTransactionsController);
-router.get('/hr/card', auth(['hr']), getHrCard);
-router.get('/hr/credit-wallet', auth(['hr']), creditWalletController);
-router.get('/hr/credit-spent-trend', auth(['hr']), getHrCreditSpentTrendController);
+router.get('/hr/card', auth(['hr', 'sub_hr_admin']), getHrCard);
+router.get('/hr/credit-wallet', auth(['hr', 'sub_hr_admin']), creditWalletController);
+router.get('/hr/credit-spent-trend', auth(['hr', 'sub_hr_admin']), getHrCreditSpentTrendController);
 
 
 module.exports = router;

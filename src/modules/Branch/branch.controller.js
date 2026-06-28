@@ -27,7 +27,7 @@ const getBranchController = catchAsync(async (req, res) => {
         search: req.query.search || ''
     };
 
-    const branch = await getBranchService(options, req.User._id);
+    const branch = await getBranchService(options, req.User._id, req.User.role);
 
     return res.status(status.OK).json(
         response({

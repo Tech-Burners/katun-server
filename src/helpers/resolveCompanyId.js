@@ -5,7 +5,7 @@ const { getUserById } = require("../modules/Auth/auth.service");
 
 const resolveCompanyId = async (user) => {
     const loggedUser = await getUserById(user);
-    console.log({ loggedUser });
+    // console.log({ loggedUser });
 
     let company;
 
@@ -17,7 +17,7 @@ const resolveCompanyId = async (user) => {
         const admin = await adminModel.findOne({
             user: loggedUser._id
         });
-        console.log({ admin });
+        // console.log({ admin });
 
         if (!admin) {
             throw new Error("Admin profile not found");

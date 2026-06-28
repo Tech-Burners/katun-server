@@ -1,4 +1,5 @@
 const resolveCompanyId = require('../../helpers/resolveCompanyId');
+const employerModel = require('../Employer/employer.model');
 const DepartmentModel = require('./department.model');
 
 const addDepartmentService = async (DepartmentData) => {
@@ -8,16 +9,21 @@ const addDepartmentService = async (DepartmentData) => {
     return result;
 }
 
-const getDepartmentService = async (options, loginUser) => {
-    const company = await resolveCompanyId(loginUser);
+const getDepartmentService = async (options, loginUser, role) => {
+    let company, matchStage = { isDeleted: false };
+    if (role === "hr" || role === "sub_hr_admin") {
+        company = await employerModel.findOne({
+            user: { $in: [loginUser] },
+            isDeleted: false
+        });
+     matchStage = { employer: company._id };
+    }
 
     const { page = 1, limit = 10, search } = options;
 
     const skip = (page - 1) * limit;
-
-    // SEARCH CONDITION
-    const matchStage = {isDeleted: false, employer: company._id};
-
+    
+    // console.log({ matchStage });
     if (search) {
         matchStage.name = {
             $regex: search,

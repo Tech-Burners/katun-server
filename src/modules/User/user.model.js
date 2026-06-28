@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   phoneNumber: { type: String },
   // whatsappNumber: { type: String },
   image: { type: String, required: false, default: '/uploads/users/user.jpg' },
-  role: { type: String, enum: ['user', 'hr', 'sub_hr_admin', 'partner', 'admin'], default: 'user' },
+  role: { type: String, enum: ['user', 'hr', 'sub_hr_admin', 'partner', 'admin','sub_admin'], default: 'user' },
   isLoginToken: { type: Boolean, default: true },
   isVerified: { type: Boolean, default: false },
   isBan: { type: Boolean, default: false },

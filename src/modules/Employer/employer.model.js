@@ -13,7 +13,7 @@ const employerSchema = new mongoose.Schema({
     employeeCount : { type: Number, default: 0 },
     activeEmployeeCount : { type: Number, default: 0 },
     status : { type: String, enum: ['active', 'supended'], default: 'active' },
-    user : { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false },
+    user : [{ type: mongoose.Schema.Types.ObjectId, ref: 'User', required: false }],
     isDeleted: { type: Boolean, default: false },
 },
     {

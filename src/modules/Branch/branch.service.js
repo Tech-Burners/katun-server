@@ -1,4 +1,5 @@
 const resolveCompanyId = require("../../helpers/resolveCompanyId");
+const employerModel = require("../Employer/employer.model");
 const branchModel = require("./branch.model");
 
 const addBranchService = async (branchData) => {
@@ -8,14 +9,22 @@ const addBranchService = async (branchData) => {
     return result;
 }
 
-const getBranchService = async (options, loginUser) => {
-    const company = await resolveCompanyId(loginUser);
+const getBranchService = async (options, loginUser, role) => {
+    let company;
+    let matchStage = { isDeleted: false };
+    if (role === "hr" || role === "sub_hr_admin") {
+        company = await employerModel.findOne({
+            user: { $in: [loginUser] },
+            isDeleted: false
+        });
+     matchStage = { employer: company._id };
+    }
     const { page = 1, limit = 10, search } = options;
 
     const skip = (page - 1) * limit;
 
     // SEARCH CONDITION
-    const matchStage = { isDeleted: false , employer: company._id };
+    
 
     if (search) {
         matchStage.$or = [

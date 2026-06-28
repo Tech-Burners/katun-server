@@ -34,7 +34,8 @@ const localAuth = catchAsync(async (req, res) => {
   // await user.save();
   let admin;
   // if (user.role === 'admin' || user.role === 'hr') {
-  if (['admin', 'hr', 'sub_hr_admin'].includes(user.role)) {
+  if (['admin', 'hr', 'sub_hr_admin','sub_admin'].includes(user.role)) {
+    console.log("role",user.role)
     admin = await getAdminByUserId(user._id);
   }
   const token = await tokenGenerator(user, admin);

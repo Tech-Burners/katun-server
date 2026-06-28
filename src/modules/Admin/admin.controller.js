@@ -13,7 +13,6 @@ const addAdminController = catchAsync(async (req, res) => {
     if (existingUser) {
         throw new ApiError(status.CONFLICT, 'This email is already used!');
     }
-    req.body.role = req.User.role;
     req.body.createdBy = req.User._id;
     req.body.loginUser = req.User._id;
     const result = await addAdminService(req.body);

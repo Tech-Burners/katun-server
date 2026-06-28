@@ -38,15 +38,19 @@ const getAllAllocateController = catchAsync(async (req, res) => {
     const filters = {};
 
     // Role based filtering
-    if (req.User.role === "hr") {
-        const company = await employerModel.findOne({ user: req.User._id });
+    if (req.User.role === "hr" || req.User.role === "sub_hr_admin") {
+        const company = await employerModel.findOne({
+            user: { $in: [req.User._id] },
+            isDeleted: false
+        });
+        console.log({ company });
         // HR can only see allocations for their company
-        filters.companyId =company._id;
+        filters.companyId = company._id;
     }
 
     if (
         req.User.role === "admin" ||
-        req.User.role === "sub_hr_admin"
+        req.User.role === "sub_admin"
     ) {
         // Admin and Sub HR Admin can only see admin-created allocations
         filters.isCreatedByAdmin = true;

@@ -1,35 +1,54 @@
+const { log } = require("winston");
 const ApiError = require("../../helpers/ApiError");
 const { addUser } = require("../Auth/auth.service");
 const employerModel = require("../Employer/employer.model");
 const userModel = require("../User/user.model");
 const { userDeleteByIdService } = require("../User/user.service");
 const adminModel = require("./admin.model");
-
-
-
 const mongoose = require("mongoose");
 
+
 const addAdminService = async (data) => {
+    // console.log("::::::::::::::::::::",{ data });
     const session = await mongoose.startSession();
 
     try {
         session.startTransaction();
         const user = await addUser(
             {
-            fullName: data.fullName,
-            email: data.email,
-            password: process.env.DEFAULT_PASSWORD,
-            role: 'sub_hr_admin',
-            categoryPermissions: data.categoryPermissions,
-        },
-        { session }
+                fullName: data.fullName,
+                email: data.email,
+                password: process.env.DEFAULT_PASSWORD,
+                role: data.role,
+                // categoryPermissions: data.categoryPermissions,
+            },
+            { session }
         );
         data.user = user._id;
-        if(data.role=== 'hr'){
-            const company = await employerModel.findOne({ user: data.createdBy });
-            data.createdBy = company._id;
-            data.parent=data.loginUser;
-            data.role = 'sub_hr_admin'
+        if (data.role === 'hr' || data.role === 'sub_hr_admin') {
+            const company = await employerModel.findOne({ email: data.email });
+            if (company) {
+                throw new ApiError(409, 'This email already used!')
+            }
+            console.log(data.loginUser, "data.loginUser");
+            if (data.role === 'sub_hr_admin') {
+                const companydata = await employerModel.findOne({
+                    user: { $in: [data.loginUser] }
+                });
+                console.log({ companydata });
+                await employerModel.findByIdAndUpdate(
+                    companydata._id,
+                    {
+                        $push: {
+                            user: user._id
+                        }
+                    },
+                    { session }
+                );
+            }
+            data.createdBy = data.loginUser;
+            data.parent = data.loginUser;
+            data.role = data.role;
         }
         await adminModel.create([data], { session });
         await session.commitTransaction();

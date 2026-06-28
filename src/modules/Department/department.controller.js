@@ -27,7 +27,7 @@ const getDepartmentController = catchAsync(async (req, res) => {
         search: req.query.search || ""
     };
 
-    const department = await getDepartmentService(options, req.User._id);
+    const department = await getDepartmentService(options, req.User._id, req.User.role);
 
     return res.status(status.OK).json(
         response({
