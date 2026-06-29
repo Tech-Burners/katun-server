@@ -37,6 +37,14 @@ const auth = (userRoles, { optional = false } = {}) => {
     if (userRoles && !userRoles.includes(decodedData.role)) {
       throw new ApiError(status.UNAUTHORIZED, "You are not authorized");
     }
+    
+    if (decodedData.tokenVersion !== user.tokenVersion) {
+      console.log("kkkkk", decodedData.tokenVersion, user.tokenVersion );
+      throw new ApiError(
+        status.UNAUTHORIZED,
+        "Session expired. Please login again."
+      );
+    }
 
     if (decodedData.isLoginToken === false) {
       throw new ApiError(status.FORBIDDEN, "You are not authorized");

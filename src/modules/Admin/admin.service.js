@@ -89,29 +89,92 @@ const deleteAdminService = async (id) => {
 
 const editAdminService = async (id, data) => {
     const admin = await adminModel.findById(id);
+    console.log({ admin });
     if (!admin) {
         throw new ApiError(404, 'Admin not found');
     }
-
+    let permissionChanged = false;
     if (data.categoryPermissions) {
-        // Replace existing permissions with the new array
+        console.log("data.categoryPermissions", data.categoryPermissions);
+        permissionChanged = JSON.stringify(admin.categoryPermissions.sort()) !==
+            JSON.stringify(data.categoryPermissions.sort());
+console.log("permissionChanged", permissionChanged);
         admin.categoryPermissions = data.categoryPermissions;
     }
     await admin.save();
+    if (permissionChanged) {
+        console.log("permissionChanged", permissionChanged);
+        const user = await userModel.findByIdAndUpdate(
+            admin.user,
+            { $inc: { tokenVersion: 1 } }
+        );
+        console.log("user", user);
+    }
     return admin;
-};
+}; 0
 
 
+
+
+// const allAdminService = async (options, filter) => {
+//     console.log({ filter });
+//     const { page = 1, limit = 10 } = options;
+//     const [result, totalResults] = await Promise.all([
+//         adminModel.aggregate([
+//             { $match: filter },
+//             { $skip: (page - 1) * limit },
+//             { $limit: limit },
+//             { $sort: { createdAt: -1 } },
+//             {
+//                 $lookup: {
+//                     from: 'users',
+//                     localField: 'user',
+//                     foreignField: '_id',
+//                     as: 'userInfo'
+//                 }
+//             },
+//             { $unwind: { path: '$userInfo', preserveNullAndEmptyArrays: true } },
+//             {
+//                 $project: {
+//                     fullName: '$userInfo.fullName',
+//                     image: '$userInfo.image',
+//                     email: '$userInfo.email',
+//                     active: { $not: ['$userInfo.isBan'] },
+//                     categoryPermissions: 1,
+//                     userId: '$userInfo._id'
+//                 }
+//             }
+//         ]),
+//         adminModel.countDocuments(filter)
+//     ])
+
+//     return {
+//         result,
+//         pagination: {
+//             totalResults,
+//             totalPages: Math.ceil(totalResults / limit),
+//             currentPage: page,
+//             limit
+//         }
+//     }
+// }
 
 
 const allAdminService = async (options, filter) => {
+    console.log({ filter });
+
     const { page = 1, limit = 10 } = options;
+
     const [result, totalResults] = await Promise.all([
         adminModel.aggregate([
             { $match: filter },
+
+            // Sort before pagination
+            { $sort: { createdAt: -1 } },
+
             { $skip: (page - 1) * limit },
             { $limit: limit },
-            { $sort: { createdAt: -1 } },
+
             {
                 $lookup: {
                     from: 'users',
@@ -120,9 +183,17 @@ const allAdminService = async (options, filter) => {
                     as: 'userInfo'
                 }
             },
-            { $unwind: { path: '$userInfo', preserveNullAndEmptyArrays: true } },
+
+            {
+                $unwind: {
+                    path: '$userInfo',
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+
             {
                 $project: {
+                    _id: 1, // <-- Add this
                     fullName: '$userInfo.fullName',
                     image: '$userInfo.image',
                     email: '$userInfo.email',
@@ -132,8 +203,9 @@ const allAdminService = async (options, filter) => {
                 }
             }
         ]),
+
         adminModel.countDocuments(filter)
-    ])
+    ]);
 
     return {
         result,
@@ -143,8 +215,8 @@ const allAdminService = async (options, filter) => {
             currentPage: page,
             limit
         }
-    }
-}
+    };
+};
 
 
 const getAdminByUserId = async (id) => {

@@ -8,7 +8,8 @@ const tokenGenerator = async (user, admin) => {
     email: user.email,
     phoneNumber: user.phoneNumber,
     image: user.image, role: user.role,
-    isLoginToken: user.isLoginToken ? user.isLoginToken : false
+    // isLoginToken: user.isLoginToken ? user.isLoginToken : false
+    tokenVersion: user.tokenVersion
   }
   if (admin && admin !== null && admin !== 'null') {
     payload.categoryPermissions = admin.categoryPermissions,

@@ -29,9 +29,7 @@ const localAuth = catchAsync(async (req, res) => {
   const type = email ? 'email' : 'phone';
 
   const user = await login(identifier, type, password);
-  user.isLoginToken = true;
   // console.log({ user });
-  // await user.save();
   let admin;
   // if (user.role === 'admin' || user.role === 'hr') {
   if (['admin', 'hr', 'sub_hr_admin','sub_admin'].includes(user.role)) {
@@ -594,6 +592,7 @@ const resetPassword = catchAsync(async (req, res) => {
     throw new ApiError(404, "User not found");
 
   user.password = req.body.password;
+  user.tokenVersion = user.tokenVersion + 1;
 
   await user.save();
 
@@ -627,6 +626,7 @@ const changePassword = catchAsync(async (req, res) => {
     return res.status(status.BAD_REQUEST).json(response({ status: "Error", statusCode: status.BAD_REQUEST, type: "user", message: 'old password is incorrect' }));
   }
   verifyUser.password = newPassword;
+  verifyUser.tokenVersion = verifyUser.tokenVersion + 1;
   verifyUser.isLoginToken = false;
   await verifyUser.save();
   return res.status(status.OK).json(response({ status: "OK", statusCode: status.OK, type: "user", message: 'password changed' })
@@ -653,7 +653,6 @@ const resendOTP = catchAsync(async (req, res) => {
   }
 
 });
-
 
 
 
@@ -735,6 +734,7 @@ const updateProfile = catchAsync(async (req, res) => {
     })
   );
 });
+
 
 
 

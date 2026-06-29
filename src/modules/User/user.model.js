@@ -31,7 +31,10 @@ const userSchema = new mongoose.Schema({
     enum: ["weekly", "monthly", "instant"],
     default: "monthly",
   },
-
+  tokenVersion: {
+    type: Number,
+    default: 0
+  },
   lastFrequencyChange: {
     type: Date
   },
