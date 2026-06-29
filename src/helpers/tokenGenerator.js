@@ -22,6 +22,20 @@ const tokenGenerator = async (user, admin) => {
 }
 
 
+const refreshTokenGenerator = (user) => {
+  return jwt.sign(
+    {
+      _id: user._id,
+      tokenVersion: user.tokenVersion
+    },
+    process.env.JWT_REFRESH_TOKEN,
+    {
+      expiresIn: '7d'
+    }
+  );
+};
+
+
 
 const resetTokenGenerator = (user) => {
   return jwt.sign(
@@ -37,4 +51,5 @@ const resetTokenGenerator = (user) => {
 };
 
 
-module.exports = { tokenGenerator, resetTokenGenerator };
+
+module.exports = { tokenGenerator, refreshTokenGenerator, resetTokenGenerator };

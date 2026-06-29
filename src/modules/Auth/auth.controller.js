@@ -1,4 +1,4 @@
-const { tokenGenerator, resetTokenGenerator } = require("../../helpers/tokenGenerator");
+const { tokenGenerator, refreshTokenGenerator, resetTokenGenerator } = require("../../helpers/tokenGenerator");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 const { sendOTP, verifyOTP, deleteOTP, checkOTPByEmail, checkOTPService } = require("../Otp/otp.service");
@@ -37,6 +37,8 @@ const localAuth = catchAsync(async (req, res) => {
     admin = await getAdminByUserId(user._id);
   }
   const token = await tokenGenerator(user, admin);
+  const refreshToken = refreshTokenGenerator(user);
+
   return res.status(status.OK).json(response({
     status: "OK",
     statusCode: status.OK,
@@ -52,7 +54,8 @@ const localAuth = catchAsync(async (req, res) => {
       categoryPermissions: admin?.categoryPermissions,
       parent: admin?.parent
     },
-    accessToken: token
+    accessToken: token,
+    refreshToken:refreshToken
   }));
 });
 
@@ -606,6 +609,40 @@ const resetPassword = catchAsync(async (req, res) => {
 });
 
 
+const refreshToken = catchAsync(async (req, res) => {
+  const { refreshToken: refreshTokenString } = req.body;
+
+  if (!refreshTokenString) {
+    throw new ApiError(status.BAD_REQUEST, "Refresh token is required");
+  }
+
+  try {
+    const decoded = jwt.verify(refreshTokenString, process.env.JWT_REFRESH_TOKEN);
+
+    const user = await getUserById(decoded._id);
+    if (!user) {
+      throw new ApiError(status.NOT_FOUND, "User not found");
+    }
+
+    if (decoded.tokenVersion !== user.tokenVersion) {
+      throw new ApiError(status.UNAUTHORIZED, "Session expired. Please login again.");
+    }
+
+    const admin = await getAdminByUserId(user._id);
+    const newAccessToken = await tokenGenerator(user, admin);
+
+    return res.status(status.OK).json(response({
+      status: "OK",
+      statusCode: status.OK,
+      message: "Token refreshed successfully",
+      accessToken: newAccessToken
+    }));
+
+  } catch (err) {
+    throw new ApiError(status.UNAUTHORIZED, "Invalid or expired refresh token");
+  }
+});
+
 const deleteAccountController = catchAsync(async (req, res) => {
   const result = await deleteAccountService(req.User._id);
   return res.status(status.OK).json(response({ status: 'OK', statusCode: status.OK, type: 'user', message: 'account deleted successfully', data: result }));
@@ -949,5 +986,6 @@ module.exports = {
   partnerSignUpController,
   allUserController,
   deleteAccountController,
-  updateDocuments
+  updateDocuments,
+  refreshToken
 };

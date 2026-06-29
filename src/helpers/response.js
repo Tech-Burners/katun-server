@@ -15,6 +15,9 @@ const response = (response = {}) => {
     if (response.accessToken) {
         responseObject.data.accessToken = response.accessToken;
     }
+    if (response.refreshToken) {
+        responseObject.data.refreshToken = response.refreshToken;
+    }
     if (response.signUpToken) {
         responseObject.data.signUpToken = response.signUpToken;
     }
