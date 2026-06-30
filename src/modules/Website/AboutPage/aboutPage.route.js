@@ -15,7 +15,7 @@ ensureUploadFolderExists(UPLOADS_FOLDER);
 router.post('/update',
     upload.any(),
     convertHeicToPng(UPLOADS_FOLDER),
-    auth(['admin']),
+    auth(['admin', 'sub_admin']),
     parseData(),
     updateAboutPage
 );

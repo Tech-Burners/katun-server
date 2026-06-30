@@ -33,10 +33,10 @@ router.post(
 
 router.post("/signin", localAuth);
 router.post("/refresh-token", refreshToken);
-router.get('/my-profile', auth(['admin', 'hr', 'user', 'partner']), userDetailsByID);
-router.get('/my-documents', auth(['admin', 'hr', 'user', 'partner']), myDocumentsController);
-router.get('/partner-profile', auth(['partner', 'admin']), partnerProfileController);
-router.get('/all-partner', auth(['partner', 'admin']), allPartnerController);
+router.get('/my-profile', auth(['user', 'partner','hr', 'sub_hr_admin', 'admin', 'sub_admin']), userDetailsByID);
+router.get('/my-documents', auth(['admin', 'hr', 'user', 'partner', 'sub_hr_admin', 'sub_admin']), myDocumentsController);
+router.get('/partner-profile', auth(['partner', 'admin', 'sub_admin']), partnerProfileController);
+router.get('/all-partner', auth(['partner', 'admin', 'sub_admin']), allPartnerController);
 router.post(
   "/sign-up",
   uploadUsers.fields([
@@ -71,11 +71,11 @@ router.post("/forget-password", forgetPassword);
 router.post("/verify-otp", tokenCheck, otpVerification);
 router.post("/resend-otp", resendOTP);
 router.post("/reset-password", resetTokenCheck, resetPassword);
-router.patch("/change-password", auth(['partner', 'hr', 'user', 'admin']), changePassword);
-router.patch("/delete-account", auth(['partner', 'hr', 'user', 'admin']), deleteAccountController);
+router.patch("/change-password", auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), changePassword);
+router.patch("/delete-account", auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), deleteAccountController);
 router.put('/update-profile', uploadUsers.single('image'),
   convertHeicToPng(UPLOADS_FOLDER_USERS),
-    auth(['partner', 'hr', 'user', 'admin']), parseData(),updateProfile);
+    auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), parseData(),updateProfile);
 
 
 module.exports = router

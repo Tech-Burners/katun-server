@@ -14,7 +14,7 @@ ensureUploadFolderExists(UPLOADS_FOLDER);
 router.post("/add", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['user', 'admin']), parseData(), addCategoryController);
 router.get("/all", getAllCategoryController);
 router.put("/edit/:id", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['user', 'admin']), parseData(), editCategoryController);
-router.patch("/delete/:id", auth(['admin']), deleteCategoryController);
+router.patch("/delete/:id", auth(['admin', 'sub_admin']), deleteCategoryController);
 
 
 module.exports = router;

@@ -11,10 +11,10 @@ const parseData = require('../../middlewares/parseData');
 const { addSubCategoryController, editSubCategoryController, deleteSubCategoryController, getAllSubCategoryByCategoryController,  } = require("./subCategory.controller");
 ensureUploadFolderExists(UPLOADS_FOLDER);
 
-router.post("/add", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['user', 'admin']), parseData(), addSubCategoryController);
+router.post("/add", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['user', 'admin', 'sub_admin']), parseData(), addSubCategoryController);
 router.get("/all-subcategory/:category", getAllSubCategoryByCategoryController);
-router.put("/edit/:id", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['user', 'admin']), parseData(), editSubCategoryController);
-router.patch("/delete/:id", auth(['admin']), deleteSubCategoryController);
+router.put("/edit/:id", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['user', 'admin', 'sub_admin']), parseData(), editSubCategoryController);
+router.patch("/delete/:id", auth(['admin','sub_admin']), deleteSubCategoryController);
 
 
 module.exports = router;

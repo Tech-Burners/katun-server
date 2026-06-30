@@ -12,16 +12,16 @@ const { auth } = require("../../middlewares/auth");
 ensureUploadFolderExists(UPLOADS_FOLDER);
 
 
-router.post("/add", upload.single('image'), convertHeicToPng(UPLOADS_FOLDER), parseData(), auth(['partner', 'admin']), addServiceController);
-router.put("/edit/:id", upload.single('image'), convertHeicToPng(UPLOADS_FOLDER), parseData(), auth(['partner', 'admin']), editServiceController);
+router.post("/add", upload.single('image'), convertHeicToPng(UPLOADS_FOLDER), parseData(), auth(['partner', 'admin', 'sub_admin']), addServiceController);
+router.put("/edit/:id", upload.single('image'), convertHeicToPng(UPLOADS_FOLDER), parseData(), auth(['partner', 'admin', 'sub_admin']), editServiceController);
 router.patch("/delete/:id", deleteServiceController);
 router.patch("/disable/:id", disableServiceController);
 router.patch("/active/:id", activeServiceController);
-router.get("/admin/all", auth(['admin']), getAllServiceController);
+router.get("/admin/all", auth(['admin', 'sub_admin']), getAllServiceController);
 router.get("/partner/all", auth(['partner']), getPartnerAllServiceController);
 router.get("/popular", auth(["user"], { optional: true }), popularServiceController);
 router.get("/all", auth(["user"], { optional: true }), allServiceController);
-router.get('/details/:id', auth(['partner','user', 'admin'], { optional: true }), aServiceDetailsController);
+router.get('/details/:id', auth(['partner','user', 'admin', 'sub_admin'], { optional: true }), aServiceDetailsController);
 
 module.exports = router;
 

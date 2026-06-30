@@ -15,7 +15,7 @@ ensureUploadFolderExists(UPLOADS_FOLDER);
 router.post('/update',
     upload.any(),  // Accept any field name so icon_0, icon_1, etc. work
     convertHeicToPng(UPLOADS_FOLDER),
-    auth(['admin']),
+    auth(['admin', 'sub_admin']),
     parseData(),
     updateEmployerPage
 );

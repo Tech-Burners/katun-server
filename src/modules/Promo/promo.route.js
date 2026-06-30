@@ -13,8 +13,8 @@ ensureUploadFolderExists(UPLOADS_FOLDER);
 
 router.get("/partner/all",auth(['partner']), getPartnerPromoController);
 router.get("/admin/all", getAdminPromoController);
-router.post("/add", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['partner', 'admin']), parseData(), addPromoController);
-router.put('/edit/:id', uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['partner', 'admin']), parseData(), editPromoController);
+router.post("/add", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['partner', 'admin', 'sub_admin']), parseData(), addPromoController);
+router.put('/edit/:id', uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['partner', 'admin', 'sub_admin']), parseData(), editPromoController);
 router.delete('/delete/:id', deletePromoController);
 
 module.exports = router;

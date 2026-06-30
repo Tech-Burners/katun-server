@@ -19,7 +19,7 @@ router.post('/update',
         { name: "serviceIcon", maxCount: 1 }
     ]),
     convertHeicToPng(UPLOADS_FOLDER),
-    auth(['admin']),
+    auth(['admin', 'sub_admin']),
     parseData(), updateHomePage);
 router.get('/get', getHomePage);
 

@@ -20,7 +20,7 @@ const router = express.Router();
 router.post("/add", auth(['user']), bookingController);
 router.put("/edit/:bookingId", auth(['user']), modifyBookingController);
 router.get('/partner/upcoming', auth(['partner']), allPendingBookingController);
-router.get('/admin/all-booking', auth(['admin']), allBookingController);
+router.get('/admin/all-booking', auth(['admin','sub_admin']), allBookingController);
 router.get('/partner/active', auth(['partner']), allActiveBookingController);
 router.get('/partner/completed', auth(['partner']), allCompletedBookingController);
 router.get('/partner/cancelled', auth(['partner']), allCancelledBookingController);

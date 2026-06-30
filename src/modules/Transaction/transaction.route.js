@@ -30,7 +30,7 @@ const router = express.Router();
 
 router.patch("/cancel/:bookingId", auth(['user', 'partner']), cancelBooking);
 router.patch("/hold", holdPayoutController);
-router.patch("/complete", auth(['admin']), doCompletePayoutController);
+router.patch("/complete", auth(['admin', 'sub_admin']), doCompletePayoutController);
 router.post("/book", auth(['user']), bookController)
 router.post("/purchase-credit", auth(['user', 'partner', 'hr']), purchaseCreditController)
 router.post("/tips", auth(['user', 'partner', 'hr']), tipsController)

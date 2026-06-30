@@ -8,7 +8,7 @@ router.post("/add", auth(['user', 'partner']), addReportController);
 router.get('/count', countController)
 router.get('/all', getReportController);
 router.get('/details/:reportId', reportDetailsController);
-router.patch('/status-update/:reportId', auth(['admin']), reportStatusUpdateController);
+router.patch('/status-update/:reportId', auth(['admin', 'sub_admin']), reportStatusUpdateController);
 
 
 module.exports = router;

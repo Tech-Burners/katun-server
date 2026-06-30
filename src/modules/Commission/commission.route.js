@@ -4,7 +4,7 @@ const { editCommissionController, deleteCommissionController, getAllCommissionCo
 const router = express.Router();
 
 
-router.put("/edit/:id", auth(['admin']), editCommissionController);
+router.put("/edit/:id", auth(['admin', 'sub_admin']), editCommissionController);
 router.delete("/delete/:id", deleteCommissionController); //no need
 router.get('/all', getAllCommissionController)
 
