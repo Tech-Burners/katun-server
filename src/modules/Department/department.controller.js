@@ -5,7 +5,9 @@ const { addDepartmentService, getDepartmentService, updateDepartmentService, del
 
 
 const addDepartmentController = catchAsync(async (req, res) => {
+    console.log("req.User", req.User)
     req.body.loginUser = req.User._id
+    console.log("req.body", req.body)
     const newDepartment = await addDepartmentService(req.body);
 
     return res.status(status.OK).json(

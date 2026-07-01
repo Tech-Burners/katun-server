@@ -4,12 +4,12 @@ const { addAdminController, allAdminController, editAdminController, deleteAdmin
 const router = express.Router();
 
 router.post('/add', auth(['admin', 'hr']), addAdminController);
-router.put('/edit/:userId', auth(['admin', 'sub-admin', 'hr']), editAdminController);
-router.get('/all', auth(['admin', 'sub-admin', 'hr']), allAdminController);
-router.get('/allwithMainAdmin', auth(['admin', 'sub-admin', 'hr']), allAdminWithMainAdminController);
-router.delete('/:userId', auth(['admin', 'sub-admin', 'hr']), deleteAdminController);
-router.patch('/suspend/:userId', auth(['admin', 'sub-admin', 'hr']), suspendAdminController);
-router.patch('/activate/:userId', auth(['admin', 'sub-admin', 'hr']), activateAdminController);
+router.put('/edit/:userId', auth(['admin', 'sub_admin', 'hr']), editAdminController);
+router.get('/all', auth(['admin', 'sub_admin', 'hr']), allAdminController);
+router.get('/allwithMainAdmin', auth(['admin', 'sub_admin', 'hr']), allAdminWithMainAdminController);
+router.delete('/:userId', auth(['admin', 'sub_admin', 'hr']), deleteAdminController);
+router.patch('/suspend/:userId', auth(['admin', 'sub_admin', 'hr']), suspendAdminController);
+router.patch('/activate/:userId', auth(['admin', 'sub_admin', 'hr']), activateAdminController);
 
 module.exports = router;
 

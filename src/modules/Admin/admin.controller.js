@@ -37,15 +37,23 @@ const allAdminController = catchAsync(async (req, res) => {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10
     }
-    let filter = {isSupperAdmin: {$ne : true}};
-    if (req.User.role === 'hr') {
-        const company = await employerModel.findOne({ user: req.User._id });
-        filter.createdBy = company._id;
+    let filter = { isSupperAdmin: { $ne: true } };
+
+    if (req.User.role === "hr" || req.User.role === "sub_hr_admin") {
+        company = await employerModel.findOne({
+            user: { $in: [req.User._id] },
+            isDeleted: false
+        });
+        console.log({ company });
+        filter = { createdBy: company._id };
     }
+
 
     const result = await allAdminService(options, filter);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, message: 'all_employees', type: 'admin', data: result }))
 })
+
+
 const allAdminWithMainAdminController = catchAsync(async (req, res) => {
     const options = {
         page: Number(req.query.page) || 1,
