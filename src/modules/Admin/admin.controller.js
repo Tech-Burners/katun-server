@@ -40,14 +40,22 @@ const allAdminController = catchAsync(async (req, res) => {
     let filter = { isSupperAdmin: { $ne: true } };
 
     if (req.User.role === "hr" || req.User.role === "sub_hr_admin") {
-        company = await employerModel.findOne({
+        const company = await employerModel.findOne({
             user: { $in: [req.User._id] },
             isDeleted: false
         });
-        console.log({ company });
-        filter = { createdBy: company._id };
-    }
 
+        if (company) {
+            // Filter admins whose user is part of this company's user list
+            filter = {
+                user: { $in: company.user },
+                isSupperAdmin: { $ne: true }
+            };
+        } else {
+            // No company found for this user, return empty results
+            filter = { _id: null };
+        }
+    }
 
     const result = await allAdminService(options, filter);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, message: 'all_employees', type: 'admin', data: result }))
