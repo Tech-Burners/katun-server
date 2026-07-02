@@ -668,9 +668,10 @@ const getPendingPayoutListService = async (options = {}) => {
         _id: 0,
 
         cycleId: "$cycle._id",
-        partnerId: "$partner._id",
-        partnerName: "$partner.fullName",
-        partnerEmail: "$partner.email",
+        userId: "$partner._id",
+        userName: "$partner.fullName",
+        userEmail: "$partner.email",
+        role: "$partner.role",
 
         payout_status: 1,
         paymentType: 1,
