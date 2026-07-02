@@ -80,7 +80,9 @@ const getOrCreateCycle = async (partnerId, type) => {
   let cycle = await payoutCycleModel.findOne({
     partner: partnerId,
     type,
-    status: "open",
+    // status: "open",
+    startDate: { $lte: now },//insteed open
+    endDate: { $gte: now },//insteed open
   });
 
   if (cycle) return cycle;
@@ -188,6 +190,256 @@ const getMyFrequencyService = async (userId) => {
 };
 
 
+// const getPendingPayoutListService = async (options = {}) => {
+//   let {
+//     page = 1,
+//     limit = 10,
+//     search = "",
+//     status,
+//     payoutfrequency,
+//     payoutType,
+//     month,
+//     year,
+//   } = options;
+
+//   page = Number(page);
+//   limit = Number(limit);
+
+//   const skip = (page - 1) * limit;
+//   const now = new Date();
+
+//   const initialMatch = status
+//     ? { payout_status: status }
+//     : { payout_status: { $in: ["pending", "hold"] } };
+
+//   // Default last month
+//   if (!month || !year || isNaN(month) || isNaN(year)) {
+//     const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+//     month = lastMonth.getMonth() + 1;
+//     year = lastMonth.getFullYear();
+//   }
+
+//   month = Number(month);
+//   year = Number(year);
+
+//   initialMatch.$expr = {
+//     $and: [
+//       { $eq: [{ $month: "$createdAt" }, month] },
+//       { $eq: [{ $year: "$createdAt" }, year] },
+//     ],
+//   };
+
+//   const pipeline = [
+//     {
+//       $match: initialMatch,
+//     },
+
+//     {
+//       $group: {
+//         _id: {
+//           cycle: "$payoutCycle",
+//           paymentType: "$paymentType",
+//           txId: "$_id", //  prevents instant merge
+//         },
+
+//         cycle: { $first: "$payoutCycle" },
+//         partner: { $first: "$partner" },
+//         paymentType: { $first: "$paymentType" },
+//         payout_status: { $first: "$payout_status" },
+
+//         createdAt: { $first: "$createdAt" }, //  needed for sorting
+
+//         total_gross_amount: { $sum: "$gross_amount" },
+//         total_commission: { $sum: "$commission" },
+//         total_net_amount: { $sum: "$net_amount" },
+
+//         wallet_balance: {
+//           $sum: {
+//             $cond: [
+//               { $eq: ["$paymentType", "withdraw"] },
+//               "$net_amount",
+//               0,
+//             ],
+//           },
+//         },
+
+//         total_transactions: { $sum: 1 },
+//       },
+//     },
+
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "partner",
+//         foreignField: "_id",
+//         as: "partner",
+//       },
+//     },
+//     {
+//       $unwind: {
+//         path: "$partner",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     },
+
+//     ...(payoutfrequency
+//       ? [
+//           {
+//             $match: {
+//               "partner.payoutfrequency": payoutfrequency,
+//             },
+//           },
+//         ]
+//       : []),
+
+//     {
+//       $lookup: {
+//         from: "banks",
+//         let: { partnerId: "$partner._id" },
+//         pipeline: [
+//           {
+//             $match: {
+//               $expr: {
+//                 $eq: ["$user", "$$partnerId"],
+//               },
+//             },
+//           },
+//           { $limit: 1 },
+//         ],
+//         as: "bank",
+//       },
+//     },
+//     {
+//       $unwind: {
+//         path: "$bank",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     },
+
+//     ...(search
+//       ? [
+//           {
+//             $match: {
+//               $or: [
+//                 {
+//                   "bank.account_name": {
+//                     $regex: search,
+//                     $options: "i",
+//                   },
+//                 },
+//                 {
+//                   "bank.account_number": {
+//                     $regex: search,
+//                     $options: "i",
+//                   },
+//                 },
+//               ],
+//             },
+//           },
+//         ]
+//       : []),
+
+//     // 5️⃣ CYCLE
+//     {
+//       $lookup: {
+//         from: "payoutcycles",
+//         localField: "cycle",
+//         foreignField: "_id",
+//         as: "cycle",
+//       },
+//     },
+//     {
+//       $unwind: {
+//         path: "$cycle",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     },
+
+//     ...(payoutType
+//       ? [
+//           {
+//             $match: {
+//               "cycle.type": payoutType,
+//             },
+//           },
+//         ]
+//       : []),
+
+//     // 6️⃣ FINAL PROJECT
+//     {
+//       $project: {
+//         _id: 0,
+
+//         cycleId: "$cycle._id",
+//         userId: "$partner._id",
+//         userName: "$partner.fullName",
+//         userEmail: "$partner.email",
+//         role: "$partner.role",
+
+//         paymentType: 1,
+//         payout_status: 1,
+
+//         total_gross_amount: 1,
+//         total_commission: 1,
+//         total_net_amount: 1,
+
+//         type: "$cycle.type",
+
+//         wallet_balance: { $ifNull: ["$wallet_balance", 0] },
+
+//         overall_amount: {
+//           $add: [
+//             "$total_net_amount",
+//             { $ifNull: ["$wallet_balance", 0] },
+//           ],
+//         },
+
+//         total_transactions: 1,
+
+//         bankName: "$bank.bank_name",
+//         account_name: "$bank.account_name",
+//         account_number: "$bank.account_number",
+
+//         cycleStartDate: "$cycle.startDate",
+//         cycleEndDate: "$cycle.endDate",
+
+//         createdAt: 1,
+//       },
+//     },
+
+//     {
+//       $sort: {
+//         createdAt: -1,
+//       },
+//     },
+
+//     {
+//       $facet: {
+//         metadata: [{ $count: "total" }],
+//         data: [{ $skip: skip }, { $limit: limit }],
+//       },
+//     },
+//   ];
+
+//   const facetResult = await transactionModel.aggregate(pipeline);
+
+//   const metadata = facetResult[0]?.metadata || [];
+//   const result = facetResult[0]?.data || [];
+
+//   const total = metadata.length > 0 ? metadata[0].total : 0;
+
+//   return {
+//     result,
+//     pagination: {
+//       totalResults: total,
+//       totalPage: Math.ceil(total / limit),
+//       page,
+//       limit,
+//     },
+//   };
+// };
+
+
 const getPendingPayoutListService = async (options = {}) => {
   let {
     page = 1,
@@ -210,9 +462,14 @@ const getPendingPayoutListService = async (options = {}) => {
     ? { payout_status: status }
     : { payout_status: { $in: ["pending", "hold"] } };
 
-  // Default last month
+  // Default to last month if month/year not provided
   if (!month || !year || isNaN(month) || isNaN(year)) {
-    const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastMonth = new Date(
+      now.getFullYear(),
+      now.getMonth() - 1,
+      1
+    );
+
     month = lastMonth.getMonth() + 1;
     year = lastMonth.getFullYear();
   }
@@ -235,17 +492,18 @@ const getPendingPayoutListService = async (options = {}) => {
     {
       $group: {
         _id: {
-          cycle: "$payoutCycle",
-          paymentType: "$paymentType",
-          txId: "$_id", //  prevents instant merge
+          groupKey: {
+            $cond: [
+              { $eq: ["$paymentType", "instant"] },
+              "$_id", // each instant payout stays separate
+              "$payoutCycle", // normal payouts grouped by cycle
+            ],
+          },
         },
 
         cycle: { $first: "$payoutCycle" },
         partner: { $first: "$partner" },
         paymentType: { $first: "$paymentType" },
-        payout_status: { $first: "$payout_status" },
-
-        createdAt: { $first: "$createdAt" }, //  needed for sorting
 
         total_gross_amount: { $sum: "$gross_amount" },
         total_commission: { $sum: "$commission" },
@@ -261,7 +519,10 @@ const getPendingPayoutListService = async (options = {}) => {
           },
         },
 
+        payout_status: { $first: "$payout_status" },
         total_transactions: { $sum: 1 },
+
+        createdAt: { $max: "$createdAt" },
       },
     },
 
@@ -337,7 +598,6 @@ const getPendingPayoutListService = async (options = {}) => {
         ]
       : []),
 
-    // 5️⃣ CYCLE
     {
       $lookup: {
         from: "payoutcycles",
@@ -363,19 +623,17 @@ const getPendingPayoutListService = async (options = {}) => {
         ]
       : []),
 
-    // 6️⃣ FINAL PROJECT
     {
       $project: {
         _id: 0,
 
         cycleId: "$cycle._id",
-        userId: "$partner._id",
-        userName: "$partner.fullName",
-        userEmail: "$partner.email",
-        role: "$partner.role",
+        partnerId: "$partner._id",
+        partnerName: "$partner.fullName",
+        partnerEmail: "$partner.email",
 
-        paymentType: 1,
         payout_status: 1,
+        paymentType: 1,
 
         total_gross_amount: 1,
         total_commission: 1,
@@ -383,34 +641,77 @@ const getPendingPayoutListService = async (options = {}) => {
 
         type: "$cycle.type",
 
-        wallet_balance: { $ifNull: ["$wallet_balance", 0] },
+        wallet_balance: {
+          $ifNull: ["$wallet_balance", 0],
+        },
 
         overall_amount: {
           $add: [
             "$total_net_amount",
-            { $ifNull: ["$wallet_balance", 0] },
+            {
+              $ifNull: ["$wallet_balance", 0],
+            },
           ],
         },
 
         total_transactions: 1,
 
         bankName: "$bank.bank_name",
+        bank_id: "$bank._id",
         account_name: "$bank.account_name",
         account_number: "$bank.account_number",
 
         cycleStartDate: "$cycle.startDate",
         cycleEndDate: "$cycle.endDate",
+        payoutDueDate: "$cycle.endDate",
+
+        daysRemaining: {
+          $max: [
+            0,
+            {
+              $dateDiff: {
+                startDate: now,
+                endDate: {
+                  $ifNull: ["$cycle.endDate", now],
+                },
+                unit: "day",
+              },
+            },
+          ],
+        },
+
+        overdueDays: {
+          $cond: [
+            {
+              $and: [
+                { $ne: ["$cycle.endDate", null] },
+                { $lt: ["$cycle.endDate", now] },
+              ],
+            },
+            {
+              $dateDiff: {
+                startDate: "$cycle.endDate",
+                endDate: now,
+                unit: "day",
+              },
+            },
+            0,
+          ],
+        },
 
         createdAt: 1,
       },
     },
 
+    // latest first
     {
       $sort: {
         createdAt: -1,
       },
     },
+  ];
 
+  const facetPipeline = [
     {
       $facet: {
         metadata: [{ $count: "total" }],
@@ -419,11 +720,12 @@ const getPendingPayoutListService = async (options = {}) => {
     },
   ];
 
-  const facetResult = await transactionModel.aggregate(pipeline);
+  const fullPipeline = [...pipeline, ...facetPipeline];
+
+  const facetResult = await transactionModel.aggregate(fullPipeline);
 
   const metadata = facetResult[0]?.metadata || [];
   const result = facetResult[0]?.data || [];
-
   const total = metadata.length > 0 ? metadata[0].total : 0;
 
   return {
@@ -436,7 +738,6 @@ const getPendingPayoutListService = async (options = {}) => {
     },
   };
 };
-
 
 const holdPayoutService = async (cycleId) => {
 
