@@ -490,41 +490,81 @@ const getPendingPayoutListService = async (options = {}) => {
     },
 
     {
-      $group: {
-        _id: {
-          groupKey: {
-            $cond: [
-              { $eq: ["$paymentType", "instant"] },
-              "$_id", // each instant payout stays separate
-              "$payoutCycle", // normal payouts grouped by cycle
-            ],
-          },
-        },
+  $group: {
+    _id: {
+      groupKey: {
+        $cond: [
+          // Instant payouts are always separate
+          { $eq: ["$paymentType", "instant"] },
+          "$_id",
 
-        cycle: { $first: "$payoutCycle" },
-        partner: { $first: "$partner" },
-        paymentType: { $first: "$paymentType" },
-
-        total_gross_amount: { $sum: "$gross_amount" },
-        total_commission: { $sum: "$commission" },
-        total_net_amount: { $sum: "$net_amount" },
-
-        wallet_balance: {
-          $sum: {
-            $cond: [
-              { $eq: ["$paymentType", "withdraw"] },
-              "$net_amount",
-              0,
-            ],
-          },
-        },
-
-        payout_status: { $first: "$payout_status" },
-        total_transactions: { $sum: 1 },
-
-        createdAt: { $max: "$createdAt" },
-      },
+          // Weekly and Monthly are grouped by payout cycle
+          "$payoutCycle"
+        ]
+      }
     },
+
+    cycle: { $first: "$payoutCycle" },
+    partner: { $first: "$partner" },
+    paymentType: { $first: "$paymentType" },
+
+    total_gross_amount: { $sum: "$gross_amount" },
+    total_commission: { $sum: "$commission" },
+    total_net_amount: { $sum: "$net_amount" },
+
+    wallet_balance: {
+      $sum: {
+        $cond: [
+          { $eq: ["$paymentType", "withdraw"] },
+          "$net_amount",
+          0
+        ]
+      }
+    },
+
+    payout_status: { $first: "$payout_status" },
+    total_transactions: { $sum: 1 },
+
+    createdAt: { $max: "$createdAt" }
+  }
+},
+
+    // {
+    //   $group: {
+    //     _id: {
+    //       groupKey: {
+    //         $cond: [
+    //           { $eq: ["$paymentType", "instant"] },
+    //           "$_id", // each instant payout stays separate
+    //           "$payoutCycle", // normal payouts grouped by cycle
+    //         ],
+    //       },
+    //     },
+
+    //     cycle: { $first: "$payoutCycle" },
+    //     partner: { $first: "$partner" },
+    //     paymentType: { $first: "$paymentType" },
+
+    //     total_gross_amount: { $sum: "$gross_amount" },
+    //     total_commission: { $sum: "$commission" },
+    //     total_net_amount: { $sum: "$net_amount" },
+
+    //     wallet_balance: {
+    //       $sum: {
+    //         $cond: [
+    //           { $eq: ["$paymentType", "withdraw"] },
+    //           "$net_amount",
+    //           0,
+    //         ],
+    //       },
+    //     },
+
+    //     payout_status: { $first: "$payout_status" },
+    //     total_transactions: { $sum: 1 },
+
+    //     createdAt: { $max: "$createdAt" },
+    //   },
+    // },
 
     {
       $lookup: {
