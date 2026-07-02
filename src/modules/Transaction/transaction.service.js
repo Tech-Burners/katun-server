@@ -125,6 +125,7 @@ const getAllTransactions = async (option = {}) => {
       $project: {
         _id: 0,
         amount: "$net_amount",
+        status: 1,
         booking: 1,
         payment_method: 1,
         createdAt: 1,
@@ -241,7 +242,12 @@ const getAllRefundData = async (option = {}) => {
       createdAt: {
         $gte: startDate,
         $lt: endDate
-      }
+      },
+      $or: [
+        { payout_status: "refund" },
+        { payment_status: "refunded" },
+        { status: "refunded" }
+      ]
     }
   };
 
@@ -268,7 +274,7 @@ const getAllRefundData = async (option = {}) => {
     {
       $lookup: {
         from: "bookings",
-        localField: "referenceId",
+        localField: "booking",
         foreignField: "_id",
         as: "bookingInfo"
       }
@@ -338,7 +344,7 @@ const getAllRefundData = async (option = {}) => {
     {
       $lookup: {
         from: "bookings",
-        localField: "referenceId",
+        localField: "booking",
         foreignField: "_id",
         as: "bookingInfo"
       }

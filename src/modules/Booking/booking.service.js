@@ -13,6 +13,8 @@ const transactionModel = require("../Transaction/transaction.model");
 const commissionModel = require("../Commission/commission.model");
 const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
 const {addNotificationService} = require("../Notification/notification.service");
+const { getOrCreateCycle } = require("../Payout/payout.service");
+const payoutCycleModel = require("../Payout/payoutCycle.model");
 
 const bookingService = async (data) => {
 
@@ -93,6 +95,17 @@ const bookingService = async (data) => {
 
             const tx_ref = `txn_${Date.now()}_${data.user}`;
 
+            const partnerUser = await userModel.findById(data.provider);
+            const cycleType =
+                partnerUser?.payoutFrequency === "instant"
+                    ? "weekly"
+                    : partnerUser?.payoutFrequency;
+
+            const cycle = await getOrCreateCycle(
+                data.provider,
+                cycleType || "weekly"
+            );
+
             const transaction = await Transaction.create([{
                 tx_ref,
                 user: data.user,
@@ -108,8 +121,18 @@ const bookingService = async (data) => {
                 status: "successful",
                 payment_method: "wallet",
                 booking: booking[0]._id,
+                payoutCycle: cycle._id,
                 description: "Wallet payment for service booking"
             }], { session });
+
+            await payoutCycleModel.updateOne(
+                { _id: cycle._id },
+                {
+                    $addToSet: { transactions: transaction[0]._id },
+                    $inc: { totalAmount: netAmount }
+                },
+                { session }
+            );
 
             booking[0].transaction = transaction[0]._id;
             await booking[0].save({ session });
@@ -723,6 +746,7 @@ const pendingBookingService = async (user, option) => {
                 $match: {
                     user: new mongoose.Types.ObjectId(String(user)),
                     status: "approved",
+                    endTime: { $gt: new Date() },
                     $or: [
                         { paymentStatus: "paid" },
                         { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }

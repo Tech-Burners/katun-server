@@ -20,9 +20,9 @@ const employerModel = require("../Employer/employer.model");
 const auditModel = require("../Audit/audit.model");
 const { add } = require("date-fns");
 const { addAuditReport } = require("../Audit/audit.service");
+const { addNotificationService } = require("../Notification/notification.service");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
-const { addNotificationService } = require("../Notification/notification.service");
 
 
 
@@ -59,8 +59,9 @@ const bookController = catchAsync(async (req, res) => {
 
   const userId = req.User._id;
 
-  const partnerDetails = await partnerModel.findOne({ user: partner, isDeleted: false });
+  const partnerDetails = await partnerModel.findOne({ user: partner });
   const isAutoApproved = Boolean(partnerDetails?.serviceAutoApproved);
+  console.log({ isAutoApproved, partnerDetails })
 
 
   // Handle Cash and Wallet payments
@@ -82,64 +83,6 @@ const bookController = catchAsync(async (req, res) => {
     };
 
     const booking = await bookingService(bookingData);
-
-    // Only wallet should create payout transaction
-    if (paymentMethod === "wallet") {
-
-      const commissionRate = 0.10;
-
-      const grossAmount = Number(totalPrice);
-      const commission = grossAmount * commissionRate;
-      const netAmount = grossAmount - commission;
-
-      const partnerUser = await userModel.findById(partner);
-
-      const cycleType =
-        partnerUser.payoutFrequency === "instant"
-          ? "weekly"
-          : partnerUser.payoutFrequency;
-
-      const cycle = await getOrCreateCycle(partner, cycleType);
-
-      const transaction = await Transaction.create({
-        tx_ref: `wallet_${Date.now()}_${userId}`,
-
-        user: userId,
-        partner,
-        service,
-
-        booking: booking._id,
-        user_email: req.User.email,
-
-        currency: "NGN",
-
-        gross_amount: grossAmount,
-        commission,
-        net_amount: netAmount,
-
-        status: "successful",
-        payment_status: "successful",
-
-        payout_status: "pending",
-        payoutCycle: cycle._id,
-
-        payment_method: "wallet",
-
-        booking_data: bookingData
-      });
-
-      await payoutCycleModel.updateOne(
-        { _id: cycle._id },
-        {
-          $addToSet: {
-            transactions: transaction._id
-          },
-          $inc: {
-            totalAmount: netAmount
-          }
-        }
-      );
-    }
 
     // REPLACE the existing notification block (cash/wallet section) with this:
     // console.log({ partnerDetails })
@@ -903,6 +846,7 @@ const cancelBooking = catchAsync(async (req, res) => {
 
   booking.status = "cancelled";
   booking.reason = reason;
+  await booking.save();
 
   // =====================================
   // MARK ORIGINAL TRANSACTION AS REFUNDED
