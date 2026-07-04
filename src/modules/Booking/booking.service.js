@@ -344,7 +344,6 @@ const assignStuffService = async (id, stuff) => {
     let service;
     if(result.status === "approved"){
         service = await serviceModel.findById(result.service);
-        console.log({ service })
     }
     await sendNotificationByFcmToken(
         result.user,

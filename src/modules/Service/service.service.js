@@ -504,6 +504,7 @@ const aServiceDetailsService = async (id, userId = null) => {
         price: 1,
 
         providerName: "$provider.fullName",
+        providerImage: "$provider.image",
         providerId: "$provider._id",
         phoneNumber: "$provider.phoneNumber",
         location: "$provider.location",
@@ -631,8 +632,213 @@ const result = await serviceModel.aggregate([
 
 
 
+// const allServiceService = async (options) => {
+//   console.log("options in service service:", options)
+//   const {
+//     page = 1,
+//     limit = 10,
+//     categoryId,
+//     subCategoryId,
+//     rating,
+//     search,
+//     userId,
+//     lat,
+//     lng,
+//   } = options;
+
+//   const skip = (page - 1) * limit;
+
+//   let coordinates = null;
+
+//   // ---------- LOCATION ----------
+//   if (lat && lng) {
+//     coordinates = [Number(lng), Number(lat)];
+//   }
+
+//   if (!coordinates && userId) {
+//     const loginUser = await userModel
+//       .findById(userId)
+//       .select("location");
+
+//     if (loginUser?.location?.coordinates?.length === 2) {
+//       coordinates = loginUser.location.coordinates;
+//     }
+//   }
+
+//   const pipeline = [];
+
+//   // ---------- ONLY ACTIVE SERVICES ----------
+//   const matchStage = {
+//     isDeleted: false,
+//     isActive: true,
+//   };
+
+//   if (categoryId)
+//     matchStage.category = new mongoose.Types.ObjectId(categoryId);
+
+//   if (subCategoryId)
+//     matchStage.subCategory = new mongoose.Types.ObjectId(subCategoryId);
+
+//   if (rating)
+//     matchStage.avgRating = { $gte: Number(rating) };
+
+//   if (search)
+//     matchStage.name = { $regex: search, $options: "i" };
+
+//   pipeline.push({ $match: matchStage });
+
+//   // ---------- USER LOOKUP ----------
+//   pipeline.push(
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "user",
+//         foreignField: "_id",
+//         as: "user",
+//       },
+//     },
+//     { $unwind: "$user" }
+//   );
+
+//   // ---------- GEO DISTANCE ----------
+//   if (coordinates) {
+//     pipeline.push({
+//       $addFields: {
+//         distance: {
+//           $divide: [
+//             {
+//               $sqrt: {
+//                 $add: [
+//                   {
+//                     $pow: [
+//                       {
+//                         $subtract: [
+//                           { $arrayElemAt: ["$user.location.coordinates", 0] },
+//                           coordinates[0],
+//                         ],
+//                       },
+//                       2,
+//                     ],
+//                   },
+//                   {
+//                     $pow: [
+//                       {
+//                         $subtract: [
+//                           { $arrayElemAt: ["$user.location.coordinates", 1] },
+//                           coordinates[1],
+//                         ],
+//                       },
+//                       2,
+//                     ],
+//                   },
+//                 ],
+//               },
+//             },
+//             1,
+//           ],
+//         },
+//       },
+//     });
+//   }
+
+//   // ---------- PARTNER LOOKUP ----------
+//   pipeline.push(
+//     {
+//       $lookup: {
+//         from: "partners",
+//         localField: "user._id",
+//         foreignField: "user",
+//         as: "partner",
+//       },
+//     },
+//     {
+//       $unwind: {
+//         path: "$partner",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     }
+//   );
+
+//   // ---------- CATEGORY ----------
+//   pipeline.push(
+//     {
+//       $lookup: {
+//         from: "categories",
+//         localField: "category",
+//         foreignField: "_id",
+//         as: "category",
+//       },
+//     },
+//     { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } }
+//   );
+
+//   // ---------- SUBCATEGORY ----------
+//   pipeline.push(
+//     {
+//       $lookup: {
+//         from: "subcategories",
+//         localField: "subCategory",
+//         foreignField: "_id",
+//         as: "subcategory",
+//       },
+//     },
+//     { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } }
+//   );
+
+//   // ---------- RESPONSE ----------
+//   pipeline.push({
+//     $project: {
+//       _id: 1,
+//       name: 1,
+//       description: 1,
+//       image: 1,
+//       servicefee: 1,
+//       avgRating: 1,
+//       ratingCount: 1,
+
+//       category: "$category.name",
+//       subCategory: "$subcategory.name",
+//       partnerName: "$partner.businessName",
+//       partnerId: "$partner.user",
+
+//       isCertified: {
+//         $ifNull: ["$partner.isCertified", false],
+//       },
+//       isVerified: {
+//         $ifNull: ["$partner.isVerified", false],
+//       },
+
+//       distance: coordinates
+//         ? { $round: ["$distance", 2] }
+//         : null,
+//     },
+//   });
+
+//   // ---------- PAGINATION ----------
+//   pipeline.push({
+//     $facet: {
+//       result: [{ $skip: skip }, { $limit: Number(limit) }],
+//       totalCount: [{ $count: "count" }],
+//     },
+//   });
+
+//   const result = await serviceModel.aggregate(pipeline);
+
+//   const services = result[0]?.result || [];
+//   const totalResults = result[0]?.totalCount[0]?.count || 0;
+
+//   return {
+//     result: services,
+//     pagination: {
+//       totalResults,
+//       totalPages: Math.ceil(totalResults / limit),
+//       currentPage: Number(page),
+//       limit: Number(limit),
+//     },
+//   };
+// };
+
 const allServiceService = async (options) => {
-  console.log("options in service service:", options)
   const {
     page = 1,
     limit = 10,
@@ -655,9 +861,7 @@ const allServiceService = async (options) => {
   }
 
   if (!coordinates && userId) {
-    const loginUser = await userModel
-      .findById(userId)
-      .select("location");
+    const loginUser = await userModel.findById(userId).select("location");
 
     if (loginUser?.location?.coordinates?.length === 2) {
       coordinates = loginUser.location.coordinates;
@@ -666,25 +870,34 @@ const allServiceService = async (options) => {
 
   const pipeline = [];
 
-  // ---------- ONLY ACTIVE SERVICES ----------
+  // ---------- MATCH ----------
   const matchStage = {
     isDeleted: false,
     isActive: true,
   };
 
-  if (categoryId)
+  if (categoryId) {
     matchStage.category = new mongoose.Types.ObjectId(categoryId);
+  }
 
-  if (subCategoryId)
+  if (subCategoryId) {
     matchStage.subCategory = new mongoose.Types.ObjectId(subCategoryId);
+  }
 
-  if (rating)
+  if (rating) {
     matchStage.avgRating = { $gte: Number(rating) };
+  }
 
-  if (search)
-    matchStage.name = { $regex: search, $options: "i" };
+  if (search) {
+    matchStage.name = {
+      $regex: search,
+      $options: "i",
+    };
+  }
 
-  pipeline.push({ $match: matchStage });
+  pipeline.push({
+    $match: matchStage,
+  });
 
   // ---------- USER LOOKUP ----------
   pipeline.push(
@@ -696,46 +909,72 @@ const allServiceService = async (options) => {
         as: "user",
       },
     },
-    { $unwind: "$user" }
+    {
+      $unwind: "$user",
+    }
   );
 
-  // ---------- GEO DISTANCE ----------
+  // ---------- LOCATION FILTER ----------
   if (coordinates) {
+    const radiusKm = 50;
+    const radiusDegrees = radiusKm / 111;
+
     pipeline.push({
       $addFields: {
         distance: {
-          $divide: [
-            {
-              $sqrt: {
-                $add: [
+          $sqrt: {
+            $add: [
+              {
+                $pow: [
                   {
-                    $pow: [
+                    $subtract: [
                       {
-                        $subtract: [
-                          { $arrayElemAt: ["$user.location.coordinates", 0] },
-                          coordinates[0],
+                        $arrayElemAt: [
+                          "$user.location.coordinates",
+                          0,
                         ],
                       },
-                      2,
+                      coordinates[0],
                     ],
                   },
-                  {
-                    $pow: [
-                      {
-                        $subtract: [
-                          { $arrayElemAt: ["$user.location.coordinates", 1] },
-                          coordinates[1],
-                        ],
-                      },
-                      2,
-                    ],
-                  },
+                  2,
                 ],
               },
-            },
-            1,
-          ],
+              {
+                $pow: [
+                  {
+                    $subtract: [
+                      {
+                        $arrayElemAt: [
+                          "$user.location.coordinates",
+                          1,
+                        ],
+                      },
+                      coordinates[1],
+                    ],
+                  },
+                  2,
+                ],
+              },
+            ],
+          },
         },
+      },
+    });
+
+    // Only nearby services
+    pipeline.push({
+      $match: {
+        distance: {
+          $lte: radiusDegrees,
+        },
+      },
+    });
+
+    // Nearest first
+    pipeline.push({
+      $sort: {
+        distance: 1,
       },
     });
   }
@@ -768,7 +1007,12 @@ const allServiceService = async (options) => {
         as: "category",
       },
     },
-    { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } }
+    {
+      $unwind: {
+        path: "$category",
+        preserveNullAndEmptyArrays: true,
+      },
+    }
   );
 
   // ---------- SUBCATEGORY ----------
@@ -781,7 +1025,12 @@ const allServiceService = async (options) => {
         as: "subcategory",
       },
     },
-    { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } }
+    {
+      $unwind: {
+        path: "$subcategory",
+        preserveNullAndEmptyArrays: true,
+      },
+    }
   );
 
   // ---------- RESPONSE ----------
@@ -797,18 +1046,27 @@ const allServiceService = async (options) => {
 
       category: "$category.name",
       subCategory: "$subcategory.name",
+
       partnerName: "$partner.businessName",
       partnerId: "$partner.user",
 
       isCertified: {
         $ifNull: ["$partner.isCertified", false],
       },
+
       isVerified: {
         $ifNull: ["$partner.isVerified", false],
       },
 
       distance: coordinates
-        ? { $round: ["$distance", 2] }
+        ? {
+            $round: [
+              {
+                $multiply: ["$distance", 111],
+              },
+              2,
+            ],
+          }
         : null,
     },
   });
@@ -816,8 +1074,15 @@ const allServiceService = async (options) => {
   // ---------- PAGINATION ----------
   pipeline.push({
     $facet: {
-      result: [{ $skip: skip }, { $limit: Number(limit) }],
-      totalCount: [{ $count: "count" }],
+      result: [
+        { $skip: skip },
+        { $limit: Number(limit) },
+      ],
+      totalCount: [
+        {
+          $count: "count",
+        },
+      ],
     },
   });
 
@@ -836,8 +1101,6 @@ const allServiceService = async (options) => {
     },
   };
 };
-
-
 
 const popularService = async (userId, options) => {
   const { page = 1, limit = 10, lat, lng, search } = options;
