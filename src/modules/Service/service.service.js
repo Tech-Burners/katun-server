@@ -852,25 +852,34 @@ const allServiceService = async (options) => {
   } = options;
 
   const skip = (page - 1) * limit;
-
   let coordinates = null;
 
-  // ---------- LOCATION ----------
+  // ---------- LOCATION COORDINATES ----------
   if (lat && lng) {
-    coordinates = [Number(lng), Number(lat)];
-  }
+    coordinates = [Number(lng), Number(lat)]; // [lng, lat] - GeoJSON order
+  } else if (userId) {
+    try {
+      const loginUser = await userModel
+        .findById(userId)
+        .select("location")
+        .lean(); // lean() for performance
 
-  if (!coordinates && userId) {
-    const loginUser = await userModel.findById(userId).select("location");
-
-    if (loginUser?.location?.coordinates?.length === 2) {
-      coordinates = loginUser.location.coordinates;
+      if (
+        loginUser?.location?.coordinates?.length === 2 &&
+        !isNaN(loginUser.location.coordinates[0]) &&
+        !isNaN(loginUser.location.coordinates[1])
+      ) {
+        coordinates = loginUser.location.coordinates;
+      }
+    } catch (err) {
+      console.error("Error fetching user location:", err);
+      // Continue without location filter (graceful degradation)
     }
   }
 
   const pipeline = [];
 
-  // ---------- MATCH ----------
+  // ---------- MATCH STAGE ----------
   const matchStage = {
     isDeleted: false,
     isActive: true,
@@ -889,15 +898,13 @@ const allServiceService = async (options) => {
   }
 
   if (search) {
-    matchStage.name = {
-      $regex: search,
-      $options: "i",
-    };
+    matchStage.$or = [
+      { name: { $regex: search, $options: "i" } },
+      { description: { $regex: search, $options: "i" } },
+    ];
   }
 
-  pipeline.push({
-    $match: matchStage,
-  });
+  pipeline.push({ $match: matchStage });
 
   // ---------- USER LOOKUP ----------
   pipeline.push(
@@ -909,15 +916,13 @@ const allServiceService = async (options) => {
         as: "user",
       },
     },
-    {
-      $unwind: "$user",
-    }
+    { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } } // Must have user
   );
 
-  // ---------- LOCATION FILTER ----------
+  // ---------- LOCATION FILTER (Only if coordinates available) ----------
   if (coordinates) {
     const radiusKm = 50;
-    const radiusDegrees = radiusKm / 111;
+    const radiusDegrees = radiusKm / 111; // rough conversion
 
     pipeline.push({
       $addFields: {
@@ -928,12 +933,7 @@ const allServiceService = async (options) => {
                 $pow: [
                   {
                     $subtract: [
-                      {
-                        $arrayElemAt: [
-                          "$user.location.coordinates",
-                          0,
-                        ],
-                      },
+                      { $arrayElemAt: ["$user.location.coordinates", 0] },
                       coordinates[0],
                     ],
                   },
@@ -944,12 +944,7 @@ const allServiceService = async (options) => {
                 $pow: [
                   {
                     $subtract: [
-                      {
-                        $arrayElemAt: [
-                          "$user.location.coordinates",
-                          1,
-                        ],
-                      },
+                      { $arrayElemAt: ["$user.location.coordinates", 1] },
                       coordinates[1],
                     ],
                   },
@@ -962,20 +957,17 @@ const allServiceService = async (options) => {
       },
     });
 
-    // Only nearby services
+    // Filter within radius + handle missing location (exclude them)
     pipeline.push({
       $match: {
-        distance: {
-          $lte: radiusDegrees,
-        },
+        distance: { $lte: radiusDegrees },
+        "user.location.coordinates": { $exists: true, $size: 2 }, // safety
       },
     });
 
-    // Nearest first
+    // Sort by nearest first
     pipeline.push({
-      $sort: {
-        distance: 1,
-      },
+      $sort: { distance: 1 },
     });
   }
 
@@ -997,7 +989,7 @@ const allServiceService = async (options) => {
     }
   );
 
-  // ---------- CATEGORY ----------
+  // ---------- CATEGORY & SUBCATEGORY ----------
   pipeline.push(
     {
       $lookup: {
@@ -1015,7 +1007,6 @@ const allServiceService = async (options) => {
     }
   );
 
-  // ---------- SUBCATEGORY ----------
   pipeline.push(
     {
       $lookup: {
@@ -1033,7 +1024,7 @@ const allServiceService = async (options) => {
     }
   );
 
-  // ---------- RESPONSE ----------
+  // ---------- FINAL PROJECTION ----------
   pipeline.push({
     $project: {
       _id: 1,
@@ -1050,20 +1041,13 @@ const allServiceService = async (options) => {
       partnerName: "$partner.businessName",
       partnerId: "$partner.user",
 
-      isCertified: {
-        $ifNull: ["$partner.isCertified", false],
-      },
-
-      isVerified: {
-        $ifNull: ["$partner.isVerified", false],
-      },
+      isCertified: { $ifNull: ["$partner.isCertified", false] },
+      isVerified: { $ifNull: ["$partner.isVerified", false] },
 
       distance: coordinates
         ? {
             $round: [
-              {
-                $multiply: ["$distance", 111],
-              },
+              { $multiply: ["$distance", 111] },
               2,
             ],
           }
@@ -1078,11 +1062,7 @@ const allServiceService = async (options) => {
         { $skip: skip },
         { $limit: Number(limit) },
       ],
-      totalCount: [
-        {
-          $count: "count",
-        },
-      ],
+      totalCount: [{ $count: "count" }],
     },
   });
 
