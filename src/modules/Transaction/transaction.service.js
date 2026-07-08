@@ -284,29 +284,29 @@ const getAllRefundData = async (option = {}) => {
     /* SEARCH FILTER */
     ...(search
       ? [{
-          $match: {
-            $or: [
-              {
-                "userInfo.fullName": {
-                  $regex: search,
-                  $options: "i"
-                }
-              },
-              {
-                "bookingInfo.bookingId": {
-                  $regex: search,
-                  $options: "i"
-                }
-              },
-              {
-                "bookingInfo.reason": {
-                  $regex: search,
-                  $options: "i"
-                }
+        $match: {
+          $or: [
+            {
+              "userInfo.fullName": {
+                $regex: search,
+                $options: "i"
               }
-            ]
-          }
-        }]
+            },
+            {
+              "bookingInfo.bookingId": {
+                $regex: search,
+                $options: "i"
+              }
+            },
+            {
+              "bookingInfo.reason": {
+                $regex: search,
+                $options: "i"
+              }
+            }
+          ]
+        }
+      }]
       : []),
 
     { $skip: skip },
@@ -353,14 +353,14 @@ const getAllRefundData = async (option = {}) => {
 
     ...(search
       ? [{
-          $match: {
-            $or: [
-              { "userInfo.fullName": { $regex: search, $options: "i" } },
-              { "bookingInfo.bookingId": { $regex: search, $options: "i" } },
-              { "bookingInfo.reason": { $regex: search, $options: "i" } }
-            ]
-          }
-        }]
+        $match: {
+          $or: [
+            { "userInfo.fullName": { $regex: search, $options: "i" } },
+            { "bookingInfo.bookingId": { $regex: search, $options: "i" } },
+            { "bookingInfo.reason": { $regex: search, $options: "i" } }
+          ]
+        }
+      }]
       : []),
 
     { $count: "total" }
@@ -595,7 +595,10 @@ const allPayoutOfAPartnerService = async (user, option = {}) => {
   const skip = (page - 1) * limit;
 
   const matchStage = {
-    partner: new mongoose.Types.ObjectId(user),
+    $or: [
+      { partner: new mongoose.Types.ObjectId(user) }, //changed for /transaction/partner/all-payout
+      { user: new mongoose.Types.ObjectId(user), paymentType: { $in: ["withdraw", 'credit'] } } // Include withdraw transactions for the user,
+    ],
   };
 
   const [result, totalCount] = await Promise.all([
@@ -619,23 +622,46 @@ const allPayoutOfAPartnerService = async (user, option = {}) => {
       },
 
       // DO NOT UNWIND (important fix)
+      // {
+      //   $addFields: {
+      //     serviceNameDisplay: {
+      //       $cond: [
+      //         { $eq: ["$paymentType", "withdraw"] },
+      //         "withdraw",
+      //         {
+      //           $ifNull: [
+      //             { $arrayElemAt: ["$serviceInfo.name", 0] },
+      //             "unknown service",
+      //           ],
+      //         },
+      //       ],
+      //     },
+      //   },
+      // },
       {
         $addFields: {
           serviceNameDisplay: {
-            $cond: [
-              { $eq: ["$paymentType", "withdraw"] },
-              "withdraw",
-              {
+            $switch: {
+              branches: [
+                {
+                  case: { $eq: ["$paymentType", "withdraw"] },
+                  then: "Withdraw",
+                },
+                {
+                  case: { $eq: ["$paymentType", "credit"] },
+                  then: "Recharge credit",
+                },
+              ],
+              default: {
                 $ifNull: [
                   { $arrayElemAt: ["$serviceInfo.name", 0] },
-                  "unknown service",
+                  "Unknown service",
                 ],
               },
-            ],
+            },
           },
         },
       },
-
       {
         $project: {
           _id: 0,
@@ -995,10 +1021,10 @@ const getAllPayoutService = async (option = {}) => {
     // FILTER BY PAYOUT TYPE
     ...(payoutType
       ? [{
-          $match: {
-            "payoutCycleInfo.type": payoutType
-          }
-        }]
+        $match: {
+          "payoutCycleInfo.type": payoutType
+        }
+      }]
       : [])
   ];
 
@@ -1634,22 +1660,22 @@ const getPartnerMonthlyCompletedPayoutService = async (option = {}) => {
           // FILTERS after lookups
           ...(payoutType
             ? [{
-                $match: {
-                  "payoutCycleInfo.type": payoutType
-                }
-              }]
+              $match: {
+                "payoutCycleInfo.type": payoutType
+              }
+            }]
             : []),
 
           ...(search
             ? [{
-                $match: {
-                  $or: [
-                    { "partnerInfo.fullName": { $regex: search, $options: "i" } },
-                    { "bankInfo.account_name": { $regex: search, $options: "i" } },
-                    { "bankInfo.account_number": { $regex: search, $options: "i" } }
-                  ]
-                }
-              }]
+              $match: {
+                $or: [
+                  { "partnerInfo.fullName": { $regex: search, $options: "i" } },
+                  { "bankInfo.account_name": { $regex: search, $options: "i" } },
+                  { "bankInfo.account_number": { $regex: search, $options: "i" } }
+                ]
+              }
+            }]
             : []),
 
           {

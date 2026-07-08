@@ -122,6 +122,7 @@ const bookingService = async (data) => {
                 payment_method: "wallet",
                 booking: booking[0]._id,
                 payoutCycle: cycle._id,
+                paymentType: "booking",
                 description: "Wallet payment for service booking"
             }], { session });
 

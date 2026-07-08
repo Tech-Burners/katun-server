@@ -195,6 +195,7 @@ const bookController = catchAsync(async (req, res) => {
 
     status: "pending",
     paymentMethod,
+    paymentType: "booking",
 
     booking_data: {
       user: userId,
@@ -857,6 +858,7 @@ const cancelBooking = catchAsync(async (req, res) => {
       payout_status: "refund",
       payment_status: "refunded",
       status: "refunded",
+      paymentType: "refund",
     });
   }
 
@@ -921,7 +923,7 @@ const cancelBooking = catchAsync(async (req, res) => {
             payment_method: "wallet",
             payment_status: "refunded",
             payout_status: "refund",
-            paymentType: "credit",
+            paymentType: "refund",
             status: "successful",
             description: `Refund booking ${booking.bookingId}`,
           }],
@@ -946,7 +948,7 @@ const cancelBooking = catchAsync(async (req, res) => {
             payment_method: "wallet",
             payment_status: "cancellation-fee",
             payout_status: "pending",
-            paymentType: "credit",
+            paymentType: "refund",
             status: "successful",
             description: `Cancellation fee ${booking.bookingId}`,
           }],
@@ -1014,7 +1016,7 @@ const cancelBooking = catchAsync(async (req, res) => {
         payment_method: paymentMethod,
         payment_status: "refunded",
         payout_status: "refund",
-        paymentType: "credit",
+        paymentType: "refund",
         status: "successful",
         description: `Refund ${booking.bookingId}`,
       });
@@ -1035,7 +1037,7 @@ const cancelBooking = catchAsync(async (req, res) => {
         payment_method: paymentMethod,
         payment_status: "cancellation-fee",
         payout_status: "pending",
-        paymentType: "credit",
+        paymentType: "refund",
         status: "successful",
         description: `Cancellation fee ${booking.bookingId}`,
       });

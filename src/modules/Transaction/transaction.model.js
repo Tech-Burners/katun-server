@@ -64,7 +64,7 @@ const transactionSchema = new mongoose.Schema(
 
     paymentType: {
       type: String,
-      enum: ["credit", "withdraw", "commission", "tip"]
+      enum: ["credit", "withdraw", "commission", "tip", "booking", "refund"]
     },
 
     payout_completed_at: Date,
