@@ -87,33 +87,69 @@ const deleteAccountService = async (id) => {
   return deletedUser;
 };
 
-// const login = async (createdby, receiverType, inputPassword) => {
-//   // console.log({ createdby, receiverType, inputPassword });
-//   let user;
-//   if (receiverType === 'email') user = await userModel.findOne({ email: createdby }).select('+password');
-//   if (receiverType === 'phone') user = await userModel.findOne({ phoneNumber: createdby }).select('+password');
 
-//   if (!user) throw new ApiError(status.NOT_FOUND, 'User not found');
-//   if(user && user.isDeleted) throw new ApiError(status.NOT_FOUND, 'User not found');
-//   if(user && user.isBan) throw new ApiError(status.NOT_FOUND, 'User is banned');
+
+// const login = async (createdby, receiverType, inputPassword) => {
+//   let user;
+
+//   //  ROLE-BASED LOGIN RULE
+//   if (receiverType === "phone") {
+//     user = await userModel.findOne({ phoneNumber: createdby }).select("+password");
+
+//     if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
+
+//     //  only normal users can login with phone
+//     if (["admin", "hr", "partner"].includes(user.role)) {
+//       throw new ApiError(
+//         status.UNAUTHORIZED,
+//         "This role must login using email"
+//       );
+//     }
+//   }
+
+//   if (receiverType === "email") {
+//     user = await userModel.findOne({ email: createdby }).select("+password");
+
+//     if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
+
+//     //  normal users cannot login with email
+//     if (user.role === "user") {
+//       throw new ApiError(
+//         status.UNAUTHORIZED,
+//         "User must login using phone number"
+//       );
+//     }
+//   }
+
+//   if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
+
+//   if (user.isDeleted) throw new ApiError(status.NOT_FOUND, "User not found");
+
+//   if (user.isBan) throw new ApiError(status.FORBIDDEN, "User is banned");
+
 //   const isMatch = await bcrypt.compare(inputPassword, user.password);
-//   if (!isMatch) throw new ApiError(status.UNAUTHORIZED, 'Invalid password');
+
+//   if (!isMatch) throw new ApiError(status.UNAUTHORIZED, "Invalid password");
 
 //   return user;
 // };
 
-
-const login = async (createdby, receiverType, inputPassword) => {
+const login = async (identifier, receiverType, inputPassword) => {
   let user;
 
-  //  ROLE-BASED LOGIN RULE
   if (receiverType === "phone") {
-    user = await userModel.findOne({ phoneNumber: createdby }).select("+password");
+    user = await userModel
+      .findOne({
+        number: identifier.number,
+        countryCode: identifier.countryCode,
+      })
+      .select("+password");
 
-    if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
+    if (!user) {
+      throw new ApiError(status.NOT_FOUND, "User not found");
+    }
 
-    //  only normal users can login with phone
-    if (["admin", "hr", "partner"].includes(user.role)) {
+    if (["admin", "hr", "partner", "sub_admin", "sub_hr_admin"].includes(user.role)) {
       throw new ApiError(
         status.UNAUTHORIZED,
         "This role must login using email"
@@ -122,11 +158,14 @@ const login = async (createdby, receiverType, inputPassword) => {
   }
 
   if (receiverType === "email") {
-    user = await userModel.findOne({ email: createdby }).select("+password");
+    user = await userModel
+      .findOne({ email: identifier.email })
+      .select("+password");
 
-    if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
+    if (!user) {
+      throw new ApiError(status.NOT_FOUND, "User not found");
+    }
 
-    //  normal users cannot login with email
     if (user.role === "user") {
       throw new ApiError(
         status.UNAUTHORIZED,
@@ -135,15 +174,29 @@ const login = async (createdby, receiverType, inputPassword) => {
     }
   }
 
-  if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
+  if (!user) {
+    throw new ApiError(status.NOT_FOUND, "User not found");
+  }
 
-  if (user.isDeleted) throw new ApiError(status.NOT_FOUND, "User not found");
+  if (user.isDeleted) {
+    throw new ApiError(status.NOT_FOUND, "User not found");
+  }
 
-  if (user.isBan) throw new ApiError(status.FORBIDDEN, "User is banned");
+  if (user.isBan) {
+    throw new ApiError(status.FORBIDDEN, "User is banned");
+  }
 
-  const isMatch = await bcrypt.compare(inputPassword, user.password);
+  const isMatch = await bcrypt.compare(
+    inputPassword,
+    user.password
+  );
 
-  if (!isMatch) throw new ApiError(status.UNAUTHORIZED, "Invalid password");
+  if (!isMatch) {
+    throw new ApiError(
+      status.UNAUTHORIZED,
+      "Invalid password"
+    );
+  }
 
   return user;
 };
@@ -153,9 +206,12 @@ const getUserByEmail = async (email) => {
   return await userModel.findOne({ email });
 }
 
-const getUserByPhoneNumber = async (phoneNumber) => {
-  return await userModel.findOne({ phoneNumber });
-}
+const getUserByPhoneNumber = async (number, countryCode) => {
+  return await userModel.findOne({
+    number,
+    countryCode,
+  });
+};
 
 const getUserById = async (id) => {
   return await userModel.findById(id);
@@ -170,7 +226,8 @@ const updateUserById = async (id, data) => {
     location: data.location,
     address: data.address,
     // whatsappNumber: data.whatsappNumber,
-    phoneNumber: data.phoneNumber
+    number: data.number,
+    countryCode: data.countryCode
   };
 console.log({ userPayload });
   const user = await userModel.findByIdAndUpdate(id, userPayload, { new: true });
@@ -272,7 +329,8 @@ const partnerProfileService = async (userId) => {
         // location: '$partnerData.location',
         // amenities: '$partnerData.amenities',
         // whatsappNumber: 1,
-        phoneNumber: 1,
+        number: 1,
+        countryCode: 1,
         image: 1,
         location: 1,
         address: 1
@@ -292,7 +350,7 @@ const allUserService = async (options) => {
         $or: [
           { fullName: { $regex: search, $options: "i" } },
           { email: { $regex: search, $options: "i" } },
-          { phoneNumber: { $regex: search, $options: "i" } },
+          { number: { $regex: search, $options: "i" } },
           { "companyData.companyName": { $regex: search, $options: "i" } },
           { role: { $regex: search, $options: "i" } },
         ],
@@ -351,7 +409,8 @@ const allUserService = async (options) => {
               _id: 1,
               fullName: 1,
               role: 1,
-              phoneNumber: 1,
+              number: 1,
+              countryCode: 1,
               image: 1,
               email: 1,
               isBan: 1,

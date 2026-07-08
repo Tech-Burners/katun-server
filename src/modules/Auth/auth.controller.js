@@ -15,25 +15,60 @@ const unlinkImage = require('../../helpers/fileExists');
 const { myDocumentsService, updateDocumentsService } = require("../Partner/partner.service");
 const { getAdminByUserId } = require("../Admin/admin.service");
 const { add } = require("winston");
+const userModel = require("../User/user.model");
 
 
 
 // Login
 const localAuth = catchAsync(async (req, res) => {
-  const { email, phoneNumber, password } = req.body;
+  const {
+  email,
+  number,
+  countryCode,
+  password,
+} = req.body;
 
-  if ((!email && !phoneNumber) || (email && phoneNumber)) {
-    throw new ApiError(status.BAD_REQUEST, "Provide either email OR phone, not both");
+const hasEmail = !!email;
+const hasPhone = !!number || !!countryCode;
+
+if ((hasEmail && hasPhone) || (!hasEmail && !hasPhone)) {
+  throw new ApiError(
+    status.BAD_REQUEST,
+    "Provide either email OR phone, not both"
+  );
+}
+
+let user;
+
+if (email) {
+  user = await login(
+    { email },
+    "email",
+    password
+  );
+} else {
+  if (!number || !countryCode) {
+    throw new ApiError(
+      status.BAD_REQUEST,
+      "Country code and phone number are required"
+    );
   }
-  const identifier = email || phoneNumber;
-  const type = email ? 'email' : 'phone';
 
-  const user = await login(identifier, type, password);
+  user = await login(
+    {
+      number,
+      countryCode,
+    },
+    "phone",
+    password
+  );
+}
+
   // console.log({ user });
   let admin;
   // if (user.role === 'admin' || user.role === 'hr') {
-  if (['admin', 'hr', 'sub_hr_admin','sub_admin'].includes(user.role)) {
-    console.log("role",user.role)
+  if (['admin', 'hr', 'sub_hr_admin', 'sub_admin'].includes(user.role)) {
+    console.log("role", user.role)
     admin = await getAdminByUserId(user._id);
   }
   const token = await tokenGenerator(user, admin);
@@ -46,7 +81,8 @@ const localAuth = catchAsync(async (req, res) => {
     data: {
       _id: user._id,
       email: user.email,
-      phoneNumber: user.phoneNumber,
+      number: user.number,
+      countryCode: user.countryCode,
       fullName: user.fullName,
       role: user.role,
       image: user.image,
@@ -55,7 +91,7 @@ const localAuth = catchAsync(async (req, res) => {
       parent: admin?.parent
     },
     accessToken: token,
-    refreshToken:refreshToken
+    refreshToken: refreshToken
   }));
 });
 
@@ -63,7 +99,7 @@ const localAuth = catchAsync(async (req, res) => {
 //Sign up
 const signUp = catchAsync(async (req, res) => {
 
-  const { email, phoneNumber, role, fullName } = req.body;
+  const { email, number, countryCode, role, fullName } = req.body;
 
   if (!role) {
     throw new ApiError(status.BAD_REQUEST, "Role is required!");
@@ -102,19 +138,30 @@ const signUp = catchAsync(async (req, res) => {
 
   if (role === "user") {
 
-    if (!phoneNumber) {
-      throw new ApiError(status.BAD_REQUEST, "Phone number is required for user!");
+    if (!number || !countryCode) {
+      throw new ApiError(
+        status.BAD_REQUEST,
+        "Country code and phone number are required!"
+      );
     }
 
-    const existingUser = await getUserByPhoneNumber(phoneNumber);
+    const existingUser = await userModel.findOne({
+      number,
+      countryCode,
+    });
 
     if (existingUser) {
-      throw new ApiError(status.CONFLICT, "This phone number already used!");
+      throw new ApiError(
+        status.CONFLICT,
+        "This phone number is already used!"
+      );
     }
 
-    sentTo = phoneNumber;
+    const fullPhoneNumber = `${countryCode}${number}`;
+
+    sentTo = fullPhoneNumber;
     receiverType = "phone";
-    existingOTP = await checkOTPService(phoneNumber, "phone");
+    existingOTP = await checkOTPService(fullPhoneNumber, "phone");
 
   } else {
 
@@ -177,7 +224,7 @@ const signUp = catchAsync(async (req, res) => {
 
 
 const updateDocuments = catchAsync(async (req, res) => {
-    if (req.files) {
+  if (req.files) {
     if (req.files.image?.[0]) {
       req.body.image = `/uploads/users/${req.files.image[0].filename}`;
     }
@@ -199,9 +246,10 @@ const updateDocuments = catchAsync(async (req, res) => {
     }
   }
   const result = await updateDocumentsService(req.User._id, req.body);
-  return res.status(status.OK).json(response({ status: 'OK', statusCode: status.OK,
-     type: 'user', message: 'documents updated successfully'
-     }));
+  return res.status(status.OK).json(response({
+    status: 'OK', statusCode: status.OK,
+    type: 'user', message: 'documents updated successfully'
+  }));
 });
 
 
@@ -291,58 +339,134 @@ const allUserController = catchAsync(async (req, res) => {
 
 
 // Validate email
+// const otpVerification = catchAsync(async (req, res) => {
+//   const email = req.User?.email || req.body.email;
+//   const phoneNumber = req.User?.phoneNumber || req.body.phoneNumber;
+//   let otpData;
+//   if (email) {
+//     otpData = await verifyOTP(email, "email", req.body.purpose, req.body.otp);
+//   }
+//   if (phoneNumber) {
+//     otpData = await verifyOTP(phoneNumber, "phone", req.body.purpose, req.body.otp);
+//   }
+//   if (otpData && otpData.purpose === 'email-verification') {
+//     const registeredUser = await addUser(req.User);
+//     const accessToken = await tokenGenerator(registeredUser);
+//     return res.status(status.CREATED).json(response({
+//       status: "OK", statusCode: status.CREATED, type: "user",
+//       message: 'verified', data: registeredUser,
+//       accessToken: accessToken,
+//     }));
+//   }
+//   else if (otpData && otpData.purpose === 'forget-password') {
+//     // let user;
+//     // if (phoneNumber) { user = await getUserByPhoneNumber(phoneNumber) }
+//     // if (email) { user = await getUserByEmail(email) }
+//     // const token = await tokenGenerator(user);
+//     // const data = { token: token, userId: user._id, purpose: "forget-password" };
+//     // await addToken(data);
+//     // return res.status(status.OK).json(response({
+//     //   status: "OK", statusCode: status.OK,
+//     //   type: "user",
+//     //   message: 'verified', data: user,
+//     //   accessToken: token,
+//     // }));
+
+
+//     let user;
+
+//     if (phoneNumber) user = await getUserByPhoneNumber(phoneNumber);
+//     if (email) user = await getUserByEmail(email);
+
+//     const accessToken = resetTokenGenerator(user);
+
+//     return res.status(status.OK).json(
+//       response({
+//         status: "OK",
+//         message: "OTP verified",
+//         accessToken
+//       })
+//     );
+
+//   }
+// });
+
+// Validate OTP
 const otpVerification = catchAsync(async (req, res) => {
+  console.log(req.body);
   const email = req.User?.email || req.body.email;
-  const phoneNumber = req.User?.phoneNumber || req.body.phoneNumber;
+  const number = req.User?.number || req.body.number;
+  const countryCode = req.User?.countryCode || req.body.countryCode;
+  console.log({ email, number, countryCode });
+
+  const fullPhoneNumber =
+    number && countryCode ? `${countryCode}${number}` : null;
+console.log({ fullPhoneNumber });
   let otpData;
+
   if (email) {
-    otpData = await verifyOTP(email, "email", req.body.purpose, req.body.otp);
+    otpData = await verifyOTP(
+      email,
+      "email",
+      req.body.purpose,
+      req.body.otp
+    );
   }
-  if (phoneNumber) {
-    otpData = await verifyOTP(phoneNumber, "phone", req.body.purpose, req.body.otp);
+
+  if (fullPhoneNumber) {
+    otpData = await verifyOTP(
+      fullPhoneNumber,
+      "phone",
+      req.body.purpose,
+      req.body.otp
+    );
+    console.log({ otpData });
   }
-  if (otpData && otpData.purpose === 'email-verification') {
+
+  if (otpData && otpData.purpose === "email-verification") {
     const registeredUser = await addUser(req.User);
+
     const accessToken = await tokenGenerator(registeredUser);
-    return res.status(status.CREATED).json(response({
-      status: "OK", statusCode: status.CREATED, type: "user",
-      message: 'verified', data: registeredUser,
-      accessToken: accessToken,
-    }));
+
+    return res.status(status.CREATED).json(
+      response({
+        status: "OK",
+        statusCode: status.CREATED,
+        type: "user",
+        message: "Verified",
+        data: registeredUser,
+        accessToken,
+      })
+    );
   }
-  else if (otpData && otpData.purpose === 'forget-password') {
-    // let user;
-    // if (phoneNumber) { user = await getUserByPhoneNumber(phoneNumber) }
-    // if (email) { user = await getUserByEmail(email) }
-    // const token = await tokenGenerator(user);
-    // const data = { token: token, userId: user._id, purpose: "forget-password" };
-    // await addToken(data);
-    // return res.status(status.OK).json(response({
-    //   status: "OK", statusCode: status.OK,
-    //   type: "user",
-    //   message: 'verified', data: user,
-    //   accessToken: token,
-    // }));
 
-
+  if (otpData && otpData.purpose === "forget-password") {
     let user;
 
-    if (phoneNumber) user = await getUserByPhoneNumber(phoneNumber);
-    if (email) user = await getUserByEmail(email);
+    if (email) {
+      user = await getUserByEmail(email);
+    }
+
+    if (fullPhoneNumber) {
+      user = await userModel.findOne({
+        number,
+        countryCode,
+      });
+      console.log({ user });
+    }
 
     const accessToken = resetTokenGenerator(user);
 
     return res.status(status.OK).json(
       response({
         status: "OK",
+        statusCode: status.OK,
         message: "OTP verified",
-        accessToken
+        accessToken,
       })
     );
-
   }
 });
-
 
 const otpVerificationForPartner = catchAsync(async (req, res) => {
   console.log(req.User);
@@ -483,10 +607,16 @@ const createPartnerController = catchAsync(async (req, res) => {
 
 // Forget password
 const forgetPassword = catchAsync(async (req, res) => {
-  const { email, phoneNumber } = req.body;
+  const { email, number, countryCode } = req.body;
 
-  if (!email && !phoneNumber) {
-    throw new ApiError(status.BAD_REQUEST, "Email or phone number is required");
+  const hasEmail = !!email;
+  const hasPhone = !!number || !!countryCode;
+
+  if ((hasEmail && hasPhone) || (!hasEmail && !hasPhone)) {
+    throw new ApiError(
+      status.BAD_REQUEST,
+      "Provide either email OR phone, not both"
+    );
   }
 
   let user;
@@ -495,16 +625,29 @@ const forgetPassword = catchAsync(async (req, res) => {
 
   if (email) {
     user = await getUserByEmail(email);
+
+    if (!user) {
+      throw new ApiError(status.NOT_FOUND, "User not found");
+    }
+
     sentTo = email;
     receiverType = "email";
-  } else if (phoneNumber) {
-    user = await getUserByPhoneNumber(phoneNumber);
-    sentTo = phoneNumber;
-    receiverType = "phone";
-  }
+  } else {
+    if (!number || !countryCode) {
+      throw new ApiError(
+        status.BAD_REQUEST,
+        "Country code and phone number are required"
+      );
+    }
 
-  if (!user) {
-    throw new ApiError(status.NOT_FOUND, "User not found");
+    user = await getUserByPhoneNumber(number, countryCode);
+
+    if (!user) {
+      throw new ApiError(status.NOT_FOUND, "User not found");
+    }
+
+    sentTo = `${countryCode}${number}`;
+    receiverType = "phone";
   }
 
   const otpData = await sendOTP(
@@ -529,21 +672,25 @@ const forgetPassword = catchAsync(async (req, res) => {
   const payload = {
     email: user.email,
     role: user.role,
-    phoneNumber: user.phoneNumber,
+    number: user.number,
+    countryCode: user.countryCode,
     fullName: user.fullName,
-  }
-  const token = jwt.sign(payload, process.env.JWT_ACCESS_TOKEN, { expiresIn: "1h" });
+  };
+
+  const token = jwt.sign(payload, process.env.JWT_ACCESS_TOKEN, {
+    expiresIn: "1h",
+  });
+
   return res.status(status.OK).json(
     response({
       status: "OK",
       statusCode: status.OK,
       type: "user",
       message,
-      data: token
+      data: token,
     })
   );
 });
-
 
 // const resetPassword = catchAsync(async (req, res) => {
 //   const authHeader = req.headers["authorization"];
@@ -655,7 +802,7 @@ const changePassword = catchAsync(async (req, res) => {
   let createdBy = req.User.email;
   if (req.User.role === "user") {
     receiverType = "phone";
-    createdBy = req.User.phoneNumber;
+    createdBy = { number: req.User.number, countryCode: req.User.countryCode };
   }
   const { oldPassword, newPassword } = req.body;
   const verifyUser = await login(createdBy, receiverType, oldPassword);
@@ -712,7 +859,7 @@ const updateProfile = catchAsync(async (req, res) => {
       req.body.image = `/uploads/users/${filename}`;
     }
   }
-  console.log("controileer",req.body)
+  console.log("controileer", req.body)
 
   const result = await updateUserById(user._id, req.body);
 
@@ -728,7 +875,8 @@ const updateProfile = catchAsync(async (req, res) => {
       amenities: result.partner?.amenities,
       serviceAutoApproved: result.partner?.serviceAutoApproved,
       // whatsappNumber: result.user.whatsappNumber,
-      phoneNumber: result.user.phoneNumber,
+      number: result.user.number,
+      countryCode: result.user.countryCode,
       image: result.user.image
     };
   }
@@ -747,7 +895,8 @@ const updateProfile = catchAsync(async (req, res) => {
       image: result.user.image,
       manager: result.company?.contactName,
       email: result.user.email,
-      phoneNumber: result.user.phoneNumber
+      number: result.user.number,
+      countryCode: result.user.countryCode
     };
   }
 
@@ -756,7 +905,8 @@ const updateProfile = catchAsync(async (req, res) => {
       name: result.user.fullName,
       email: result.user.email,
       image: result.user.image,
-      phone: result.user.phoneNumber,
+      number: result.user.number,
+      countryCode: result.user.countryCode,
       address: result.user.address,
       location: result.user.location
     };
@@ -910,7 +1060,8 @@ const userDetailsByID = catchAsync(async (req, res) => {
       amenities: result.partner?.amenities,
       serviceAutoApproved: result.partner?.serviceAutoApproved,
       // whatsappNumber: result.user.whatsappNumber,
-      phoneNumber: result.user.phoneNumber,
+      number: result.user.number,
+      countryCode: result.user.countryCode,
       image: result.user.image,
       isVerified: result.user.isVerified
     };
@@ -930,7 +1081,8 @@ const userDetailsByID = catchAsync(async (req, res) => {
       image: result.user.image,
       manager: result.company?.contactName,
       email: result.user.email,
-      phoneNumber: result.user.phoneNumber
+      number: result.user.number,
+      countryCode: result.user.countryCode
     };
   }
 
@@ -939,7 +1091,8 @@ const userDetailsByID = catchAsync(async (req, res) => {
       name: result.user.fullName,
       email: result.user.email,
       image: result.user.image,
-      phone: result.user.phoneNumber,
+      number: result.user.number,
+      countryCode: result.user.countryCode,
       address: result.user.address,
       location: result.user.location
     };

@@ -543,7 +543,8 @@ const bookingDetailsService = async (id, loginUserId) => {
                 startTime: 1,
                 providerName: '$partnerData.fullName',
                 providerId: '$partnerData._id',
-                phoneNumber: '$partnerData.phoneNumber',
+                number: '$partnerData.number',
+                countryCode: '$partnerData.countryCode',
                 location: '$partnerData.location',
                 address: '$partnerData.address',
                 servicePrice: 1,
@@ -712,8 +713,10 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 userName: '$userData.fullName',
                 userId: '$userData._id',
                 userImage: '$userData.image',
-                userPhone: '$userData.phoneNumber',
-                phoneNumber: '$userData.phoneNumber',
+                userNumber: '$userData.number',
+                userCountryCode: '$userData.countryCode',
+                number: '$userData.number',
+                countryCode: '$userData.countryCode',
                 assignedStaff: '$assignedToData.name',
                 addons: 1,
                 servicefee: '$serviceData.servicefee',
@@ -843,7 +846,7 @@ const allPendingBookingService = async (user, option) => {
     if (search) {
         searchMatch = {
             $or: [
-                { "userData.phoneNumber": { $regex: search, $options: "i" } },
+                { "userData.number": { $regex: search, $options: "i" } },
                 { "userData.fullName": { $regex: search, $options: "i" } },
                 { "serviceData.name": { $regex: search, $options: "i" } }
             ]
@@ -887,7 +890,8 @@ const allPendingBookingService = async (user, option) => {
                 serviceId: "$serviceData._id",
                 userName: "$userData.fullName",
                 userImage: "$serviceData.image",
-                phoneNumber: "$userData.phoneNumber",
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
                 date: 1,
                 startTime: 1,
                 endTime: 1,
@@ -1022,7 +1026,8 @@ const allBookingService = async (option) => {
                 serviceId: "$serviceData._id",
                 userName: "$userData.fullName",
                 userImage: "$serviceData.image",
-                phoneNumber: "$userData.phoneNumber",
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
                 providerName: "$providerData.fullName",
                 totalPrice: 1,
                 paymentMethod: 1,
@@ -1177,7 +1182,8 @@ const allActiveBookingService = async (user, option) => {
                 serviceId: "$serviceData._id",
                 userName: "$userData.fullName",
                 userImage: "$userData.image",
-                phoneNumber: "$userData.phoneNumber",
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
                 assignedStaff: "$assignedToData.name",
                 isOneTime: 1,
                 startTime: 1,
@@ -1228,7 +1234,7 @@ const allActiveBookingService = async (user, option) => {
 
             {
                 $addFields: {
-                    phoneNumberString: { $toString: "$userData.phoneNumber" }
+                    numberString: { $toString: "$userData.number" }
                 }
             },
 

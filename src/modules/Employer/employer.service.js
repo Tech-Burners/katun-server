@@ -139,7 +139,8 @@ const getEmployerService = async (id) => {
                 employeeCount: 1,
                 activeEmployeeCount: 1,
                 status: 1,
-                phoneNumber: "$user.phoneNumber",
+                number: "$user.number",
+                countryCode: "$user.countryCode",
                 flag: "$user.flagCount",
                 note: "$user.note",
                 address: "$user.address",
@@ -368,7 +369,8 @@ const getAllEmployerService = async (options, filter) => {
                 totalSpent: 1,
                 employeeCount: 1,
                 status: 1,
-                phoneNumber: "$userInfo.phoneNumber",
+                number: "$userInfo.number",
+                countryCode: "$userInfo.countryCode",
                 whatsapp: "$userInfo.whatsapp",
                 createdAt: 1
             }

@@ -506,7 +506,8 @@ const aServiceDetailsService = async (id, userId = null) => {
         providerName: "$provider.fullName",
         providerImage: "$provider.image",
         providerId: "$provider._id",
-        phoneNumber: "$provider.phoneNumber",
+        number: "$provider.number",
+        countryCode: "$provider.countryCode",
         location: "$provider.location",
         isCashAllowed: 1,
         address: "$provider.address",
@@ -853,16 +854,20 @@ const allServiceService = async (options) => {
 
   const skip = (page - 1) * limit;
   let coordinates = null;
+  let useLocationFilter = false;
+
+  console.log("📌 Input Options:", { userId, lat, lng });
 
   // ---------- LOCATION COORDINATES ----------
   if (lat && lng) {
-    coordinates = [Number(lng), Number(lat)]; // [lng, lat] - GeoJSON order
+    coordinates = [Number(lng), Number(lat)];
+    useLocationFilter = true;
   } else if (userId) {
     try {
       const loginUser = await userModel
         .findById(userId)
         .select("location")
-        .lean(); // lean() for performance
+        .lean();
 
       if (
         loginUser?.location?.coordinates?.length === 2 &&
@@ -870,32 +875,23 @@ const allServiceService = async (options) => {
         !isNaN(loginUser.location.coordinates[1])
       ) {
         coordinates = loginUser.location.coordinates;
+        useLocationFilter = true;
       }
     } catch (err) {
-      console.error("Error fetching user location:", err);
-      // Continue without location filter (graceful degradation)
+      console.error("❌ Error fetching user location:", err);
     }
   }
 
+  console.log("📍 Coordinates:", coordinates ? "YES" : "NO");
+
   const pipeline = [];
 
-  // ---------- MATCH STAGE ----------
-  const matchStage = {
-    isDeleted: false,
-    isActive: true,
-  };
+  // ---------- INITIAL MATCH ----------
+  const matchStage = { isDeleted: false, isActive: true };
 
-  if (categoryId) {
-    matchStage.category = new mongoose.Types.ObjectId(categoryId);
-  }
-
-  if (subCategoryId) {
-    matchStage.subCategory = new mongoose.Types.ObjectId(subCategoryId);
-  }
-
-  if (rating) {
-    matchStage.avgRating = { $gte: Number(rating) };
-  }
+  if (categoryId) matchStage.category = new mongoose.Types.ObjectId(categoryId);
+  if (subCategoryId) matchStage.subCategory = new mongoose.Types.ObjectId(subCategoryId);
+  if (rating) matchStage.avgRating = { $gte: Number(rating) };
 
   if (search) {
     matchStage.$or = [
@@ -916,160 +912,122 @@ const allServiceService = async (options) => {
         as: "user",
       },
     },
-    { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } } // Must have user
+    { $unwind: { path: "$user", preserveNullAndEmptyArrays: false } }
   );
 
-  // ---------- LOCATION FILTER (Only if coordinates available) ----------
+  // ---------- LOCATION FILTER (Only if coordinates exist) ----------
+  let locationFilterApplied = false;
+
   if (coordinates) {
     const radiusKm = 50;
-    const radiusDegrees = radiusKm / 111; // rough conversion
+    const radiusDegrees = radiusKm / 111;
 
     pipeline.push({
       $addFields: {
         distance: {
           $sqrt: {
             $add: [
-              {
-                $pow: [
-                  {
-                    $subtract: [
-                      { $arrayElemAt: ["$user.location.coordinates", 0] },
-                      coordinates[0],
-                    ],
-                  },
-                  2,
-                ],
-              },
-              {
-                $pow: [
-                  {
-                    $subtract: [
-                      { $arrayElemAt: ["$user.location.coordinates", 1] },
-                      coordinates[1],
-                    ],
-                  },
-                  2,
-                ],
-              },
+              { $pow: [{ $subtract: [{ $arrayElemAt: ["$user.location.coordinates", 0] }, coordinates[0]] }, 2] },
+              { $pow: [{ $subtract: [{ $arrayElemAt: ["$user.location.coordinates", 1] }, coordinates[1]] }, 2] },
             ],
           },
         },
       },
     });
 
-    // Filter within radius + handle missing location (exclude them)
     pipeline.push({
       $match: {
         distance: { $lte: radiusDegrees },
-        "user.location.coordinates": { $exists: true, $size: 2 }, // safety
+        "user.location.coordinates": { $exists: true, $size: 2 },
       },
     });
 
-    // Sort by nearest first
-    pipeline.push({
-      $sort: { distance: 1 },
-    });
+    pipeline.push({ $sort: { distance: 1 } });
+
+    locationFilterApplied = true;
+    console.log(`📍 Location filter applied (${radiusKm}km)`);
   }
 
-  // ---------- PARTNER LOOKUP ----------
+  // ---------- AVAILABILITY CHECK ----------
   pipeline.push(
     {
       $lookup: {
-        from: "partners",
-        localField: "user._id",
-        foreignField: "user",
-        as: "partner",
+        from: "availabilities",
+        let: { serviceId: "$_id" },
+        pipeline: [
+          { $match: { $expr: { $eq: ["$service", "$$serviceId"] } } },
+          { $match: { "slot.0": { $exists: true } } }
+        ],
+        as: "availability",
       },
     },
     {
-      $unwind: {
-        path: "$partner",
-        preserveNullAndEmptyArrays: true,
-      },
+      $match: { $expr: { $gt: [{ $size: "$availability" }, 0] } }
     }
   );
 
-  // ---------- CATEGORY & SUBCATEGORY ----------
+  // ---------- PARTNER + CATEGORY + SUBCATEGORY ----------
   pipeline.push(
-    {
-      $lookup: {
-        from: "categories",
-        localField: "category",
-        foreignField: "_id",
-        as: "category",
-      },
-    },
-    {
-      $unwind: {
-        path: "$category",
-        preserveNullAndEmptyArrays: true,
-      },
-    }
+    { $lookup: { from: "partners", localField: "user._id", foreignField: "user", as: "partner" } },
+    { $unwind: { path: "$partner", preserveNullAndEmptyArrays: true } }
   );
 
   pipeline.push(
-    {
-      $lookup: {
-        from: "subcategories",
-        localField: "subCategory",
-        foreignField: "_id",
-        as: "subcategory",
-      },
-    },
-    {
-      $unwind: {
-        path: "$subcategory",
-        preserveNullAndEmptyArrays: true,
-      },
-    }
+    { $lookup: { from: "categories", localField: "category", foreignField: "_id", as: "category" } },
+    { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } }
   );
 
-  // ---------- FINAL PROJECTION ----------
+  pipeline.push(
+    { $lookup: { from: "subcategories", localField: "subCategory", foreignField: "_id", as: "subcategory" } },
+    { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } }
+  );
+
+  // ---------- PROJECTION ----------
   pipeline.push({
     $project: {
-      _id: 1,
-      name: 1,
-      description: 1,
-      image: 1,
-      servicefee: 1,
-      avgRating: 1,
-      ratingCount: 1,
-
+      _id: 1, name: 1, description: 1, image: 1, servicefee: 1,
+      avgRating: 1, ratingCount: 1,
       category: "$category.name",
       subCategory: "$subcategory.name",
-
       partnerName: "$partner.businessName",
       partnerId: "$partner.user",
-
       isCertified: { $ifNull: ["$partner.isCertified", false] },
       isVerified: { $ifNull: ["$partner.isVerified", false] },
-
-      distance: coordinates
-        ? {
-            $round: [
-              { $multiply: ["$distance", 111] },
-              2,
-            ],
-          }
-        : null,
+      distance: coordinates ? { $round: [{ $multiply: ["$distance", 111] }, 2] } : null,
     },
   });
 
   // ---------- PAGINATION ----------
   pipeline.push({
     $facet: {
-      result: [
-        { $skip: skip },
-        { $limit: Number(limit) },
-      ],
+      result: [{ $skip: skip }, { $limit: Number(limit) }],
       totalCount: [{ $count: "count" }],
     },
   });
 
-  const result = await serviceModel.aggregate(pipeline);
+  let result = await serviceModel.aggregate(pipeline);
+  let services = result[0]?.result || [];
+  let totalResults = result[0]?.totalCount[0]?.count || 0;
 
-  const services = result[0]?.result || [];
-  const totalResults = result[0]?.totalCount[0]?.count || 0;
+  // 🔥 SMART FALLBACK: If no results with location filter → try without location
+  if (locationFilterApplied && totalResults === 0) {
+    console.log("⚠️ No services found nearby. Fetching all services as fallback...");
+
+    // Re-run pipeline without location filter
+    const fallbackPipeline = pipeline.filter(stage => 
+      !stage.$addFields && 
+      !stage.$sort?.distance && 
+      !(stage.$match && stage.$match.distance)
+    );
+
+    const fallbackResult = await serviceModel.aggregate(fallbackPipeline);
+    services = fallbackResult[0]?.result || [];
+    totalResults = fallbackResult[0]?.totalCount[0]?.count || 0;
+
+    console.log(`📈 Fallback returned ${totalResults} services`);
+  }
+
+  console.log(`📊 Final Results: ${services.length} / ${totalResults}`);
 
   return {
     result: services,
@@ -1079,8 +1037,13 @@ const allServiceService = async (options) => {
       currentPage: Number(page),
       limit: Number(limit),
     },
+    meta: locationFilterApplied && services.length === 0 && totalResults > 0 
+      ? { message: "No services found nearby. Showing all available services." }
+      : undefined
   };
 };
+
+
 
 const popularService = async (userId, options) => {
   const { page = 1, limit = 10, lat, lng, search } = options;
@@ -1120,6 +1083,34 @@ const popularService = async (userId, options) => {
   }
 
   pipeline.push({ $match: matchStage });
+
+  // ---------- AVAILABILITY CHECK (only services with at least one slot) ----------
+  pipeline.push(
+    {
+      $lookup: {
+        from: "availabilities",
+        let: { serviceId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$service", "$$serviceId"] }
+            }
+          },
+          {
+            $match: {
+              "slot.0": { $exists: true }
+            }
+          }
+        ],
+        as: "availability"
+      }
+    },
+    {
+      $match: {
+        $expr: { $gt: [{ $size: "$availability" }, 0] }
+      }
+    }
+  );
 
   // ---------- USER LOOKUP ----------
   pipeline.push(

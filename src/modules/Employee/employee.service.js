@@ -12,7 +12,7 @@ const addEmployeeService = async (data) => {
 
     if (data.phone) {
         const existingUser = await userModel.findOne({
-            phoneNumber: data.phone
+            number: data.phone
         });
 
         if (existingUser) {
@@ -29,7 +29,7 @@ const addEmployeeService = async (data) => {
         // ✅ Create User
         const user = await userModel.create([{
             fullName: data.name,
-            phoneNumber: data.phone,
+            number: data.phone,
             password: process.env.DEFAULT_PASSWORD,
         }], { session });
 
@@ -236,7 +236,8 @@ const getAllEmployeeService = async (option) => {
                             employeeName: "$user.fullName",
                             // wallet : "$user.wallet",
                             // usages: "$user.usages",
-                            phoneNumber: "$user.phoneNumber",
+                            number: "$user.number",
+                            countryCode: "$user.countryCode",
                             // departmentName: "$department.name",
                             // branchname: "$branch.name",
                             // totalUseage: "$usages",
@@ -386,7 +387,8 @@ const getCompanyAllEmployeeService = async (user, option) => {
                             employeeName: "$user.fullName",
                             wallet: "$user.wallet",
                             usages: "$user.usages",
-                            phoneNumber: "$user.phoneNumber",
+                            number: "$user.number",
+                            countryCode: "$user.countryCode",
                             departmentName: "$department.name",
                             branchname: "$branch.name",
                             totalUseage: "$usages",

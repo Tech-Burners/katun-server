@@ -50,13 +50,13 @@ const checkServiceAvailability = catchAsync(async (req, res) => {
 
 const fcmTokenController = catchAsync(async (req, res) => {
   const data = await fcmTokenService(req.User._id, req.body.fcmToken);
-  return res.status(status.OK).json(response({ statusCode: status.OK, message:'fcm-token-updated', data: data, status: "OK" }));
+  return res.status(status.OK).json(response({ statusCode: status.OK, message:'fcm-token-updated', status: "OK" }));
 })
 
 
 const deleteFcmTokenController = catchAsync(async (req, res) => {
   const data = await deleteFcmTokenService(req.User._id);
-  return res.status(status.OK).json(response({ statusCode: status.OK, message:'fcm-token-deleted', data: data, status: "OK" }));
+  return res.status(status.OK).json(response({ statusCode: status.OK, message:'fcm-token-deleted', status: "OK" }));
 })
 
 

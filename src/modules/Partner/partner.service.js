@@ -339,7 +339,8 @@ const aPartnerDetailsService = async (id, userId = null) => {
                 ratingCount: 1,
                 location: "$userData.location",
                 address: "$userData.address",
-                phoneNumber: "$userData.phoneNumber",
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
                 image: "$userData.image",
 
                 aboutUs: "$partnerData.aboutUs",
@@ -367,7 +368,7 @@ const pendingPartnerForApprovalService = async (options) => {
             $or: [
                 { "userData.fullName": { $regex: search, $options: "i" } },
                 { "userData.email": { $regex: search, $options: "i" } },
-                { "userData.phoneNumber": { $regex: search, $options: "i" } },
+                { "userData.number": { $regex: search, $options: "i" } },
                 { "categoryData.name": { $regex: search, $options: "i" } },
             ],
         }
@@ -429,7 +430,8 @@ const pendingPartnerForApprovalService = async (options) => {
                         $project: {
                             _id: 1,
                             fullName: "$userData.fullName",
-                            phoneNumber: "$userData.phoneNumber",
+                            number: "$userData.number",
+                            countryCode: "$userData.countryCode",
                             location: "$userData.location",
                             address: "$userData.address",
                             // whatsappNumber: "$userData.whatsappNumber",
@@ -471,7 +473,7 @@ const allPartnerService = async (options) => {
             $or: [
                 { "userData.fullName": { $regex: search, $options: "i" } },
                 { "userData.email": { $regex: search, $options: "i" } },
-                { "userData.phoneNumber": { $regex: search, $options: "i" } },
+                { "userData.number": { $regex: search, $options: "i" } },
                 { "categoryData.name": { $regex: search, $options: "i" } }
             ],
         }
@@ -539,7 +541,8 @@ const allPartnerService = async (options) => {
                             _id: 1,
                             fullName: "$userData.fullName",
                             Image: "$userData.image",
-                            phoneNumber: "$userData.phoneNumber",
+                            number: "$userData.number",
+                            countryCode: "$userData.countryCode",
                             // whatsappNumber: "$userData.whatsappNumber",
                             email: "$userData.email",
                             categoryName: "$categoryData.name",
@@ -694,7 +697,8 @@ const detailsForAdminService = async (userId) => {
                 _id: 1,
                 businessName: 1,
                 fullName: "$userData.fullName",
-                phoneNumber: "$userData.phoneNumber",
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
                 // whatsappNumber: "$userData.whatsappNumber",
                 wallet: "$userData.wallet",
                 image: "$userData.image",

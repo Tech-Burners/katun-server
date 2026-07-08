@@ -6,7 +6,8 @@ const tokenGenerator = async (user, admin) => {
     _id: user._id,
     fullName: user.fullName,
     email: user.email,
-    phoneNumber: user.phoneNumber,
+    number: user.number,
+    countryCode: user.countryCode,
     image: user.image, role: user.role,
     // isLoginToken: user.isLoginToken ? user.isLoginToken : false
     tokenVersion: user.tokenVersion
