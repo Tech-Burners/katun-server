@@ -73,9 +73,7 @@ router.post("/resend-otp", resendOTP);
 router.post("/reset-password", resetTokenCheck, resetPassword);
 router.patch("/change-password", auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), changePassword);
 router.patch("/delete-account", auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), deleteAccountController);
-router.put('/update-profile', uploadUsers.single('image'),
-  convertHeicToPng(UPLOADS_FOLDER_USERS),
-    auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), parseData(),updateProfile);
+router.put('/update-profile', uploadUsers.single('image'),convertHeicToPng(UPLOADS_FOLDER_USERS),auth(['partner', 'hr', 'user', 'admin', 'sub_hr_admin', 'sub_admin']), parseData(),updateProfile);
 
 
 module.exports = router

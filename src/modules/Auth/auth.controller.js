@@ -754,6 +754,7 @@ const updateProfile = catchAsync(async (req, res) => {
   else {
     formattedData = {
       name: result.user.fullName,
+      email: result.user.email,
       image: result.user.image,
       phone: result.user.phoneNumber,
       address: result.user.address,

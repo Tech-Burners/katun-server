@@ -555,13 +555,28 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
       : userId;
 
   // Transaction aggregation
+  // const transactionPipeline = [
+  //   {
+  //     $match: {
+  //       user: matchUser,
+  //       payment_status: { $in: ['successful', 'refunded'] }
+  //     }
+  //   },
   const transactionPipeline = [
-    {
-      $match: {
-        user: matchUser,
-        payment_status: { $in: ['successful', 'refunded'] }
-      }
-    },
+  {
+    $match: {
+      user: matchUser,
+      $or: [
+        {
+          payment_status: { $in: ['successful', 'refunded'] }
+        },
+        {
+          payment_method: 'wallet',
+          payment_status: 'pending'
+        }
+      ]
+    }
+  },
     {
       $lookup: {
         from: 'services',
@@ -581,6 +596,7 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
         gross_amount: 1,
         createdAt: 1,
         payment_status: 1,
+       payment_method: 1,
         serviceName: '$service.name',
         tx_ref: 1,
         paymentType: 1
