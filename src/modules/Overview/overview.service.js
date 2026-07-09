@@ -103,29 +103,38 @@ const getPartnerDashboardCount = async (partnerUserId) => {
   ]);
 
   const totalEarning = earnings[0]?.totalEarning || 0;
+  console.log({ partnerUserId })
 
   const pendingPayouts = await Transaction.countDocuments({
     partner: partnerUserId,
     payout_status: 'pending',
-    payment_status: 'successful'
+    $or: [
+      { payment_method: 'wallet' },
+      { payment_status: 'successful' }
+    ]
   });
+
+  const partnerObjectId = new mongoose.Types.ObjectId(partnerUserId);
 
   const pendingPayoutAmounts = await Transaction.aggregate([
     {
       $match: {
-        partner: partnerUserId,
+        partner: partnerObjectId,
         payout_status: 'pending',
-        payment_status: 'successful'
-      }
+        $or: [
+          { payment_method: 'wallet' },
+          { payment_status: 'successful' }
+        ]
+      },
     },
     {
       $group: {
         _id: null,
-        totalPendingAmount: { $sum: '$net_amount' }
-      }
-    }
+        totalPendingAmount: { $sum: '$net_amount' },
+      },
+    },
   ]);
-
+  // console.log('Pending payout amounts:', pendingPayoutAmounts);
   const totalPendingPayoutAmount = pendingPayoutAmounts[0]?.totalPendingAmount || 0;
 
   return {
@@ -563,20 +572,20 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
   //     }
   //   },
   const transactionPipeline = [
-  {
-    $match: {
-      user: matchUser,
-      $or: [
-        {
-          payment_status: { $in: ['successful', 'refunded'] }
-        },
-        {
-          payment_method: 'wallet',
-          payment_status: 'pending'
-        }
-      ]
-    }
-  },
+    {
+      $match: {
+        user: matchUser,
+        $or: [
+          {
+            payment_status: { $in: ['successful', 'refunded'] }
+          },
+          {
+            payment_method: 'wallet',
+            payment_status: 'pending'
+          }
+        ]
+      }
+    },
     {
       $lookup: {
         from: 'services',
@@ -596,7 +605,7 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
         gross_amount: 1,
         createdAt: 1,
         payment_status: 1,
-       payment_method: 1,
+        payment_method: 1,
         serviceName: '$service.name',
         tx_ref: 1,
         paymentType: 1

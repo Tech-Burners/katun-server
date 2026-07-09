@@ -23,6 +23,7 @@ const { addAuditReport } = require("../Audit/audit.service");
 const { addNotificationService } = require("../Notification/notification.service");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
+const { emailWithNodemailer } = require("../../helpers/email");
 
 
 
@@ -61,7 +62,7 @@ const bookController = catchAsync(async (req, res) => {
 
   const partnerDetails = await partnerModel.findOne({ user: partner });
   const isAutoApproved = Boolean(partnerDetails?.serviceAutoApproved);
-  console.log({ isAutoApproved, partnerDetails })
+  // console.log({ isAutoApproved, partnerDetails })
 
 
   // Handle Cash and Wallet payments
@@ -83,6 +84,8 @@ const bookController = catchAsync(async (req, res) => {
     };
 
     const booking = await bookingService(bookingData);
+
+    
 
     // REPLACE the existing notification block (cash/wallet section) with this:
     // console.log({ partnerDetails })
@@ -138,6 +141,20 @@ const bookController = catchAsync(async (req, res) => {
         });
       }
     }
+    const partnerEmail = await userModel.findById(partner).select('email');
+
+    await emailWithNodemailer({
+      // email: "mdnasifurahman@gmail.com",
+      email: partnerEmail.email,
+      subject: "New Booking",
+      html: `You have a new booking from ${req.User.fullName}. Please check your dashboard for details.`,
+    });
+    await emailWithNodemailer({
+      // email: 'mdnasifurahman@gmail.com',
+      email: req.User.email,
+      subject: "Booking Confirmation",
+      html: `Thank you! Your booking has been successfully created. You can check your dashboard for details. and we will notify you once the partner approve your booking.`,
+    });
 
     return res.status(status.CREATED).json(
       response({
@@ -227,42 +244,6 @@ const bookController = catchAsync(async (req, res) => {
     }
   );
 
-  // await Transaction.create({
-  //   tx_ref,
-  //   user: userId,
-  //   partner,
-  //   service,
-
-  //   user_email: user.email,
-
-  //   // amount: grossAmount,
-  //   currency: "NGN",
-
-  //   gross_amount: grossAmount,
-  //   commission,
-  //   net_amount: netAmount,
-
-  //   payout_status: "pending", // until service completed
-
-  //   status: "pending",
-  //   paymentMethod,
-
-  //   booking_data: {
-  //     user: userId,
-  //     service,
-  //     provider: partner,
-  //     date,
-  //     startTime,
-  //     endTime,
-  //     isOneTime,
-  //     servicePrice,
-  //     totalPrice,
-  //     addons,
-  //     pin,
-  //     paymentMethod,
-  //     status: isAutoApproved ? "approved" : "pending"
-  //   },
-  // });
 
   const paymentResponse = await axios.post(
     "https://api.flutterwave.com/v3/payments",

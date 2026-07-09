@@ -15,6 +15,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const emailWithNodemailer = async (emailData) => {
+  console.log({emailData});
   try {
     const mailOptions = {
       from: process.env.SMTP_USERNAME, 

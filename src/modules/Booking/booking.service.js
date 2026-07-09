@@ -12,9 +12,10 @@ const userModel = require("../User/user.model");
 const transactionModel = require("../Transaction/transaction.model");
 const commissionModel = require("../Commission/commission.model");
 const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
-const {addNotificationService} = require("../Notification/notification.service");
+const { addNotificationService } = require("../Notification/notification.service");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
+const { emailWithNodemailer } = require("../../helpers/email");
 
 const bookingService = async (data) => {
 
@@ -343,7 +344,7 @@ const approveBookingService = async (id) => {
 const assignStuffService = async (id, stuff) => {
     const result = await bookingModel.findByIdAndUpdate(id, { assignedTo: stuff, status: "approved" }, { new: true });
     let service;
-    if(result.status === "approved"){
+    if (result.status === "approved") {
         service = await serviceModel.findById(result.service);
     }
     await sendNotificationByFcmToken(
@@ -358,10 +359,19 @@ const assignStuffService = async (id, stuff) => {
             sender: result.provider,
             targetUser: result.user,
             title: `booking approval`,
-            message: `your booking for ${service.name} has been approved`,
+            message: `Your booking for ${service.name} has been approved`,
             type: "booking",
         }
     )
+    const userEmail = await userModel.findOne({ _id: result.user }).select('email');
+    // console.log(userEmail.email)
+    await emailWithNodemailer({
+        //   email: 'mdnasifurahman@gmail.com',
+        email: userEmail.email,
+        subject: "Booking Approved",
+        html: `Your booking for ${service.name} has been approved`,
+    });
+
     return result;
 }
 
@@ -418,6 +428,16 @@ const completeBookingService = async (id) => {
             type: "booking",
         }
     )
+    const userEmail = await userModel.findOne({ _id: updatedBooking.user }).select('email');
+// console.log(userEmail.email)
+    await emailWithNodemailer({
+    //   email: 'mdnasifurahman@gmail.com',
+      email: userEmail.email,
+      subject: "Service Completed",
+      html: `Your service ${service.name} has been completed`,
+    });
+
+
     return updatedBooking;
 }
 
