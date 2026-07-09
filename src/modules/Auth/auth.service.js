@@ -11,7 +11,7 @@ const employerModel = require('../Employer/employer.model');
 
 
 const addUser = async (userBody) => {
-  console.log({ userBody });
+  // console.log({ userBody });
   if (!userBody.fullName) {
     if (userBody.businessName) {
       userBody.fullName = userBody.businessName;
@@ -33,7 +33,7 @@ const addUser = async (userBody) => {
       ...(userBody.identityProof && { identityProof: userBody.identityProof }),
       ...(userBody.certificate && { certificate: userBody.certificate }),
     };
-    console.log({ payload })
+    // console.log({ payload })
     await addPartnerService(payload)
   }
   return user;

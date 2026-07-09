@@ -121,20 +121,54 @@ const getAllTransactions = async (option = {}) => {
     { $skip: skip },
     { $limit: limit },
 
+    // {
+    //   $project: {
+    //     _id: 1,
+    //     amount: "$net_amount",
+    //     status: 1,
+    //     booking: 1,
+    //     payment_method: 1,
+    //     createdAt: 1,
+    //     description: 1,
+    //     partnerName: "$partnerInfo.fullName",
+    //     userName: "$userInfo.fullName",
+    //     serviceName: "$serviceInfo.name"
+    //   }
+    // }
     {
-      $project: {
-        _id: 0,
-        amount: "$net_amount",
-        status: 1,
-        booking: 1,
-        payment_method: 1,
-        createdAt: 1,
-        description: 1,
-        partnerName: "$partnerInfo.fullName",
-        userName: "$userInfo.fullName",
-        serviceName: "$serviceInfo.name"
-      }
-    }
+  $project: {
+    _id: 1,
+    amount: "$net_amount",
+    status: 1,
+    booking: 1,
+    payment_method: 1,
+    paymentType: 1,
+    createdAt: 1,
+    description: 1,
+    partnerName: "$partnerInfo.fullName",
+    userName: "$userInfo.fullName",
+
+    title: {
+      $switch: {
+        branches: [
+          {
+            case: { $eq: ["$paymentType", "booking"] },
+            then: "$serviceInfo.name",
+          },
+          {
+            case: { $eq: ["$paymentType", "credit"] },
+            then: "Recharge Credit",
+          },
+          {
+            case: { $eq: ["$paymentType", "withdraw"] },
+            then: "Withdraw",
+          },
+        ],
+        default: "$description",
+      },
+    },
+  },
+}
   ];
 
 

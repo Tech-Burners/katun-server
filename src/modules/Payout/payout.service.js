@@ -458,9 +458,16 @@ const getPendingPayoutListService = async (options = {}) => {
   const skip = (page - 1) * limit;
   const now = new Date();
 
-  const initialMatch = status
+  // const initialMatch = status
+  //   ? { payout_status: status }
+  //   : { payout_status: { $in: ["pending", "hold"] } };
+
+  const initialMatch = {
+  paymentType: { $ne: "credit" }, // Exclude credit transactions
+  ...(status
     ? { payout_status: status }
-    : { payout_status: { $in: ["pending", "hold"] } };
+    : { payout_status: { $in: ["pending", "hold"] } }),
+};
 
   // Default to last month if month/year not provided
   if (!month || !year || isNaN(month) || isNaN(year)) {
