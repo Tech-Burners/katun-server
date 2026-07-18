@@ -49,6 +49,66 @@ const suspendPartnerService = async (id, user) => {
 }
 
 
+const bulkSuspendPartnerService = async (partnerIds, adminId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Get partners with their linked users
+    const partners = await partnerModel
+      .find({ _id: { $in: partnerIds } })
+      .populate("user", "fullName")
+      .session(session);
+
+    // Suspend partners
+    await partnerModel.updateMany(
+      { _id: { $in: partnerIds } },
+      { $set: { isBan: true } },
+      { session }
+    );
+
+    // Suspend linked users
+    const userIds = partners.map((partner) => partner.user._id);
+
+    await userModel.updateMany(
+      { _id: { $in: userIds } },
+      { $set: { isBan: true } },
+      { session }
+    );
+
+    // Create audit logs
+    await Promise.all(
+      partners.map((partner) =>
+        addAuditReport(
+          {
+            action: "Suspended",
+            summary: `Partner ${partner.user.fullName} suspended`,
+            performedBy: adminId,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      modifiedCount: partners.length,
+      partners: partners.map((partner) => ({
+        id: partner._id,
+        businessName: partner.businessName,
+      })),
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
+
 const giveFlagService = async (id, user) => {
     const userData = await partnerModel.findById(id).populate('user')
     console.log({userData})
@@ -61,6 +121,64 @@ const giveFlagService = async (id, user) => {
     return result;
 }
 
+
+const bulkGiveFlagService = async (partnerIds, adminId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Get partners with linked users
+    const partners = await partnerModel
+      .find({
+        _id: { $in: partnerIds },
+        isDeleted: false,
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    // Increment flag count for all linked users
+    const userIds = partners.map((partner) => partner.user._id);
+
+    const result = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $inc: {
+          flagCount: 1,
+        },
+      },
+      { session }
+    );
+
+    // Audit logs
+    await Promise.all(
+      partners.map((partner) =>
+        addAuditReport(
+          {
+            action: "Flag",
+            summary: `Partner ${partner.businessName} got a flag`,
+            performedBy: adminId,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
 
 
 const giveNoteService = async (partnerId, data) => {
@@ -113,6 +231,67 @@ const giveNoteService = async (partnerId, data) => {
   }
 };
 
+
+const bulkGiveNoteService = async (partnerIds, note, performedBy) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const partners = await partnerModel
+      .find({
+        _id: { $in: partnerIds },
+        isDeleted: false,
+      })
+      .populate("user")
+      .session(session);
+
+    if (!partners.length) {
+      throw new Error("No partners found");
+    }
+
+    const userIds = partners.map((partner) => partner.user._id);
+
+    const result = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $set: {
+          note,
+        },
+      },
+      { session }
+    );
+
+    await Promise.all(
+      partners.map((partner) =>
+        addAuditReport(
+          {
+            action: "Note",
+            summary: `Note added for partner ${partner.businessName}`,
+            performedBy,
+            company: partner.company || null,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
 const activePartnerService = async (id, user) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -133,6 +312,83 @@ const activePartnerService = async (id, user) => {
         throw err;
     }
 }
+
+
+const bulkActivePartnerService = async (partnerIds, adminId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Get partners with linked users
+    const partners = await partnerModel
+      .find({
+        _id: { $in: partnerIds },
+        isDeleted: false,
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    // Activate partners
+    await partnerModel.updateMany(
+      {
+        _id: { $in: partnerIds },
+      },
+      {
+        $set: {
+          isBan: false,
+        },
+      },
+      { session }
+    );
+
+    // Activate users
+    const userIds = partners.map((partner) => partner.user._id);
+
+    await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $set: {
+          isBan: false,
+        },
+      },
+      { session }
+    );
+
+    // Audit logs
+    await Promise.all(
+      partners.map((partner) =>
+        addAuditReport(
+          {
+            action: "Activate",
+            summary: `Partner ${partner.user.fullName} activated`,
+            performedBy: adminId,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      modifiedCount: partners.length,
+      partners: partners.map((partner) => ({
+        id: partner._id,
+        businessName: partner.businessName,
+      })),
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
+
 const approvePartnerService = async (id, user) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -153,6 +409,83 @@ const approvePartnerService = async (id, user) => {
         throw err;
     }
 }
+
+
+const bulkApprovePartnerService = async (partnerIds, adminId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Get partners with linked users
+    const partners = await partnerModel
+      .find({
+        _id: { $in: partnerIds },
+        isDeleted: false,
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    if (!partners.length) {
+      throw new Error("No partners found");
+    }
+
+    // Approve partners
+    await partnerModel.updateMany(
+      {
+        _id: { $in: partnerIds },
+      },
+      {
+        $set: {
+          isVerified: true,
+        },
+      },
+      { session }
+    );
+
+    // Approve linked users
+    const userIds = partners.map((partner) => partner.user._id);
+
+    const userResult = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $set: {
+          isVerified: true,
+        },
+      },
+      { session }
+    );
+
+    // Audit logs
+    await Promise.all(
+      partners.map((partner) =>
+        addAuditReport(
+          {
+            action: "Approve",
+            summary: `Partner ${partner.user.fullName} Approved`,
+            performedBy: adminId,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: userResult.matchedCount,
+      modifiedCount: userResult.modifiedCount,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
 
 const updatePartnerService = async (id, data) => {
     return await partnerModel.findByOneAndUpdate({ user: id }, data, { new: true });
@@ -627,6 +960,84 @@ const rejectProviderService = async (id, data) => {
 };
 
 
+const bulkRejectProviderService = async (partnerIds, data) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const partners = await partnerModel
+      .find({
+        _id: { $in: partnerIds },
+      })
+      .populate("user")
+      .session(session);
+
+    if (!partners.length) {
+      throw new Error("No partners found");
+    }
+
+    const userIds = partners.map((partner) => partner.user._id);
+
+    // Delete partners
+    await partnerModel.deleteMany(
+      {
+        _id: { $in: partnerIds },
+      },
+      { session }
+    );
+
+    // Delete users
+    await userModel.deleteMany(
+      {
+        _id: { $in: userIds },
+      },
+      { session }
+    );
+
+    await session.commitTransaction();
+
+    // Send rejection emails
+    await Promise.all(
+      partners.map(async (partner) => {
+        if (partner.user?.email) {
+          await emailWithNodemailer({
+            email: partner.user.email,
+            subject: "Partner Application Rejected",
+            html: `
+              <h3>Application Rejected</h3>
+              <p>We regret to inform you that your partner application has been rejected.</p>
+              <p><strong>Reason:</strong> ${data.reason}</p>
+              <p>Please contact our support team for more information.</p>
+            `,
+          });
+        }
+      })
+    );
+
+    // Audit reports
+    await Promise.all(
+      partners.map((partner) =>
+        addAuditReport({
+          action: "Reject",
+          summary: `Partner ${partner.businessName} Rejected`,
+          performedBy: data.performedBy,
+        })
+      )
+    );
+
+    return {
+      deletedCount: partners.length,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
+
 const detailsForAdminService = async (userId) => {
     return await partnerModel.aggregate([
         {
@@ -899,5 +1310,11 @@ module.exports = {
     updatePartnerService,
     aPartnerDetailsService,
     updateDocumentsService,
-    partnerDashboardService
+    bulkSuspendPartnerService,
+    partnerDashboardService,
+    bulkApprovePartnerService,
+    bulkActivePartnerService,
+    bulkGiveFlagService,
+    bulkGiveNoteService,
+    bulkRejectProviderService
 };

@@ -82,6 +82,77 @@ const deleteEmployerService = async (id, performedBy) => {
 };
 
 
+
+const bulkDeleteEmployerService = async (employerIds, performedBy) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const employers = await employerModel
+      .find({
+        _id: { $in: employerIds },
+        isDeleted: false,
+      })
+      .populate("user")
+      .session(session);
+
+    if (!employers.length) {
+      throw new Error("No employers found");
+    }
+
+    // Soft delete employers
+    await employerModel.updateMany(
+      {
+        _id: { $in: employerIds },
+      },
+      {
+        $set: {
+          isDeleted: true,
+        },
+      },
+      { session }
+    );
+
+    // Soft delete linked users
+    const users = employers.flatMap((employer) => employer.user);
+
+    await Promise.all(
+      users.map(async (user) => {
+        user.isDeleted = true;
+        user.email = `deleted_${user._id}_${Date.now()}_${user.email}`;
+        await user.save({ session });
+      })
+    );
+
+    // Audit logs
+    await Promise.all(
+      employers.map((employer) =>
+        addAuditReport(
+          {
+            action: "Delete",
+            summary: `Employer ${employer.companyName} has been Deleted`,
+            performedBy,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      deletedCount: employers.length,
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
+
 const getEmployerService = async (id) => {
     const result = await employerModel.aggregate([
         {
@@ -197,6 +268,123 @@ const allocateCreditEmployerService = async (employerId, data) => {
 };
 
 
+const bulkAllocateCreditEmployerService = async (employerIds, data) => {
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const employers = await employerModel
+            .find({
+                _id: { $in: employerIds },
+                isDeleted: false,
+            })
+            .session(session);
+
+        if (!employers.length) {
+            throw new Error("No employers found");
+        }
+
+        const result = await employerModel.updateMany(
+            {
+                _id: { $in: employerIds },
+            },
+            {
+                $inc: {
+                    creditBalance: Number(data.amount),
+                },
+            },
+            { session }
+        );
+
+        await Promise.all(
+            employers.map((employer) =>
+                addAuditReport(
+                    {
+                        action: "Allocate",
+                        summary: `Credit allocated to ${employer.companyName}`,
+                        performedBy: data.performedBy,
+                    },
+                    { session }
+                )
+            )
+        );
+
+        await session.commitTransaction();
+
+        return {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount,
+        };
+    } catch (error) {
+        await session.abortTransaction();
+        throw error;
+    } finally {
+        session.endSession();
+    }
+};
+
+const bulkNoteToEmployerService = async (employerIds, data) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const employers = await employerModel
+      .find({
+        _id: { $in: employerIds },
+        isDeleted: false,
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    if (!employers.length) {
+      throw new Error("No employers found");
+    }
+
+    const userIds = employers.flatMap((employer) =>
+      employer.user.map((user) => user._id)
+    );
+
+    const result = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $set: {
+          note: data.note,
+        },
+      },
+      { session }
+    );
+
+    await Promise.all(
+      employers.map((employer) =>
+        addAuditReport(
+          {
+            action: "Note",
+            summary: `Note added for employer ${employer.companyName}`,
+            performedBy: data.performedBy,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
+
 const noteToEmployerService = async(employerId, data) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -219,6 +407,9 @@ const noteToEmployerService = async(employerId, data) => {
     }
     
 }
+
+
+
 
 const flagEmployerService = async (employerId, performedBy) => {
 
@@ -268,6 +459,67 @@ const flagEmployerService = async (employerId, performedBy) => {
     }
 };
 
+const bulkFlagEmployerService = async (employerIds, performedBy) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    const employers = await employerModel
+      .find({
+        _id: { $in: employerIds },
+        isDeleted: false,
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    if (!employers.length) {
+      throw new Error("No employers found");
+    }
+
+    const userIds = employers.flatMap((employer) =>
+      employer.user.map((user) => user._id)
+    );
+
+    const result = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $inc: {
+          flagCount: 1,
+        },
+      },
+      { session }
+    );
+
+    await Promise.all(
+      employers.map((employer) =>
+        addAuditReport(
+          {
+            action: "Flag",
+            summary: `Employer ${employer.companyName} got a flag.`,
+            performedBy,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
+  }
+};
+
 const suspendEmployerService = async (id, user) => {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -288,6 +540,84 @@ const suspendEmployerService = async (id, user) => {
         throw err;
     }
 }
+
+const bulkSuspendEmployerService = async (employerIds, adminId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Get employers
+    const employers = await employerModel
+      .find({
+        _id: { $in: employerIds },
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    if (!employers.length) {
+      throw new Error("No employers found");
+    }
+
+    // Suspend employers
+    const result = await employerModel.updateMany(
+      {
+        _id: { $in: employerIds },
+      },
+      {
+        $set: {
+          status: "suspended",
+        },
+      },
+      { session }
+    );
+    console.log({ employers });
+
+    // Suspend linked users
+const userIds = employers.flatMap((employer) =>
+  employer.user.map((user) => user._id)
+);
+
+    const userResult = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $set: {
+          isBan: true,
+        },
+      },
+      { session }
+    );
+    console.log({ userResult });
+
+    // Audit logs
+    await Promise.all(
+      employers.map((employer) =>
+        addAuditReport(
+          {
+            action: "Suspend",
+            summary: `Employer ${employer.companyName} has been suspended.`,
+            performedBy: adminId,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
 
 
 const activeEmployerService = async (id, user) => {
@@ -310,6 +640,81 @@ const activeEmployerService = async (id, user) => {
         throw err;
     }
 }
+
+const bulkActiveEmployerService = async (employerIds, adminId) => {
+  const session = await mongoose.startSession();
+
+  try {
+    session.startTransaction();
+
+    // Get employers
+    const employers = await employerModel
+      .find({
+        _id: { $in: employerIds },
+      })
+      .populate("user", "fullName")
+      .session(session);
+
+    if (!employers.length) {
+      throw new Error("No employers found");
+    }
+
+    // Activate employers
+    const result = await employerModel.updateMany(
+      {
+        _id: { $in: employerIds },
+      },
+      {
+        $set: {
+          status: "active",
+        },
+      },
+      { session }
+    );
+
+    // Activate linked users
+    const userIds = employers.flatMap((employer) =>
+  employer.user.map((user) => user._id)
+);
+    const userResult = await userModel.updateMany(
+      {
+        _id: { $in: userIds },
+      },
+      {
+        $set: {
+          isBan: false,
+        },
+      },
+      { session }
+    );
+
+    // Audit logs
+    await Promise.all(
+      employers.map((employer) =>
+        addAuditReport(
+          {
+            action: "Activate",
+            summary: `Employer ${employer.companyName} has been activated.`,
+            performedBy: adminId,
+          },
+          { session }
+        )
+      )
+    );
+
+    await session.commitTransaction();
+
+    return {
+      matchedCount: result.matchedCount,
+      modifiedCount: result.modifiedCount,
+    };
+  } catch (err) {
+    await session.abortTransaction();
+    throw err;
+  } finally {
+    session.endSession();
+  }
+};
 
 
 const allocateCreditService = async (userId, data) => {
@@ -407,6 +812,7 @@ const getAllEmployerService = async (options, filter) => {
 
 module.exports = {
     addEmployerService,
+    bulkAllocateCreditEmployerService,
     editEmployerService,
     deleteEmployerService,
     getEmployerService,
@@ -416,5 +822,10 @@ module.exports = {
     allocateCreditService,
     flagEmployerService,
     allocateCreditEmployerService,
-    noteToEmployerService
+    noteToEmployerService,
+    bulkSuspendEmployerService,
+    bulkActiveEmployerService,
+    bulkDeleteEmployerService,
+    bulkFlagEmployerService,
+    bulkNoteToEmployerService
 };

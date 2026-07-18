@@ -8,7 +8,13 @@ const { pendingPartnerForApprovalService, detailsForAdminService,
   approvePartnerService,
   partnerFeedbackService,
   aPartnerDetailsService,
-  partnerDashboardService} = require("./partner.service");
+  partnerDashboardService,
+  bulkSuspendPartnerService,
+  bulkActivePartnerService,
+  bulkApprovePartnerService,
+  bulkGiveFlagService,
+  bulkGiveNoteService,
+  bulkRejectProviderService} = require("./partner.service");
 
 
 const pendingPartnerForApproval = catchAsync(async (req, res) => {
@@ -37,12 +43,72 @@ const suspendPartnerController = catchAsync(async (req, res) => {
   }));
 })
 
+const bulkSuspendPartnerController = catchAsync(async (req, res) => {
+  const { partnerIds } = req.body;
+
+  if (!Array.isArray(partnerIds) || partnerIds.length === 0) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Please provide partnerIds.",
+      })
+    );
+  }
+
+  const result = await bulkSuspendPartnerService(
+    partnerIds,
+    req.User._id
+  );
+
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Partner",
+      message: `${result.modifiedCount} partner(s) suspended successfully.`,
+      data: result,
+    })
+  );
+});
+
 const activePartnerController = catchAsync(async (req, res) => {
   const result = await activePartnerService(req.params.id, req.User._id);
   return res.status(status.OK).json(response({
     status: 'success', statusCode: status.OK, type: "Partner", message: "Partner activated successfully", data: {name : result.businessName}
   }));
 })
+
+
+const bulkActivePartnerController = catchAsync(async (req, res) => {
+  const { partnerIds } = req.body;
+
+  if (!Array.isArray(partnerIds) || partnerIds.length === 0) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Please provide partnerIds.",
+      })
+    );
+  }
+
+  const result = await bulkActivePartnerService(
+    partnerIds,
+    req.User._id
+  );
+
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Partner",
+      message: `${result.modifiedCount} partner(s) activated successfully.`,
+      data: result,
+    })
+  );
+});
+
 
 const approvePartnerController = catchAsync(async (req, res) => {
   const result = await approvePartnerService(req.params.id, req.User._id);
@@ -51,6 +117,36 @@ const approvePartnerController = catchAsync(async (req, res) => {
   }));
 })
 
+//
+const bulkApprovePartnerController = catchAsync(async (req, res) => {
+  const { partnerIds } = req.body;
+
+  if (!Array.isArray(partnerIds) || partnerIds.length === 0) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Please provide partnerIds.",
+      })
+    );
+  }
+
+  const result = await bulkApprovePartnerService(
+    partnerIds,
+    req.User._id
+  );
+
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Partner",
+      message: `${result.modifiedCount} partner(s) approved successfully.`,
+      data: result,
+    })
+  );
+});
+
 
 const giveFlagController = catchAsync(async (req, res) => {
   await giveFlagService(req.params.id, req.User._id);
@@ -58,6 +154,34 @@ const giveFlagController = catchAsync(async (req, res) => {
     status: 'success', statusCode: status.OK, type: "Partner", message: "one flag added"
   }));
 })
+const bulkGiveFlagController = catchAsync(async (req, res) => {
+  const { partnerIds } = req.body;
+
+  if (!Array.isArray(partnerIds) || partnerIds.length === 0) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Please provide partnerIds.",
+      })
+    );
+  }
+
+  const result = await bulkGiveFlagService(
+    partnerIds,
+    req.User._id
+  );
+
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Partner",
+      message: `${result.modifiedCount} partner(s) flagged successfully.`,
+      data: result,
+    })
+  );
+});
 
 
 const giveNoteController = catchAsync(async (req, res) => {
@@ -69,6 +193,47 @@ const giveNoteController = catchAsync(async (req, res) => {
 })
 
 
+const bulkGiveNoteController = catchAsync(async (req, res) => {
+  const { partnerIds, note } = req.body;
+
+  if (!Array.isArray(partnerIds) || partnerIds.length === 0) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Please provide partnerIds.",
+      })
+    );
+  }
+
+  if (!note?.trim()) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Note is required.",
+      })
+    );
+  }
+
+  const result = await bulkGiveNoteService(
+    partnerIds,
+    note,
+    req.User._id
+  );
+
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Partner",
+      message: `${result.modifiedCount} partner(s) updated successfully.`,
+      data: result,
+    })
+  );
+});
+
+
 const rejectProviderController = catchAsync(async (req, res) => {
   req.body.performedBy = req.User._id;
   await rejectProviderService(req.params.id, req.body);
@@ -76,6 +241,46 @@ const rejectProviderController = catchAsync(async (req, res) => {
     status: 'success', statusCode: status.OK, type: "Partner", message: "Partner rejected successfully"
   }));
 })
+
+
+const bulkRejectProviderController = catchAsync(async (req, res) => {
+  const { partnerIds, reason } = req.body;
+
+  if (!Array.isArray(partnerIds) || partnerIds.length === 0) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Please provide partnerIds.",
+      })
+    );
+  }
+
+  if (!reason?.trim()) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "fail",
+        statusCode: status.BAD_REQUEST,
+        message: "Reason is required.",
+      })
+    );
+  }
+
+  const result = await bulkRejectProviderService(partnerIds, {
+    reason,
+    performedBy: req.User._id,
+  });
+
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Partner",
+      message: `${result.deletedCount} partner(s) rejected successfully.`,
+      data: result,
+    })
+  );
+});
 
 
 const partnerFeedbackController = catchAsync(async (req, res) => {
@@ -167,5 +372,11 @@ module.exports = {
   approvePartnerController,
   partnerFeedbackController,
   aPartnerDetailsController,
-  partnerDashboardController
+  partnerDashboardController,
+  bulkSuspendPartnerController,
+  bulkActivePartnerController,
+  bulkApprovePartnerController,
+  bulkGiveFlagController,
+  bulkGiveNoteController,
+  bulkRejectProviderController
 };
