@@ -5,7 +5,7 @@ const transactionModel = require("../Transaction/transaction.model");
 const userModel = require("../User/user.model");
 const { default: mongoose } = require("mongoose");
 const ApiError = require("../../helpers/ApiError");
-const {sendNotificationByFcmToken} = require("../../helpers/sendNotificationByFcmToken");
+const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
 const { addNotificationService } = require("../Notification/notification.service");
 
 
@@ -74,7 +74,7 @@ const updatePayoutFrequency = async (userId, newFrequency) => {
 
 
 const getOrCreateCycle = async (partnerId, type) => {
-  console.log({type});
+  console.log({ type });
   const now = new Date();
 
   let cycle = await payoutCycleModel.findOne({
@@ -463,11 +463,11 @@ const getPendingPayoutListService = async (options = {}) => {
   //   : { payout_status: { $in: ["pending", "hold"] } };
 
   const initialMatch = {
-  paymentType: { $ne: "credit" }, // Exclude credit transactions
-  ...(status
-    ? { payout_status: status }
-    : { payout_status: { $in: ["pending", "hold"] } }),
-};
+    paymentType: { $ne: "credit" }, // Exclude credit transactions
+    ...(status
+      ? { payout_status: status }
+      : { payout_status: { $in: ["pending", "hold"] } }),
+  };
 
   // Default to last month if month/year not provided
   if (!month || !year || isNaN(month) || isNaN(year)) {
@@ -497,44 +497,44 @@ const getPendingPayoutListService = async (options = {}) => {
     },
 
     {
-  $group: {
-    _id: {
-      groupKey: {
-        $cond: [
-          // Instant payouts are always separate
-          { $eq: ["$paymentType", "instant"] },
-          "$_id",
+      $group: {
+        _id: {
+          groupKey: {
+            $cond: [
+              // Instant payouts are always separate
+              { $eq: ["$paymentType", "instant"] },
+              "$_id",
 
-          // Weekly and Monthly are grouped by payout cycle
-          "$payoutCycle"
-        ]
+              // Weekly and Monthly are grouped by payout cycle
+              "$payoutCycle"
+            ]
+          }
+        },
+
+        cycle: { $first: "$payoutCycle" },
+        partner: { $first: "$partner" },
+        paymentType: { $first: "$paymentType" },
+
+        total_gross_amount: { $sum: "$gross_amount" },
+        total_commission: { $sum: "$commission" },
+        total_net_amount: { $sum: "$net_amount" },
+
+        wallet_balance: {
+          $sum: {
+            $cond: [
+              { $eq: ["$paymentType", "withdraw"] },
+              "$net_amount",
+              0
+            ]
+          }
+        },
+
+        payout_status: { $first: "$payout_status" },
+        total_transactions: { $sum: 1 },
+
+        createdAt: { $max: "$createdAt" }
       }
     },
-
-    cycle: { $first: "$payoutCycle" },
-    partner: { $first: "$partner" },
-    paymentType: { $first: "$paymentType" },
-
-    total_gross_amount: { $sum: "$gross_amount" },
-    total_commission: { $sum: "$commission" },
-    total_net_amount: { $sum: "$net_amount" },
-
-    wallet_balance: {
-      $sum: {
-        $cond: [
-          { $eq: ["$paymentType", "withdraw"] },
-          "$net_amount",
-          0
-        ]
-      }
-    },
-
-    payout_status: { $first: "$payout_status" },
-    total_transactions: { $sum: 1 },
-
-    createdAt: { $max: "$createdAt" }
-  }
-},
 
     // {
     //   $group: {
@@ -590,12 +590,12 @@ const getPendingPayoutListService = async (options = {}) => {
 
     ...(payoutfrequency
       ? [
-          {
-            $match: {
-              "partner.payoutfrequency": payoutfrequency,
-            },
+        {
+          $match: {
+            "partner.payoutfrequency": payoutfrequency,
           },
-        ]
+        },
+      ]
       : []),
 
     {
@@ -624,25 +624,25 @@ const getPendingPayoutListService = async (options = {}) => {
 
     ...(search
       ? [
-          {
-            $match: {
-              $or: [
-                {
-                  "bank.account_name": {
-                    $regex: search,
-                    $options: "i",
-                  },
+        {
+          $match: {
+            $or: [
+              {
+                "bank.account_name": {
+                  $regex: search,
+                  $options: "i",
                 },
-                {
-                  "bank.account_number": {
-                    $regex: search,
-                    $options: "i",
-                  },
+              },
+              {
+                "bank.account_number": {
+                  $regex: search,
+                  $options: "i",
                 },
-              ],
-            },
+              },
+            ],
           },
-        ]
+        },
+      ]
       : []),
 
     {
@@ -662,12 +662,12 @@ const getPendingPayoutListService = async (options = {}) => {
 
     ...(payoutType
       ? [
-          {
-            $match: {
-              "cycle.type": payoutType,
-            },
+        {
+          $match: {
+            "cycle.type": payoutType,
           },
-        ]
+        },
+      ]
       : []),
 
     {
@@ -862,19 +862,22 @@ const completePayoutService = async (cycleId, adminId) => {
       },
       { session }
     );
-    await sendNotificationByFcmToken(
+    const receiverData = await userModel.findById(cycle.partner);
+    if (receiverData?.enabledPushNotification === true) {
+      await sendNotificationByFcmToken(
         cycle.partner,
         'payment',
         `Your payout has been completed and will reflect in your account shortly.`
-    )
+      )
+    }
     await addNotificationService(
-        {
-            sender: adminId,
-            targetUser: cycle.partner,
-            title: `payment`,
-            message: `Your payout has been completed and will reflect in your account shortly.`,
-            type: "payment",
-        }
+      {
+        sender: adminId,
+        targetUser: cycle.partner,
+        title: `payment`,
+        message: `Your payout has been completed and will reflect in your account shortly.`,
+        type: "payment",
+      }
     )
 
     await session.commitTransaction();

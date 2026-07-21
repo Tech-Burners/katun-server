@@ -289,13 +289,16 @@ const approveBookingService = async (id) => {
         const service = await serviceModel.findById(result.service);
         console.log({ service })
     }
-    await sendNotificationByFcmToken(
-        result.user,
-        'approval',
-        `your booking for ${service.name} has been approved`,
-        result._id,
-        'booking'
-    )
+    const userData = await userModel.findById(result.user);
+    if (userData && userData.enabledPushNotification) {
+        await sendNotificationByFcmToken(
+            result.user,
+            'approval',
+            `your booking for ${service.name} has been approved`,
+            result._id,
+            'booking'
+        )
+    }
     addNotificationService(
         {
             sender: result.provider,
@@ -347,13 +350,16 @@ const assignStuffService = async (id, stuff) => {
     if (result.status === "approved") {
         service = await serviceModel.findById(result.service);
     }
-    await sendNotificationByFcmToken(
-        result.user,
-        'booking approval',
-        `your booking for ${service.name} has been approved`,
-        result._id,
-        'booking'
-    )
+    const userData = await userModel.findById(result.user);
+    if (userData && userData.enabledPushNotification) {
+        await sendNotificationByFcmToken(
+            result.user,
+            'booking approval',
+            `your booking for ${service.name} has been approved`,
+            result._id,
+            'booking'
+        )
+    }
     await addNotificationService(
         {
             sender: result.provider,
@@ -412,13 +418,16 @@ const completeBookingService = async (id) => {
     if (!updatedBooking) {
         throw new ApiError(status.NOT_FOUND, 'Booking not found');
     }
-    await sendNotificationByFcmToken(
-        updatedBooking.user,
-        'booking completion',
-        `your booking for ${service.name} has been completed`,
-        updatedBooking._id,
-        'booking'
-    )
+    const receiverData = await userModel.findById(updatedBooking.user);
+    if (receiverData && receiverData.enabledPushNotification) {
+        await sendNotificationByFcmToken(
+            updatedBooking.user,
+            'booking completion',
+            `your booking for ${service.name} has been completed`,
+            updatedBooking._id,
+            'booking'
+        )
+    }
     await addNotificationService(
         {
             sender: updatedBooking.provider,
@@ -429,12 +438,12 @@ const completeBookingService = async (id) => {
         }
     )
     const userEmail = await userModel.findOne({ _id: updatedBooking.user }).select('email');
-// console.log(userEmail.email)
+    // console.log(userEmail.email)
     await emailWithNodemailer({
-    //   email: 'mdnasifurahman@gmail.com',
-      email: userEmail.email,
-      subject: "Service Completed",
-      html: `Your service ${service.name} has been completed`,
+        //   email: 'mdnasifurahman@gmail.com',
+        email: userEmail.email,
+        subject: "Service Completed",
+        html: `Your service ${service.name} has been completed`,
     });
 
 

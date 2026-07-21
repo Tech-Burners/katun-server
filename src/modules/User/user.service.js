@@ -22,6 +22,18 @@ const activeUserService=async(id)=>{
     return await userModel.findOneAndUpdate({ _id: id }, { isBan: false }, { new: true });
 }
 
+
+const getPushNotificationService = async (id) => {
+  return await userModel.findById(id).select("enabledPushNotification");
+}
+
+const togglePushNotificationService = async (id) => {
+  const user = await userModel.findById(id);
+  user.enabledPushNotification = !user.enabledPushNotification;
+  await user.save();
+  return user;
+}
+
 const bulkActiveUserService = async (userIds) => {
   return await userModel.updateMany(
     {
@@ -114,5 +126,7 @@ module.exports={
     bulkSuspendUserService,
     bulkGiveCreditService,
     bulkActiveUserService,
-    bulkActiveUserService
+    bulkActiveUserService,
+    togglePushNotificationService,
+    getPushNotificationService
 }

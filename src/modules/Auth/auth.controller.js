@@ -1058,6 +1058,8 @@ const userDetailsByID = catchAsync(async (req, res) => {
       location: result.user?.location,
       address: result.user?.address,
       amenities: result.partner?.amenities,
+      number: result.user?.number,
+      countryCode: result.user?.countryCode,
       serviceAutoApproved: result.partner?.serviceAutoApproved,
       // whatsappNumber: result.user.whatsappNumber,
       number: result.user.number,

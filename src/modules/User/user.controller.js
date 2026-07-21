@@ -1,6 +1,6 @@
 const { default: status } = require("http-status");
 const catchAsync = require("../../helpers/catchAsync");
-const { suspendUserService, activeUserService, giveFlagService, giveNoteService, giveCreditService, fcmTokenService, deleteFcmTokenService, bulkGiveFlagService, bulkGiveNoteService, bulkGiveCreditService, bulkSuspendUserService, bulkActiveUserService } = require("./user.service");
+const { suspendUserService, activeUserService, giveFlagService, giveNoteService, giveCreditService, fcmTokenService, deleteFcmTokenService, bulkGiveFlagService, bulkGiveNoteService, bulkGiveCreditService, bulkSuspendUserService, bulkActiveUserService, togglePushNotificationService, getPushNotificationService } = require("./user.service");
 const response = require("../../helpers/response");
 const { checkServiceAvailabilityService } = require("../Service/service.service");
 
@@ -45,6 +45,22 @@ const activeUserController = catchAsync(async (req, res) => {
   const result = await activeUserService(req.params.id);
   return res.status(status.OK).json(response({
     status: 'success', statusCode: status.OK, type: "User", message: "User activated successfully", data: {name : result.fullName}
+  }));
+})
+
+
+const togglePushNotificationController = catchAsync(async (req, res) => {
+  const result = await togglePushNotificationService(req.User._id);
+  return res.status(status.OK).json(response({
+    status: 'success', statusCode: status.OK, type: "User", message: "notification setting updated", data: {name : result.fullName}
+  }));
+})
+
+
+const getPushNotificationController = catchAsync(async (req, res) => {
+  const result = await getPushNotificationService(req.User._id);
+  return res.status(status.OK).json(response({
+    status: 'success', statusCode: status.OK, type: "User", message: "fetch notification setting", data:result
   }));
 })
 
@@ -245,5 +261,7 @@ module.exports = {
   bulkAddNoteController,
   bulkAddCreditController,
   bulkSuspendUserController,
-  bulkActiveUserController
+  bulkActiveUserController,
+  togglePushNotificationController,
+  getPushNotificationController
 }

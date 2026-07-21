@@ -85,7 +85,7 @@ const bookController = catchAsync(async (req, res) => {
 
     const booking = await bookingService(bookingData);
 
-    
+
 
     // REPLACE the existing notification block (cash/wallet section) with this:
     // console.log({ partnerDetails })
@@ -106,14 +106,16 @@ const bookController = catchAsync(async (req, res) => {
           type: "booking",
           bookingId: booking._id
         });
-
-        await sendNotificationByFcmToken(
-          userId,
-          "New Booking",
-          "Booking approved",
-          booking._id,
-          "booking"
-        );
+        const userData = await userModel.findById(userId);
+        if (userData && userData.enabledPushNotification) {
+          await sendNotificationByFcmToken(
+            userId,
+            "New Booking",
+            "Booking approved",
+            booking._id,
+            "booking"
+          )
+        };
         await addNotificationService({
           sender: partner,
           targetUser: userId,
@@ -122,15 +124,18 @@ const bookController = catchAsync(async (req, res) => {
           type: "booking",
           bookingId: booking._id
         });
-        
+
       } else {
-        await sendNotificationByFcmToken(
-          partner,
-          "New Booking",
-          "New Booking waiting for approval",
-          booking._id,
-          "booking"
-        );
+        const partnerData = await userModel.findById(partner);
+        if (partnerData?.enabledPushNotification === true) {
+          await sendNotificationByFcmToken(
+            partner,
+            "New Booking",
+            "New Booking waiting for approval",
+            booking._id,
+            "booking"
+          )
+        };
         await addNotificationService({
           sender: userId,
           targetUser: partner,
@@ -1033,13 +1038,17 @@ const cancelBooking = catchAsync(async (req, res) => {
     await booking.save();
   }
   if (cancelledBy === "partner") {
-    await sendNotificationByFcmToken(
-      booking.user,
-      'booking cancellation',
-      "Booking cancelled by partner",
-      booking._id,
-      'booking'
-    )
+    const receiverData = await userModel.findById(booking.user)
+    if (receiverData?.enabledPushNotification === true) {
+      await sendNotificationByFcmToken(
+        booking.user,
+        'booking cancellation',
+        "Booking cancelled by partner",
+        booking._id,
+        'booking'
+      )
+    }
+
     await addNotificationService({
       sender: booking.provider,
       targetUser: booking.user,
@@ -1049,13 +1058,16 @@ const cancelBooking = catchAsync(async (req, res) => {
       bookingId: booking._id
     })
   } else if (cancelledBy === "user") {
-    await sendNotificationByFcmToken(
-      booking.provider,
-      'booking cancellation',
-      "Booking cancelled by user",
-      booking._id,
-      'booking'
-    )
+    const providerData = await userModel.findById(booking.provider)
+    if (providerData?.enabledPushNotification === true) {
+      await sendNotificationByFcmToken(
+        booking.provider,
+        'booking cancellation',
+        "Booking cancelled by user",
+        booking._id,
+        'booking'
+      )
+    }
     await addNotificationService({
       sender: booking.user,
       targetUser: booking.provider,

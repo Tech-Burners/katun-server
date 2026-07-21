@@ -44,7 +44,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: false,
   },
-
+  enabledPushNotification: {
+    type: Boolean,
+    default: true
+  },
   activePayoutCycle: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "PayoutCycle",
