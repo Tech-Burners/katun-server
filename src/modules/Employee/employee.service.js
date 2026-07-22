@@ -427,7 +427,7 @@ const addNoteService = async (id, data) => {
         seassion.startTransaction();
         const employee = await employeeModel.findById(id).session(seassion);
         const userData = await userModel.findByIdAndUpdate(employee.user, { note: data.note }, { new: true, session: seassion });
-        console.log({ userData });
+        // console.log({ userData });
         await addAuditReport({
             action: "Note",
             summary: `Employee ${userData.fullName} added note`,
@@ -445,22 +445,22 @@ const addNoteService = async (id, data) => {
 
 
 const allocateCreditEmployeeService = async (employeeId, data) => {
-    console.log({ data });
+    // console.log({ data });
     const session = await mongoose.startSession();
 
     try {
         session.startTransaction();
         let company;
         if (data.role === 'hr') {
-            console.log("hr")
+            // console.log("hr")
             company = await employerModel.findOne({ user: data.performedBy })
-            console.log({ company })
+            // console.log({ company })
         } else if (data.role === 'sub_hr_admin') {
-            console.log("sub_hr_admin")
+            // console.log("sub_hr_admin")
             const parent = await adminModel.findOne({ user: data.performedBy })
-            console.log({ parent })
+            // console.log({ parent })
             company = await employerModel.findOne({ user: parent.parent })
-            console.log({ company })
+            // console.log({ company })
         }
         if (company.creditBalance < data.amount) {
             throw new ApiError(412, "Insufficient balance")
@@ -517,7 +517,7 @@ const flagEmployeeService = async (employeeId, performedBy) => {
     try {
         session.startTransaction();
         const emply = await employeeModel.findById(employeeId).select("user");
-        console.log({ emply })
+        // console.log({ emply })
         const userData = await userModel
             .findById(emply.user)
             .session(session);
@@ -556,7 +556,7 @@ const suspendEmployeeService = async (id, user) => {
     session.startTransaction();
     try {
         const result = await employeeModel.findByIdAndUpdate(id, { status: "suspended" }, { new: true }, { session });
-        console.log({ result });
+        // console.log({ result });
         await userModel.findByIdAndUpdate(result.user, { isBan: true }, { session });
         await addAuditReport({
             action: "Suspend",
@@ -580,7 +580,7 @@ const activeEmployeeService = async (id, user) => {
     session.startTransaction();
     try {
         const result = await employeeModel.findByIdAndUpdate(id, { status: "active" }, { new: true }, { session });
-        console.log({ result });
+        // console.log({ result });
         await userModel.findByIdAndUpdate(result.user, { isBan: false }, { session });
         await addAuditReport({
             action: "Activate",
@@ -629,7 +629,7 @@ const deleteEmployeeService = async (id, performedBy) => {
         const employeeUser = await userModel
             .findById(employee.user)
             .session(session);
-        console.log({ employeeUser });
+        // console.log({ employeeUser });
 
         if (employeeUser) {
             employeeUser.email = `deleted_${Date.now()}_${employeeUser.email}`;

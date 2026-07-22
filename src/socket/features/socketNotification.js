@@ -24,7 +24,7 @@ const notificationHandler = (io, socket) => {
 
 
 const EmiteNotificationHandler = (data) => {
-  console.log({data})
+  // console.log({data})
   io.emit(`get notification::${data.targetUser}`, {
     status: 200,
     message: data.title,

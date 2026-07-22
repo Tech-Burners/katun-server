@@ -161,7 +161,7 @@ const login = async (identifier, receiverType, inputPassword) => {
     user = await userModel
       .findOne({ email: identifier.email })
       .select("+password");
-    console.log("user2", user);
+    // console.log("user2", user);
 
     if (!user) {
       throw new ApiError(status.NOT_FOUND, "User not found");
@@ -219,7 +219,7 @@ const getUserById = async (id) => {
 };
 
 const updateUserById = async (id, data) => {
-  console.log({id, data });
+  // console.log({id, data });
   const userPayload = {
     fullName: data.fullName,
     image: data.image,
@@ -230,9 +230,9 @@ const updateUserById = async (id, data) => {
     number: data.number,
     countryCode: data.countryCode
   };
-console.log({ userPayload });
+// console.log({ userPayload });
   const user = await userModel.findByIdAndUpdate(id, userPayload, { new: true });
-  console.log({ user });
+  // console.log({ user });
 
   let partnerData = null;
   let companyData = null;
@@ -247,14 +247,14 @@ console.log({ userPayload });
       serviceAutoApproved: data.serviceAutoApproved,
       aboutUs: data.aboutUs
     };
-    console.log({ partnerPayload });
+    // console.log({ partnerPayload });
 
     partnerData = await partnerModel.findOneAndUpdate(
       { user: id },
       partnerPayload,
       { new: true }
     );
-    console.log({ partnerData });
+    // console.log({ partnerData });
   }
 
   if (user.role === 'hr') {

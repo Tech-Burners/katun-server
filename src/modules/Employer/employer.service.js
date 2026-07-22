@@ -571,7 +571,7 @@ const bulkSuspendEmployerService = async (employerIds, adminId) => {
       },
       { session }
     );
-    console.log({ employers });
+    // console.log({ employers });
 
     // Suspend linked users
 const userIds = employers.flatMap((employer) =>
@@ -589,7 +589,7 @@ const userIds = employers.flatMap((employer) =>
       },
       { session }
     );
-    console.log({ userResult });
+    // console.log({ userResult });
 
     // Audit logs
     await Promise.all(

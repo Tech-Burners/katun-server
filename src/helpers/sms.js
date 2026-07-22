@@ -13,7 +13,7 @@ const TwilioClient = twilio(accountSid, authToken);
 
 
 const sendSMSOtp = async (phoneNumber, otp, purpose = "verification") => {
-    console.log({ phoneNumber, otp, purpose });
+    // console.log({ phoneNumber, otp, purpose });
     if (!phoneNumber) {
         throw new ApiError(httpStatus.BAD_REQUEST, "Phone number is required");
     }
@@ -54,7 +54,7 @@ const sendSMSINNumber = async (phoneNumber, message, type = "general") => {
 
     try {
 
-        console.log(`Sending SMS of type "${type}" to ${phoneNumber}: ${message}`);
+        // console.log(`Sending SMS of type "${type}" to ${phoneNumber}: ${message}`);
 
         const smsResponse = await TwilioClient.messages.create({
             body: message,

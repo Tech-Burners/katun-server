@@ -619,7 +619,7 @@ const withdrawCreditService = async (user, amount) => {
 
 
 const allPayoutOfAPartnerService = async (user, option = {}) => {
-  console.log("all transaction for partner");
+  // console.log("all transaction for partner");
 
   let { page = 1, limit = 10 } = option;
 

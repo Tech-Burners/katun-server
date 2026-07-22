@@ -74,7 +74,7 @@ const deleteFcmTokenService = async (id) => {
 }
 
 const fcmTokenService = async (id, fcm) => {
-    console.log({ id, fcm });
+    // console.log({ id, fcm });
   return await userModel.findByIdAndUpdate(id, { fcmToken: fcm }, { new: true });
 }
 

@@ -74,7 +74,7 @@ const updatePayoutFrequency = async (userId, newFrequency) => {
 
 
 const getOrCreateCycle = async (partnerId, type) => {
-  console.log({ type });
+  // console.log({ type });
   const now = new Date();
 
   let cycle = await payoutCycleModel.findOne({
@@ -107,13 +107,13 @@ const getOrCreateCycle = async (partnerId, type) => {
     console.log("Instant payout cycle created with start and end date as now.");
   }
 
-  console.log({
-    partner: partnerId,
-    type,
-    startDate,
-    endDate,
-    status: "open",
-  });
+  // console.log({
+  //   partner: partnerId,
+  //   type,
+  //   startDate,
+  //   endDate,
+  //   status: "open",
+  // });
   cycle = await payoutCycleModel.create({
     partner: partnerId,
     type,
@@ -863,7 +863,7 @@ const completePayoutService = async (cycleId, adminId) => {
       { session }
     );
     const receiverData = await userModel.findById(cycle.partner);
-    console.log({receiverData})
+    // console.log({receiverData})
     if (receiverData?.enabledPushNotification === true) {
       await sendNotificationByFcmToken(
         cycle.partner,

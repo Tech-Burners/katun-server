@@ -18,10 +18,10 @@ const sendNotificationByFcmToken = async (
   bookingId,
   type
 ) => {
-  console.log({ receiverId, textMessage });
+  // console.log({ receiverId, textMessage });
 
   const findUser = await userModel.findOne({ _id: receiverId });
-  console.log({ findUser });
+  // console.log({ findUser });
 
   if (!findUser) {
     console.log(`User with id ${receiverId} not found`);
@@ -53,7 +53,7 @@ const sendNotificationByFcmToken = async (
     data,
     token: fcmToken,
   };
-  console.log({ message })
+  // console.log({ message })
   try {
     const response = await getMessaging().send(message);
     console.log("Successfully sent message:", response);

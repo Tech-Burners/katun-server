@@ -92,7 +92,7 @@ const getAllEmployeeController = catchAsync(async (req, res) => {
 
     const result = await getAllEmployeeService(option);
 
-    console.log({ result });
+    // console.log({ result });
 
     return res.status(status.OK).json(
         response({

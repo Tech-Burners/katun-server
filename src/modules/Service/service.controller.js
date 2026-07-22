@@ -5,14 +5,10 @@ const response = require("../../helpers/response");
 
 
 const addServiceController = catchAsync(async (req, res) => {
-    console.log("HIIIIIIIIIIIIIIIIIII")
-    console.log(req.body)
-    console.log(req.body.data)
     if (req.file) {
         req.body.image = `/uploads/service/${req.file.filename}`
     }
     req.body.user = req.User._id;
-    console.log("hi:::::",req.body)
     const newService = await addServiceService(req.body);
     if (newService) return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Service", message: "Service added successfully", data: newService, }));
     else return res.status(status.BAD_REQUEST).json(response({ status: 'error', statusCode: status.BAD_REQUEST, type: "Service", message: "Service add failed" }));

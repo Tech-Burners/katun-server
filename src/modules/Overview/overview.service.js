@@ -103,7 +103,6 @@ const getPartnerDashboardCount = async (partnerUserId) => {
   ]);
 
   const totalEarning = earnings[0]?.totalEarning || 0;
-  console.log({ partnerUserId })
 
   const pendingPayouts = await Transaction.countDocuments({
     partner: partnerUserId,

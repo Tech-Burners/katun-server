@@ -854,7 +854,7 @@ const allServiceService = async (options) => {
   const skip = (page - 1) * limit;
   let coordinates = null;
   let useLocationFilter = false;
-  console.log("📌 Input Options:", { userId, lat, lng });
+  // console.log("📌 Input Options:", { userId, lat, lng });
 
   // ---------- LOCATION COORDINATES ----------
   // Only use explicit lat/lng from query (for "near me" behavior)
@@ -862,11 +862,11 @@ const allServiceService = async (options) => {
   if (lat && lng) {
     coordinates = [Number(lng), Number(lat)];
     useLocationFilter = true;
-    console.log("📍 Using explicit lat/lng coordinates");
+    // console.log("📍 Using explicit lat/lng coordinates");
   }
   // Removed auto user location fetch to fix inconsistency between auth/no-auth
 
-  console.log("📍 Coordinates:", coordinates ? "YES" : "NO");
+  // console.log("📍 Coordinates:", coordinates ? "YES" : "NO");
 
   const pipeline = [];
 
@@ -921,7 +921,7 @@ const allServiceService = async (options) => {
     });
     pipeline.push({ $sort: { distance: 1 } });
     locationFilterApplied = true;
-    console.log(`📍 Location filter applied (${radiusKm}km)`);
+    // console.log(`📍 Location filter applied (${radiusKm}km)`);
   }
 
   // ---------- AVAILABILITY CHECK ----------
@@ -985,7 +985,7 @@ const allServiceService = async (options) => {
 
   // 🔥 SMART FALLBACK: If no results with location filter → try without location
   if (locationFilterApplied && totalResults === 0) {
-    console.log("⚠️ No services found nearby. Fetching all services as fallback...");
+    // console.log("⚠️ No services found nearby. Fetching all services as fallback...");
     // Re-run pipeline without location filter stages
     const fallbackPipeline = pipeline.filter(stage => 
       !stage.$addFields &&
@@ -995,10 +995,10 @@ const allServiceService = async (options) => {
     const fallbackResult = await serviceModel.aggregate(fallbackPipeline);
     services = fallbackResult[0]?.result || [];
     totalResults = fallbackResult[0]?.totalCount[0]?.count || 0;
-    console.log(`📈 Fallback returned ${totalResults} services`);
+    // console.log(`📈 Fallback returned ${totalResults} services`);
   }
 
-  console.log(`📊 Final Results: ${services.length} / ${totalResults}`);
+  // console.log(`📊 Final Results: ${services.length} / ${totalResults}`);
 
   return {
     result: services,

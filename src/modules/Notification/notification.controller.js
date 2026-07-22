@@ -48,7 +48,6 @@ const readAllNotification = catchAsync(async (req, res) => {
 const sentNotificationByFcmController = catchAsync(async (req, res) => {
     
     const data = req.body;
-    console.log({data})
 
     const result = await sentNotificationByFcmService(data);
 

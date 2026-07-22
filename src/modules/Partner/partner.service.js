@@ -17,7 +17,7 @@ const addPartnerService = async (data) => {
 
 
 const myDocumentsService = async (userId) => {
-    console.log({ userId });
+    // console.log({ userId });
 
     const result = await partnerModel
         .findOne({ user: userId })
@@ -111,7 +111,7 @@ const bulkSuspendPartnerService = async (partnerIds, adminId) => {
 
 const giveFlagService = async (id, user) => {
     const userData = await partnerModel.findById(id).populate('user')
-    console.log({userData})
+    // console.log({userData})
     const result = await userModel.findByIdAndUpdate(userData.user, { $inc: { flagCount: 1 } }, { new: true });
     await addAuditReport({
             action: "Flag",

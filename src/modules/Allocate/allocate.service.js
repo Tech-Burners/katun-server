@@ -105,13 +105,13 @@ const employerModel = require('../Employer/employer.model');
 
 
 const addAllocatedService = async (data) => {
-    console.log({ data });
+    // console.log({ data });
     const session = await mongoose.startSession();
     session.startTransaction();
     
     if(data.role==='hr'){ 
         const company = await employerModel.findOne({ user: data.user });
-        console.log({ company })
+        // console.log({ company })
         data.companyId = company._id ,
         data.isCreatedByAdmin = false
     }
@@ -173,7 +173,7 @@ const addAllocatedService = async (data) => {
 const getAllAllocateService = async (options, filters) => {
     const { page = 1, limit = 10 } = options;
     const skip = (page - 1) * limit;
-    console.log({ filters });
+    // console.log({ filters });
 
     const [result, totalResults] = await Promise.all([
         allocatedModel.aggregate([

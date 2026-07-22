@@ -39,7 +39,7 @@ const auth = (userRoles, { optional = false } = {}) => {
     }
     
     if (decodedData.tokenVersion !== user.tokenVersion) {
-      console.log("kkkkk", decodedData.tokenVersion, user.tokenVersion );
+      // console.log("kkkkk", decodedData.tokenVersion, user.tokenVersion );
       throw new ApiError(
         status.UNAUTHORIZED,
         "Session expired. Please login again."

@@ -43,7 +43,7 @@ const getAllAllocateController = catchAsync(async (req, res) => {
             user: { $in: [req.User._id] },
             isDeleted: false
         });
-        console.log({ company });
+        // console.log({ company });
         // HR can only see allocations for their company
         filters.companyId = company._id;
     }

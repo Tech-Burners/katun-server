@@ -156,7 +156,7 @@ const bookingService = async (data) => {
      * DIGITAL PAYMENT
      * --------------------------------
      */
-    console.log("digital:::", { data })
+    // console.log("digital:::", { data })
     return await bookingModel.create(data);
 };
 
@@ -165,10 +165,10 @@ const bookingService = async (data) => {
 
 
 const modifyBookingService = async (bookingId, loginUser, data) => {
-    console.log({ bookingId, loginUser, data })
+    // console.log({ bookingId, loginUser, data })
     const booking = await bookingModel.findById(bookingId);
     if (loginUser != booking.user.toString() || booking.status != "approved") {
-        console.log("Unauthorized modification attempt", { loginUser, bookingUser: booking.user.toString(), bookingStatus: booking.status })
+        // console.log("Unauthorized modification attempt", { loginUser, bookingUser: booking.user.toString(), bookingStatus: booking.status })
         throw new ApiError(status.BAD_REQUEST, "You can't modify this booking");
     }
     return await bookingModel.findByIdAndUpdate(bookingId, data, { new: true });
@@ -194,7 +194,7 @@ const markAsCompletedService = async (id, data) => {
                 booking.user,
                 'Service Completed',
                 'Your service has been completed',
-                booking._id,
+                booking._id, 
                 'booking'
             );
         }
@@ -402,7 +402,7 @@ const completeBookingService = async (id) => {
     const service = await serviceModel.findOne({ _id: booking.service })
     // console.log({ service })
     const comission = await commissionModel.findOne({ category: service.category })
-    console.log({ comission })
+    // console.log({ comission })
     comissionAmount = booking.totalPrice * comission.commission
     if (booking.paymentMethod === 'cash') {
         if (provider.digitalWallet < comissionAmount) {
@@ -432,7 +432,7 @@ const completeBookingService = async (id) => {
         throw new ApiError(status.NOT_FOUND, 'Booking not found');
     }
     const receiverData = await userModel.findById(updatedBooking.user);
-    console.log({ receiverData })
+    // console.log({ receiverData })
     if (receiverData && receiverData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             updatedBooking.user,
@@ -1471,7 +1471,7 @@ const allCompletedBookingService = async (user, option) => {
 
 
 const allCancelledBookingService = async (user, option) => {
-    console.log({ user, option })
+    // console.log({ user, option })
     const { page, limit, search, paymentMethod } = option;
 
     const skip = (page - 1) * limit;

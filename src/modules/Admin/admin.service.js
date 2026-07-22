@@ -30,12 +30,12 @@ const addAdminService = async (data) => {
             if (company) {
                 throw new ApiError(409, 'This email already used!')
             }
-            console.log(data.loginUser, "data.loginUser");
+            // console.log(data.loginUser, "data.loginUser");
             if (data.role === 'sub_hr_admin') {
                 const companydata = await employerModel.findOne({
                     user: { $in: [data.loginUser] }
                 });
-                console.log({ companydata });
+                // console.log({ companydata });
                 await employerModel.findByIdAndUpdate(
                     companydata._id,
                     {
@@ -89,26 +89,26 @@ const deleteAdminService = async (id) => {
 
 const editAdminService = async (id, data) => {
     const admin = await adminModel.findById(id);
-    console.log({ admin });
+    // console.log({ admin });
     if (!admin) {
         throw new ApiError(404, 'Admin not found');
     }
     let permissionChanged = false;
     if (data.categoryPermissions) {
-        console.log("data.categoryPermissions", data.categoryPermissions);
+        // console.log("data.categoryPermissions", data.categoryPermissions);
         permissionChanged = JSON.stringify(admin.categoryPermissions.sort()) !==
             JSON.stringify(data.categoryPermissions.sort());
-console.log("permissionChanged", permissionChanged);
+// console.log("permissionChanged", permissionChanged);
         admin.categoryPermissions = data.categoryPermissions;
     }
     await admin.save();
     if (permissionChanged) {
-        console.log("permissionChanged", permissionChanged);
+        // console.log("permissionChanged", permissionChanged);
         const user = await userModel.findByIdAndUpdate(
             admin.user,
             { $inc: { tokenVersion: 1 } }
         );
-        console.log("user", user);
+        // console.log("user", user);
     }
     return admin;
 }; 0
@@ -161,7 +161,7 @@ console.log("permissionChanged", permissionChanged);
 
 
 const allAdminService = async (options, filter) => {
-    console.log({ filter });
+    // console.log({ filter });
 
     const { page = 1, limit = 10 } = options;
 

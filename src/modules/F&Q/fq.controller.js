@@ -26,7 +26,6 @@ const deleteFQ = catchAsync(async (req, res) => {
 
 
 const getFQ = catchAsync(async (req, res) => {
-    console.log("hiiiii")
     const options = {
         page: Number(req.query.page || 1),
         limit : Number(req.query.limit || 10)

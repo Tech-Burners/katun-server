@@ -35,7 +35,7 @@ const flutterwaveWebhook = async (req, res) => {
       return res.status(200).end();
 
     const payment = payload.data;
-    console.log({ payment });
+    // console.log({ payment });
 
     if (payment.status !== "successful")
       return res.status(200).end();
@@ -139,7 +139,7 @@ const flutterwaveWebhook = async (req, res) => {
 
       // Send push notification to partner
       const sender = await userModel.findById(transaction.user);
-      console.log({ sender })
+      // console.log({ sender })
 
       if (sender?.enabledPushNotification === true) {
         await sendNotificationByFcmToken(
@@ -206,7 +206,7 @@ const flutterwaveWebhook = async (req, res) => {
         isDeleted: false,
       });
 
-      console.log({ partnerDetails })
+      // console.log({ partnerDetails })
 
       if (partnerDetails?.enabledPushNotification === true) {
         if (data.status === "approved") {

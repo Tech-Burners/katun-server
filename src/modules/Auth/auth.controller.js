@@ -46,7 +46,7 @@ if (email) {
     "email",
     password
   );
-  console.log("user1", user);
+  // console.log("user1", user);
 } else {
   if (!number || !countryCode) {
     throw new ApiError(
@@ -69,7 +69,7 @@ if (email) {
   let admin;
   // if (user.role === 'admin' || user.role === 'hr') {
   if (['admin', 'hr', 'sub_hr_admin', 'sub_admin'].includes(user.role)) {
-    console.log("role", user.role)
+    // console.log("role", user.role)
     admin = await getAdminByUserId(user._id);
   }
   const token = await tokenGenerator(user, admin);
@@ -394,15 +394,15 @@ const allUserController = catchAsync(async (req, res) => {
 
 // Validate OTP
 const otpVerification = catchAsync(async (req, res) => {
-  console.log(req.body);
+  // console.log(req.body);
   const email = req.User?.email || req.body.email;
   const number = req.User?.number || req.body.number;
   const countryCode = req.User?.countryCode || req.body.countryCode;
-  console.log({ email, number, countryCode });
+  // console.log({ email, number, countryCode });
 
   const fullPhoneNumber =
     number && countryCode ? `${countryCode}${number}` : null;
-console.log({ fullPhoneNumber });
+// console.log({ fullPhoneNumber });
   let otpData;
 
   if (email) {
@@ -421,7 +421,7 @@ console.log({ fullPhoneNumber });
       req.body.purpose,
       req.body.otp
     );
-    console.log({ otpData });
+    // console.log({ otpData });
   }
 
   if (otpData && otpData.purpose === "email-verification") {
@@ -453,7 +453,7 @@ console.log({ fullPhoneNumber });
         number,
         countryCode,
       });
-      console.log({ user });
+      // console.log({ user });
     }
 
     const accessToken = resetTokenGenerator(user);
@@ -470,7 +470,7 @@ console.log({ fullPhoneNumber });
 });
 
 const otpVerificationForPartner = catchAsync(async (req, res) => {
-  console.log(req.User);
+  // console.log(req.User);
   // allow both flows
   const email = req.User?.email || req.body.email;
 
@@ -737,7 +737,7 @@ const forgetPassword = catchAsync(async (req, res) => {
 const resetPassword = catchAsync(async (req, res) => {
 
   const user = await getUserById(req.ResetUser._id);
-  console.log({ user });
+  // console.log({ user });
 
   if (!user)
     throw new ApiError(404, "User not found");
@@ -860,7 +860,7 @@ const updateProfile = catchAsync(async (req, res) => {
       req.body.image = `/uploads/users/${filename}`;
     }
   }
-  console.log("controileer", req.body)
+  // console.log("controileer", req.body)
 
   const result = await updateUserById(user._id, req.body);
 
@@ -1044,7 +1044,7 @@ const myDocumentsController = catchAsync(async (req, res) => {
 
 const userDetailsByID = catchAsync(async (req, res) => {
   const result = await profileByIdService(req.User._id);
-  console.log({ result });
+  // console.log({ result });
 
   if (!result) {
     throw new ApiError(status.NOT_FOUND, "User not found");
