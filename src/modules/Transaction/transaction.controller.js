@@ -88,7 +88,7 @@ const bookController = catchAsync(async (req, res) => {
 
 
     // REPLACE the existing notification block (cash/wallet section) with this:
-    // console.log({ partnerDetails })
+    console.log({ partnerDetails })
     if (partnerDetails?.enabledPushNotification === true) {
       if (isAutoApproved === true) {
         await sendNotificationByFcmToken(
@@ -107,6 +107,7 @@ const bookController = catchAsync(async (req, res) => {
           bookingId: booking._id
         });
         const userData = await userModel.findById(userId);
+        console.log({ userData })
         if (userData && userData.enabledPushNotification) {
           await sendNotificationByFcmToken(
             userId,
@@ -127,6 +128,7 @@ const bookController = catchAsync(async (req, res) => {
 
       } else {
         const partnerData = await userModel.findById(partner);
+        console.log({ partnerData })
         if (partnerData?.enabledPushNotification === true) {
           await sendNotificationByFcmToken(
             partner,
@@ -154,6 +156,7 @@ const bookController = catchAsync(async (req, res) => {
       subject: "New Booking",
       html: `You have a new booking from ${req.User.fullName}. Please check your dashboard for details.`,
     });
+    console.log(req.User,"==========")
     await emailWithNodemailer({
       // email: 'mdnasifurahman@gmail.com',
       email: req.User.email,
@@ -1039,6 +1042,7 @@ const cancelBooking = catchAsync(async (req, res) => {
   }
   if (cancelledBy === "partner") {
     const receiverData = await userModel.findById(booking.user)
+    console.log({ receiverData })
     if (receiverData?.enabledPushNotification === true) {
       await sendNotificationByFcmToken(
         booking.user,
@@ -1059,6 +1063,7 @@ const cancelBooking = catchAsync(async (req, res) => {
     })
   } else if (cancelledBy === "user") {
     const providerData = await userModel.findById(booking.provider)
+    console.log({ providerData })
     if (providerData?.enabledPushNotification === true) {
       await sendNotificationByFcmToken(
         booking.provider,

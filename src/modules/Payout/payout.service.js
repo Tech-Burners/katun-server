@@ -863,6 +863,7 @@ const completePayoutService = async (cycleId, adminId) => {
       { session }
     );
     const receiverData = await userModel.findById(cycle.partner);
+    console.log({receiverData})
     if (receiverData?.enabledPushNotification === true) {
       await sendNotificationByFcmToken(
         cycle.partner,

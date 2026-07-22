@@ -161,6 +161,7 @@ const login = async (identifier, receiverType, inputPassword) => {
     user = await userModel
       .findOne({ email: identifier.email })
       .select("+password");
+    console.log("user2", user);
 
     if (!user) {
       throw new ApiError(status.NOT_FOUND, "User not found");

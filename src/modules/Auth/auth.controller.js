@@ -46,6 +46,7 @@ if (email) {
     "email",
     password
   );
+  console.log("user1", user);
 } else {
   if (!number || !countryCode) {
     throw new ApiError(

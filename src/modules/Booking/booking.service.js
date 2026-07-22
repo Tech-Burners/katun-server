@@ -187,6 +187,17 @@ const markAsCompletedService = async (id, data) => {
             booking.status = "completed";
         }
         await booking.save();
+        const receiverData = await userModel.findById(booking.user);
+        console.log({ receiverData });
+        if (receiverData && receiverData.enabledPushNotification) {
+            sendNotificationByFcmToken(
+                booking.user,
+                'Service Completed',
+                'Your service has been completed',
+                booking._id,
+                'booking'
+            );
+        }
         return true
     }
     else {
@@ -290,6 +301,7 @@ const approveBookingService = async (id) => {
         console.log({ service })
     }
     const userData = await userModel.findById(result.user);
+    console.log({ userData })
     if (userData && userData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             result.user,
@@ -351,6 +363,7 @@ const assignStuffService = async (id, stuff) => {
         service = await serviceModel.findById(result.service);
     }
     const userData = await userModel.findById(result.user);
+    console.log({ userData })
     if (userData && userData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             result.user,
@@ -419,6 +432,7 @@ const completeBookingService = async (id) => {
         throw new ApiError(status.NOT_FOUND, 'Booking not found');
     }
     const receiverData = await userModel.findById(updatedBooking.user);
+    console.log({ receiverData })
     if (receiverData && receiverData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             updatedBooking.user,

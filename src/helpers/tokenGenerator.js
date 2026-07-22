@@ -17,6 +17,7 @@ const tokenGenerator = async (user, admin) => {
     payload.isSupperAdmin = admin.isSupperAdmin,
     payload.parent = admin.parent
   }
+  console.log("payload", payload);
   return await jwt.sign(payload, process.env.JWT_ACCESS_TOKEN, {
     expiresIn: '1y',
   });

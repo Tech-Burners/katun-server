@@ -13,7 +13,7 @@ const normalizePaymentMethod = (method) => {
   const m = method.toLowerCase();
 
   if (m.includes("card")) return "card";
-  if (m.includes("bank")) return "banktransfer"; 
+  if (m.includes("bank")) return "banktransfer";
   if (m.includes("ussd")) return "ussd";
   if (m.includes("wallet")) return "wallet";
 
@@ -90,70 +90,73 @@ const flutterwaveWebhook = async (req, res) => {
     }
 
 
-  //   if (transaction.paymentType === "tip") {
-  //     await userModel.findByIdAndUpdate(
-  //       transaction.partner, // already on the transaction, no meta needed
-  //       { $inc: { digitalWallet: transaction.net_amount } },
-  //       { new: true }
-  //     );
-  //     //tips
-  // if (transaction.booking) {
-  //   await bookingModel.findByIdAndUpdate(
-  //     transaction.booking,
-  //     {
-  //       $inc: { tips: transaction.net_amount }
-  //     }
-  //   );
-  // }
+    //   if (transaction.paymentType === "tip") {
+    //     await userModel.findByIdAndUpdate(
+    //       transaction.partner, // already on the transaction, no meta needed
+    //       { $inc: { digitalWallet: transaction.net_amount } },
+    //       { new: true }
+    //     );
+    //     //tips
+    // if (transaction.booking) {
+    //   await bookingModel.findByIdAndUpdate(
+    //     transaction.booking,
+    //     {
+    //       $inc: { tips: transaction.net_amount }
+    //     }
+    //   );
+    // }
 
-  //     transaction.payment_status = "successful";
-  //     await transaction.save();
+    //     transaction.payment_status = "successful";
+    //     await transaction.save();
 
-  //     return res.status(200).end();
-  //   }
+    //     return res.status(200).end();
+    //   }
 
-  if (transaction.paymentType === "tip") {
-  await userModel.findByIdAndUpdate(
-    transaction.partner,
-    {
-      $inc: {
-        digitalWallet: transaction.net_amount,
-      },
-    },
-    {
-      new: true,
-    }
-  );
-
-  // Update booking tips
-  if (transaction.booking) {
-    await bookingModel.findByIdAndUpdate(
-      transaction.booking,
-      {
-        $inc: {
-          tips: transaction.net_amount,
+    if (transaction.paymentType === "tip") {
+      await userModel.findByIdAndUpdate(
+        transaction.partner,
+        {
+          $inc: {
+            digitalWallet: transaction.net_amount,
+          },
         },
+        {
+          new: true,
+        }
+      );
+
+      // Update booking tips
+      if (transaction.booking) {
+        await bookingModel.findByIdAndUpdate(
+          transaction.booking,
+          {
+            $inc: {
+              tips: transaction.net_amount,
+            },
+          }
+        );
       }
-    );
-  }
 
-  // Send push notification to partner
-  const sender = await userModel.findById(transaction.user);
+      // Send push notification to partner
+      const sender = await userModel.findById(transaction.user);
+      console.log({ sender })
 
-  await sendNotificationByFcmToken(
-    transaction.partner,
-    "New Tip Received",
-    `${sender?.fullName || "A customer"} sent you a tip of ₦${transaction.net_amount}.`,
-    transaction.booking,
-    "tip"
-  );
+      if (sender?.enabledPushNotification === true) {
+        await sendNotificationByFcmToken(
+          transaction.partner,
+          "New Tip Received",
+          `${sender?.fullName || "A customer"} sent you a tip of ₦${transaction.net_amount}.`,
+          transaction.booking,
+          "tip"
+        );
+      }
 
-  transaction.payment_status = "successful";
+      transaction.payment_status = "successful";
 
-  await transaction.save();
+      await transaction.save();
 
-  return res.status(200).end();
-}
+      return res.status(200).end();
+    }
 
 
     // =====================================================
@@ -194,26 +197,28 @@ const flutterwaveWebhook = async (req, res) => {
 
       // transaction.booking = booking._id;
       // AFTER (create + notifications):
-const booking = await bookingModel.create(bookingPayload);
-transaction.booking = booking._id;
+      const booking = await bookingModel.create(bookingPayload);
+      transaction.booking = booking._id;
 
-// ── Push Notifications ──────────────────────────────────────
-const partnerDetails = await partnerModel.findOne({
-  user: data.provider,
-  isDeleted: false,
-});
+      // ── Push Notifications ──────────────────────────────────────
+      const partnerDetails = await partnerModel.findOne({
+        user: data.provider,
+        isDeleted: false,
+      });
 
-if (partnerDetails?.enabledPushNotification === true) {
-  if (data.status === "approved") {
-    // Auto-accept was ON: notify partner of scheduled job, customer of approval
-    await sendNotificationByFcmToken(data.provider, "New Booking schedule");
-    await sendNotificationByFcmToken(data.user, "Booking approved");
-  } else {
-    // Auto-accept was OFF: notify partner to review the request
-    await sendNotificationByFcmToken(data.provider, "New Booking waiting for approval");
-  }
-}
-// ────────────────────────────────────────────────────────────
+      console.log({ partnerDetails })
+
+      if (partnerDetails?.enabledPushNotification === true) {
+        if (data.status === "approved") {
+          // Auto-accept was ON: notify partner of scheduled job, customer of approval
+          await sendNotificationByFcmToken(data.provider, "New Booking schedule");
+          await sendNotificationByFcmToken(data.user, "Booking approved");
+        } else {
+          // Auto-accept was OFF: notify partner to review the request
+          await sendNotificationByFcmToken(data.provider, "New Booking waiting for approval");
+        }
+      }
+      // ────────────────────────────────────────────────────────────
     }
 
     transaction.payment_status = "successful";
