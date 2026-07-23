@@ -791,7 +791,7 @@ const pendingBookingService = async (user, option) => {
             {
                 $match: {
                     user: new mongoose.Types.ObjectId(String(user)),
-                    status: "approved",
+                    // status: "approved",
                     endTime: { $gt: new Date() },
                     $or: [
                         { paymentStatus: "paid" },
@@ -854,7 +854,7 @@ const pendingBookingService = async (user, option) => {
         ]),
         bookingModel.countDocuments({
             user: new mongoose.Types.ObjectId(String(user)),
-            status: "approved",
+            // status: "approved",
             $or: [
                 { paymentStatus: "paid" },
                 { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }

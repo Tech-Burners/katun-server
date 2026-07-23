@@ -1,29 +1,1269 @@
+const crypto = require("crypto");
 const axios = require("axios");
+
 const Transaction = require("./transaction.model");
 const catchAsync = require("../../helpers/catchAsync");
 const bookingModel = require("../Booking/booking.model");
 const { getUserById } = require("../Auth/auth.service");
 const userModel = require("../User/user.model");
 const partnerModel = require("../Partner/partner.model");
-const { getAllTransactions, getPendingPayoutService, getcompletePayoutService, payoutStatusUpdateService, getPartnerMonthlySummaryService, comnpletePayoutService, holdPayoutService, getPartnerMonthlyCompletedPayoutService, getAllPayoutService, getPlatformEarningTransactionsService, allPayoutOfAPartnerService, getAllRefundData, withdrawCreditService } = require("./transaction.service");
-const { default: status } = require("http-status");
-const response = require("../../helpers/response");
-const generate4DigitPin = require("../../helpers/generatepin");
+const {
+  sendNotificationByFcmToken,
+} = require("../../helpers/sendNotificationByFcmToken");
+
+const { bookingService } =
+  require("../Booking/booking.service");
+
+const { default: status } =
+  require("http-status");
+
+const response =
+  require("../../helpers/response");
+
+const generate4DigitPin =
+  require("../../helpers/generatepin");
+
+const {
+  addNotificationService,
+} = require("../Notification/notification.service");
+
+const {
+  getOrCreateCycle,
+} = require("../Payout/payout.service");
+
+const payoutCycleModel =
+  require("../Payout/payoutCycle.model");
+
+const {
+  emailWithNodemailer,
+} = require("../../helpers/email");
+
 const { search } = require("./transaction.route");
-const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
+
+
+const { getAllTransactions, getPendingPayoutService, getcompletePayoutService,
+  payoutStatusUpdateService,
+  getPartnerMonthlySummaryService, comnpletePayoutService, holdPayoutService,
+  getPartnerMonthlyCompletedPayoutService, getAllPayoutService,
+  getPlatformEarningTransactionsService, allPayoutOfAPartnerService,
+  getAllRefundData, withdrawCreditService } = require("./transaction.service");
 
 
 
-const { bookingService } = require("../Booking/booking.service");
-const { default: mongoose } = require("mongoose");
-const employerModel = require("../Employer/employer.model");
-const auditModel = require("../Audit/audit.model");
-const { add } = require("date-fns");
-const { addAuditReport } = require("../Audit/audit.service");
-const { addNotificationService } = require("../Notification/notification.service");
-const { getOrCreateCycle } = require("../Payout/payout.service");
-const payoutCycleModel = require("../Payout/payoutCycle.model");
-const { emailWithNodemailer } = require("../../helpers/email");
+
+const generateTxRef = () => {
+  return `txn_${Date.now()}_${crypto.randomUUID()}`;
+};
+
+
+const bookController = catchAsync(
+  async (req, res) => {
+
+    const {
+      service,
+      partner,
+      date,
+      startTime,
+      endTime,
+      isOneTime,
+      servicePrice,
+      totalPrice,
+      addons,
+      paymentMethod,
+    } = req.body;
+
+
+    const userId = req.User._id;
+
+
+    // =====================================================
+    // VALIDATION
+    // =====================================================
+
+    if (!service || !partner) {
+      return res.status(400).json({
+        message:
+          "Service and partner are required",
+      });
+    }
+
+
+    const grossAmount =
+      Number(totalPrice);
+
+
+    if (
+      !Number.isFinite(grossAmount) ||
+      grossAmount <= 0
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid payment amount",
+      });
+    }
+
+
+    const allowedPaymentMethods = [
+      "card",
+      "banktransfer",
+      "ussd",
+      "wallet",
+      "cash",
+    ];
+
+
+    if (
+      !allowedPaymentMethods.includes(
+        paymentMethod
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid payment method",
+      });
+    }
+
+
+    const partnerDetails =
+      await partnerModel.findOne({
+        user: partner,
+      });
+
+
+    const isAutoApproved =
+      Boolean(
+        partnerDetails?.serviceAutoApproved
+      );
+
+
+    // =====================================================
+    // CASH PAYMENT
+    // =====================================================
+
+    if (
+      paymentMethod === "cash"
+    ) {
+
+      const bookingData = {
+        user: userId,
+        service,
+        provider: partner,
+        date,
+        startTime,
+        endTime,
+        isOneTime,
+        servicePrice,
+        totalPrice,
+        addons,
+        paymentMethod,
+        status:
+          isAutoApproved
+            ? "approved"
+            : "pending",
+      };
+
+
+      const booking =
+        await bookingService(
+          bookingData
+        );
+
+
+      // Send notifications
+      if (
+        partnerDetails
+          ?.enabledPushNotification === true
+      ) {
+
+        if (isAutoApproved) {
+
+          await sendNotificationByFcmToken(
+            partner,
+            "New Booking",
+            "New Booking schedule",
+            booking._id,
+            "booking"
+          );
+
+
+          await addNotificationService({
+            sender: userId,
+            targetUser: partner,
+            title: "New Booking",
+            message:
+              "New Booking schedule",
+            type: "booking",
+            bookingId:
+              booking._id,
+          });
+
+
+          const userData =
+            await userModel.findById(
+              userId
+            );
+
+
+          if (
+            userData
+              ?.enabledPushNotification
+          ) {
+
+            await sendNotificationByFcmToken(
+              userId,
+              "New Booking",
+              "Booking approved",
+              booking._id,
+              "booking"
+            );
+          }
+
+
+          await addNotificationService({
+            sender: partner,
+            targetUser: userId,
+            title: "Booking approved",
+            message:
+              "Your booking has been approved",
+            type: "booking",
+            bookingId:
+              booking._id,
+          });
+
+        } else {
+
+          await sendNotificationByFcmToken(
+            partner,
+            "New Booking",
+            "New Booking waiting for approval",
+            booking._id,
+            "booking"
+          );
+
+
+          await addNotificationService({
+            sender: userId,
+            targetUser: partner,
+            title: "New Booking",
+            message:
+              "New Booking waiting for approval",
+            type: "booking",
+            bookingId:
+              booking._id,
+          });
+        }
+      }
+
+
+      return res.status(
+        status.CREATED
+      ).json(
+        response({
+          status: "success",
+          statusCode:
+            status.CREATED,
+          type: "Booking",
+          message:
+            "Booking created successfully",
+          data: booking,
+        })
+      );
+    }
+
+
+    // =====================================================
+    // WALLET PAYMENT
+    // =====================================================
+
+    if (
+      paymentMethod === "wallet"
+    ) {
+
+      // IMPORTANT:
+      // Your existing code directly creates the booking
+      // without showing any wallet balance deduction.
+      //
+      // This should be handled atomically in your booking
+      // service before creating the booking.
+      //
+      // If bookingService already handles wallet deduction,
+      // keep this behavior.
+      //
+      // If it does not, DO NOT allow wallet booking until
+      // the balance is checked and deducted atomically.
+
+      const bookingData = {
+        user: userId,
+        service,
+        provider: partner,
+        date,
+        startTime,
+        endTime,
+        isOneTime,
+        servicePrice,
+        totalPrice,
+        addons,
+        paymentMethod,
+        status:
+          isAutoApproved
+            ? "approved"
+            : "pending",
+      };
+
+
+      const booking =
+        await bookingService(
+          bookingData
+        );
+
+
+      return res.status(
+        status.CREATED
+      ).json(
+        response({
+          status: "success",
+          statusCode:
+            status.CREATED,
+          type: "Booking",
+          message:
+            "Booking created successfully",
+          data: booking,
+        })
+      );
+    }
+
+
+    // =====================================================
+    // DIGITAL PAYMENT
+    // =====================================================
+
+    const user =
+      await getUserById(
+        userId
+      );
+
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found",
+      });
+    }
+
+
+    const partnerData =
+      await userModel.findById(
+        partner
+      );
+
+
+    if (!partnerData) {
+      return res.status(404).json({
+        message:
+          "Partner not found",
+      });
+    }
+
+
+    const tx_ref =
+      generateTxRef();
+
+
+    const commissionRate = 0.10;
+
+
+    const commission =
+      Number(
+        (
+          grossAmount *
+          commissionRate
+        ).toFixed(2)
+      );
+
+
+    const netAmount =
+      Number(
+        (
+          grossAmount -
+          commission
+        ).toFixed(2)
+      );
+
+
+    const pin =
+      generate4DigitPin();
+
+
+    const cycleType =
+      partnerData.payoutFrequency ===
+        "instant"
+        ? "weekly"
+        : partnerData.payoutFrequency;
+
+
+    const cycle =
+      await getOrCreateCycle(
+        partner,
+        cycleType
+      );
+
+
+    // =====================================================
+    // CREATE PENDING TRANSACTION
+    // =====================================================
+
+    const transaction =
+      await Transaction.create({
+
+        tx_ref,
+
+        user: userId,
+
+        partner,
+
+        service,
+
+        user_email:
+          user.email,
+
+        currency: "NGN",
+
+        gross_amount:
+          grossAmount,
+
+        commission,
+
+        net_amount:
+          netAmount,
+
+        payout_status:
+          "pending",
+
+        payoutCycle:
+          cycle?._id,
+
+        // Payment lifecycle
+        payment_status:
+          "pending",
+
+        // Keep only if your schema still uses it
+        status:
+          "pending",
+
+        paymentMethod,
+
+        paymentType:
+          "booking",
+
+        booking_data: {
+
+          user: userId,
+
+          service,
+
+          provider: partner,
+
+          date,
+
+          startTime,
+
+          endTime,
+
+          isOneTime,
+
+          servicePrice,
+
+          totalPrice,
+
+          addons,
+
+          pin,
+
+          paymentMethod,
+
+          status:
+            isAutoApproved
+              ? "approved"
+              : "pending",
+        },
+      });
+
+
+    try {
+
+      // =====================================================
+      // INITIALIZE FLUTTERWAVE
+      // =====================================================
+
+      const paymentResponse =
+        await axios.post(
+
+          "https://api.flutterwave.com/v3/payments",
+
+          {
+            tx_ref,
+
+            amount:
+              grossAmount,
+
+            currency:
+              "NGN",
+
+            redirect_url:
+              process.env.FLW_SUCCESS_URL,
+
+            payment_options:
+              paymentMethod,
+
+            customer: {
+              email:
+                user.email,
+
+              name:
+                user.fullName,
+            },
+          },
+
+          {
+            headers: {
+              Authorization:
+                `Bearer ${process.env.FLW_SECRET_KEY}`,
+
+              "Content-Type":
+                "application/json",
+            },
+
+            timeout:
+              15000,
+          }
+        );
+
+
+      const paymentLink =
+        paymentResponse
+          ?.data
+          ?.data
+          ?.link;
+
+
+      if (!paymentLink) {
+        throw new Error(
+          "Flutterwave payment link was not returned"
+        );
+      }
+
+
+      return res.json({
+        paymentLink,
+
+        tx_ref,
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Flutterwave initialization error:",
+        error.response
+          ?.data ||
+        error.message
+      );
+
+
+      await Transaction.findByIdAndUpdate(
+        transaction._id,
+        {
+          $set: {
+            payment_status:
+              "failed",
+
+            status:
+              "failed",
+          },
+        }
+      );
+
+
+      return res.status(502).json({
+        message:
+          "Unable to initialize payment",
+      });
+    }
+  }
+);
+
+
+
+const purchaseCreditController =
+  catchAsync(async (req, res) => {
+
+    const {
+      amount,
+      paymentMethod,
+    } = req.body;
+
+
+    const userId =
+      req.User._id;
+
+
+    // =====================================================
+    // VALIDATE AMOUNT
+    // =====================================================
+
+    const grossAmount =
+      Number(amount);
+
+
+    if (
+      !Number.isFinite(
+        grossAmount
+      ) ||
+      grossAmount <= 0
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid credit amount",
+      });
+    }
+
+
+    const allowedPaymentMethods = [
+      "card",
+      "banktransfer",
+      "ussd",
+    ];
+
+
+    if (
+      !allowedPaymentMethods.includes(
+        paymentMethod
+      )
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid payment method",
+      });
+    }
+
+
+    // =====================================================
+    // GET USER
+    // =====================================================
+
+    const user =
+      await getUserById(
+        userId
+      );
+
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found",
+      });
+    }
+
+
+    // =====================================================
+    // HR COMPANY
+    // =====================================================
+
+    let idForTrack =
+      userId;
+
+
+    if (
+      req.User.role === "hr"
+    ) {
+
+      const company =
+        await employerModel.findOne({
+          user: userId,
+        });
+
+
+      if (!company) {
+        return res.status(404).json({
+          message:
+            "Company not found",
+        });
+      }
+
+
+      // IMPORTANT:
+      // DO NOT update creditBalance here.
+      //
+      // Credit is added only after successful
+      // Flutterwave webhook processing.
+
+      idForTrack =
+        company._id;
+    }
+
+
+    const tx_ref =
+      generateTxRef();
+
+
+    const commissionRate =
+      0.10;
+
+
+    const commission =
+      Number(
+        (
+          grossAmount *
+          commissionRate
+        ).toFixed(2)
+      );
+
+
+    const netAmount =
+      Number(
+        (
+          grossAmount -
+          commission
+        ).toFixed(2)
+      );
+
+
+    // =====================================================
+    // CREATE PENDING TRANSACTION
+    // =====================================================
+
+    const transaction =
+      await Transaction.create({
+
+        tx_ref,
+
+        user:
+          idForTrack,
+
+        user_email:
+          user.email,
+
+        currency:
+          "NGN",
+
+        gross_amount:
+          grossAmount,
+
+        commission,
+
+        net_amount:
+          netAmount,
+
+        payout_status:
+          "pending",
+
+        payment_status:
+          "pending",
+
+        status:
+          "pending",
+
+        paymentType:
+          "credit",
+
+        // Needed by webhook to know whether
+        // this is an HR/company credit.
+        credit_owner_type:
+          req.User.role === "hr"
+            ? "company"
+            : "user",
+
+        credit_owner_id:
+          idForTrack,
+      });
+
+
+    try {
+
+      const paymentResponse =
+        await axios.post(
+
+          "https://api.flutterwave.com/v3/payments",
+
+          {
+            tx_ref,
+
+            amount:
+              grossAmount,
+
+            currency:
+              "NGN",
+
+            redirect_url:
+              process.env.FLW_SUCCESS_URL,
+
+            payment_options:
+              paymentMethod,
+
+            customer: {
+              email:
+                user.email,
+
+              name:
+                user.fullName,
+            },
+          },
+
+          {
+            headers: {
+              Authorization:
+                `Bearer ${process.env.FLW_SECRET_KEY}`,
+
+              "Content-Type":
+                "application/json",
+            },
+
+            timeout:
+              15000,
+          }
+        );
+
+
+      const paymentLink =
+        paymentResponse
+          ?.data
+          ?.data
+          ?.link;
+
+
+      if (!paymentLink) {
+        throw new Error(
+          "Flutterwave payment link was not returned"
+        );
+      }
+
+
+      return res.json({
+        paymentLink,
+
+        tx_ref,
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Flutterwave credit payment error:",
+        error.response
+          ?.data ||
+        error.message
+      );
+
+
+      await Transaction.findByIdAndUpdate(
+        transaction._id,
+        {
+          $set: {
+            payment_status:
+              "failed",
+
+            status:
+              "failed",
+          },
+        }
+      );
+
+
+      return res.status(502).json({
+        message:
+          "Unable to initialize payment",
+      });
+    }
+  });
+
+
+
+const tipsController =
+  catchAsync(async (req, res) => {
+
+    const {
+      providerId,
+      amount,
+      paymentMethod,
+      bookingId,
+    } = req.body;
+
+
+    const userId =
+      req.User._id;
+
+
+    const grossAmount =
+      Number(amount);
+
+
+    if (
+      !Number.isFinite(
+        grossAmount
+      ) ||
+      grossAmount <= 0
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid tip amount",
+      });
+    }
+
+
+    const user =
+      await getUserById(
+        userId
+      );
+
+
+    if (!user) {
+      return res.status(404).json({
+        message:
+          "User not found",
+      });
+    }
+
+
+    const provider =
+      await userModel.findById(
+        providerId
+      );
+
+
+    if (!provider) {
+      return res.status(404).json({
+        message:
+          "Partner not found",
+      });
+    }
+
+
+    // If booking ID is provided,
+    // ensure booking exists.
+    let booking = null;
+
+
+    if (bookingId) {
+
+      booking =
+        await bookingModel.findById(
+          bookingId
+        );
+
+
+      if (!booking) {
+        return res.status(404).json({
+          message:
+            "Booking not found",
+        });
+      }
+
+
+      // Prevent tipping another user's booking
+      if (
+        String(booking.user) !==
+        String(userId)
+      ) {
+        return res.status(403).json({
+          message:
+            "You cannot tip on this booking",
+        });
+      }
+
+
+      // Ensure the provider matches
+      if (
+        String(booking.provider) !==
+        String(providerId)
+      ) {
+        return res.status(400).json({
+          message:
+            "Invalid provider for this booking",
+        });
+      }
+    }
+
+
+    const tx_ref =
+      generateTxRef();
+
+
+    const commissionRate =
+      0.10;
+
+
+    const commission =
+      Number(
+        (
+          grossAmount *
+          commissionRate
+        ).toFixed(2)
+      );
+
+
+    const netAmount =
+      Number(
+        (
+          grossAmount -
+          commission
+        ).toFixed(2)
+      );
+
+
+    const transaction =
+      await Transaction.create({
+
+        tx_ref,
+
+        user:
+          userId,
+
+        user_email:
+          user.email,
+
+        currency:
+          "NGN",
+
+        gross_amount:
+          grossAmount,
+
+        commission,
+
+        net_amount:
+          netAmount,
+
+        payout_status:
+          "pending",
+
+        payment_status:
+          "pending",
+
+        status:
+          "pending",
+
+        paymentType:
+          "tip",
+
+        partner:
+          providerId,
+
+        booking:
+          bookingId || null,
+
+        paymentMethod,
+      });
+
+
+    try {
+
+      const paymentResponse =
+        await axios.post(
+
+          "https://api.flutterwave.com/v3/payments",
+
+          {
+            tx_ref,
+
+            amount:
+              grossAmount,
+
+            currency:
+              "NGN",
+
+            redirect_url:
+              process.env.FLW_SUCCESS_URL,
+
+            payment_options:
+              paymentMethod,
+
+            meta: {
+              providerId,
+              bookingId,
+            },
+
+            customer: {
+              email:
+                user.email,
+
+              name:
+                user.fullName,
+            },
+          },
+
+          {
+            headers: {
+              Authorization:
+                `Bearer ${process.env.FLW_SECRET_KEY}`,
+
+              "Content-Type":
+                "application/json",
+            },
+
+            timeout:
+              15000,
+          }
+        );
+
+
+      const paymentLink =
+        paymentResponse
+          ?.data
+          ?.data
+          ?.link;
+
+
+      if (!paymentLink) {
+        throw new Error(
+          "Flutterwave payment link was not returned"
+        );
+      }
+
+
+      return res.json({
+        paymentLink,
+
+        tx_ref,
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Flutterwave tip payment error:",
+        error.response
+          ?.data ||
+        error.message
+      );
+
+
+      await Transaction.findByIdAndUpdate(
+        transaction._id,
+        {
+          $set: {
+            payment_status:
+              "failed",
+
+            status:
+              "failed",
+          },
+        }
+      );
+
+
+      return res.status(502).json({
+        message:
+          "Unable to initialize payment",
+      });
+    }
+  });
+
+
+
+
+const verifyPayment = catchAsync(
+  async (req, res) => {
+
+    const {
+      transaction_id,
+    } = req.query;
+
+
+    if (
+      !transaction_id
+    ) {
+
+      return res.status(400).json({
+        message:
+          "Transaction ID is required",
+      });
+    }
+
+
+    const payment =
+      await verifyFlutterwavePayment(
+        transaction_id
+      );
+
+
+    if (
+      !payment
+    ) {
+
+      return res.status(404).json({
+        message:
+          "Payment not found",
+      });
+    }
+
+
+    const transaction =
+      await Transaction.findOne({
+        tx_ref:
+          payment.tx_ref,
+      });
+
+
+    if (
+      !transaction
+    ) {
+
+      return res.status(404).json({
+        message:
+          "Local transaction not found",
+      });
+    }
+
+
+    return res.status(200).json({
+
+      success:
+        true,
+
+      paymentStatus:
+        transaction.payment_status,
+
+      flutterwaveStatus:
+        payment.status,
+
+      tx_ref:
+        payment.tx_ref,
+
+      transaction_id:
+        payment.id,
+    });
+  }
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// const { bookingService } = require("../Booking/booking.service");
+// const { default: mongoose } = require("mongoose");
+// const employerModel = require("../Employer/employer.model");
+// const auditModel = require("../Audit/audit.model");
+// const { add } = require("date-fns");
+// const { addAuditReport } = require("../Audit/audit.service");
+// const { addNotificationService } = require("../Notification/notification.service");
+// const { getOrCreateCycle } = require("../Payout/payout.service");
+// const payoutCycleModel = require("../Payout/payoutCycle.model");
+// const { emailWithNodemailer } = require("../../helpers/email");
 
 
 
@@ -43,365 +1283,365 @@ const getBanks = catchAsync(async (req, res) => {
 
 
 
-const bookController = catchAsync(async (req, res) => {
+// const bookController = catchAsync(async (req, res) => {
 
-  const {
-    service,
-    partner,
-    date,
-    startTime,
-    endTime,
-    isOneTime,
-    servicePrice,
-    totalPrice,
-    addons,
-    paymentMethod
-  } = req.body;
+//   const {
+//     service,
+//     partner,
+//     date,
+//     startTime,
+//     endTime,
+//     isOneTime,
+//     servicePrice,
+//     totalPrice,
+//     addons,
+//     paymentMethod
+//   } = req.body;
 
-  const userId = req.User._id;
+//   const userId = req.User._id;
 
-  const partnerDetails = await partnerModel.findOne({ user: partner });
-  const isAutoApproved = Boolean(partnerDetails?.serviceAutoApproved);
-  // console.log({ isAutoApproved, partnerDetails })
-
-
-  // Handle Cash and Wallet payments
-  if (paymentMethod === "cash" || paymentMethod === "wallet") {
-
-    const bookingData = {
-      user: userId,
-      service,
-      provider: partner,
-      date,
-      startTime,
-      endTime,
-      isOneTime,
-      servicePrice,
-      totalPrice,
-      addons,
-      paymentMethod,
-      status: isAutoApproved ? "approved" : "pending"
-    };
-
-    const booking = await bookingService(bookingData);
+//   const partnerDetails = await partnerModel.findOne({ user: partner });
+//   const isAutoApproved = Boolean(partnerDetails?.serviceAutoApproved);
+//   // console.log({ isAutoApproved, partnerDetails })
 
 
+//   // Handle Cash and Wallet payments
+//   if (paymentMethod === "cash" || paymentMethod === "wallet") {
 
-    // REPLACE the existing notification block (cash/wallet section) with this:
-    // console.log({ partnerDetails })
-    if (partnerDetails?.enabledPushNotification === true) {
-      if (isAutoApproved === true) {
-        await sendNotificationByFcmToken(
-          partner,
-          "New Booking",
-          "New Booking schedule",
-          booking._id,
-          "booking"
-        );
-        await addNotificationService({
-          sender: userId,
-          targetUser: partner,
-          title: "New Booking",
-          message: "New Booking schedule",
-          type: "booking",
-          bookingId: booking._id
-        });
-        const userData = await userModel.findById(userId);
-        // console.log({ userData })
-        if (userData && userData.enabledPushNotification) {
-          await sendNotificationByFcmToken(
-            userId,
-            "New Booking",
-            "Booking approved",
-            booking._id,
-            "booking"
-          )
-        };
-        await addNotificationService({
-          sender: partner,
-          targetUser: userId,
-          title: "New Booking",
-          message: "Booking approved",
-          type: "booking",
-          bookingId: booking._id
-        });
+//     const bookingData = {
+//       user: userId,
+//       service,
+//       provider: partner,
+//       date,
+//       startTime,
+//       endTime,
+//       isOneTime,
+//       servicePrice,
+//       totalPrice,
+//       addons,
+//       paymentMethod,
+//       status: isAutoApproved ? "approved" : "pending"
+//     };
 
-      } else {
-        const partnerData = await userModel.findById(partner);
-        // console.log({ partnerData })
-        if (partnerData?.enabledPushNotification === true) {
-          await sendNotificationByFcmToken(
-            partner,
-            "New Booking",
-            "New Booking waiting for approval",
-            booking._id,
-            "booking"
-          )
-        };
-        await addNotificationService({
-          sender: userId,
-          targetUser: partner,
-          title: "New Booking",
-          message: "New Booking waiting for approval",
-          type: "booking",
-          bookingId: booking._id
-        });
-      }
-    }
-    const partnerEmail = await userModel.findById(partner).select('email');
-
-    await emailWithNodemailer({
-      // email: "mdnasifurahman@gmail.com",
-      email: partnerEmail.email,
-      subject: "New Booking",
-      html: `You have a new booking from ${req.User.fullName}. Please check your dashboard for details.`,
-    });
-    // console.log(req.User,"==========")
-    await emailWithNodemailer({
-      // email: 'mdnasifurahman@gmail.com',
-      email: req.User.email,
-      subject: "Booking Confirmation",
-      html: `Thank you! Your booking has been successfully created. You can check your dashboard for details. and we will notify you once the partner approve your booking.`,
-    });
-
-    return res.status(status.CREATED).json(
-      response({
-        status: "success",
-        statusCode: status.CREATED,
-        type: "Booking",
-        message: "Booking created successfully",
-        data: booking
-      })
-    );
-  }
-
-  // Digital Payment flow - create payment link
-  const user = await getUserById(userId);
-  const tx_ref = `txn_${Date.now()}_${userId}`;
-
-  const commissionRate = 0.10; // 10%
-  const grossAmount = Number(totalPrice);
-  const commission = grossAmount * commissionRate;
-  const netAmount = grossAmount - commission;
-
-  const partnerData = await userModel.findById(partner);
-
-  if (!partnerData) {
-    return res.status(400).json({
-      message: "Partner not found",
-    });
-  }
-
-  const pin = generate4DigitPin();
-
-  const userData = await userModel.findById(partner);
-
-  const cycleType = userData.payoutFrequency === "instant"
-    ? "weekly"
-    : userData.payoutFrequency;
-
-  const cycle = await getOrCreateCycle(partner, cycleType);
-
-  const transaction = await Transaction.create({
-    tx_ref,
-    user: userId,
-    partner,
-    service,
-
-    user_email: user.email,
-    currency: "NGN",
-
-    gross_amount: grossAmount,
-    commission,
-    net_amount: netAmount,
-
-    payout_status: "pending",
-    payoutCycle: cycle._id,
-
-    status: "pending",
-    paymentMethod,
-    paymentType: "booking",
-
-    booking_data: {
-      user: userId,
-      service,
-      provider: partner,
-      date,
-      startTime,
-      endTime,
-      isOneTime,
-      servicePrice,
-      totalPrice,
-      addons,
-      pin,
-      paymentMethod,
-      status: isAutoApproved ? "approved" : "pending"
-    },
-  });
-
-  // await payoutCycleModel.findByIdAndUpdate(cycle._id, {
-  //   $push: { transactions: transaction._id },
-  //   $inc: { totalAmount: netAmount }
-  // });
-
-  await payoutCycleModel.updateOne(
-    { _id: cycle._id },
-    {
-      $addToSet: { transactions: transaction._id },
-      $inc: { totalAmount: netAmount }
-    }
-  );
-
-
-  const paymentResponse = await axios.post(
-    "https://api.flutterwave.com/v3/payments",
-    {
-      tx_ref,
-      amount: grossAmount,
-      currency: "NGN",
-      redirect_url: process.env.FLW_SUCCESS_URL,
-      payment_options: paymentMethod,
-      customer: {
-        email: user.email,
-        name: user.fullName,
-      },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
-      },
-    }
-  );
-
-  res.json({
-    paymentLink: paymentResponse.data.data.link,
-    tx_ref
-  });
-})
+//     const booking = await bookingService(bookingData);
 
 
 
+//     // REPLACE the existing notification block (cash/wallet section) with this:
+//     // console.log({ partnerDetails })
+//     if (partnerDetails?.enabledPushNotification === true) {
+//       if (isAutoApproved === true) {
+//         await sendNotificationByFcmToken(
+//           partner,
+//           "New Booking",
+//           "New Booking schedule",
+//           booking._id,
+//           "booking"
+//         );
+//         await addNotificationService({
+//           sender: userId,
+//           targetUser: partner,
+//           title: "New Booking",
+//           message: "New Booking schedule",
+//           type: "booking",
+//           bookingId: booking._id
+//         });
+//         const userData = await userModel.findById(userId);
+//         // console.log({ userData })
+//         if (userData && userData.enabledPushNotification) {
+//           await sendNotificationByFcmToken(
+//             userId,
+//             "New Booking",
+//             "Booking approved",
+//             booking._id,
+//             "booking"
+//           )
+//         };
+//         await addNotificationService({
+//           sender: partner,
+//           targetUser: userId,
+//           title: "New Booking",
+//           message: "Booking approved",
+//           type: "booking",
+//           bookingId: booking._id
+//         });
+
+//       } else {
+//         const partnerData = await userModel.findById(partner);
+//         // console.log({ partnerData })
+//         if (partnerData?.enabledPushNotification === true) {
+//           await sendNotificationByFcmToken(
+//             partner,
+//             "New Booking",
+//             "New Booking waiting for approval",
+//             booking._id,
+//             "booking"
+//           )
+//         };
+//         await addNotificationService({
+//           sender: userId,
+//           targetUser: partner,
+//           title: "New Booking",
+//           message: "New Booking waiting for approval",
+//           type: "booking",
+//           bookingId: booking._id
+//         });
+//       }
+//     }
+//     const partnerEmail = await userModel.findById(partner).select('email');
+
+//     await emailWithNodemailer({
+//       // email: "mdnasifurahman@gmail.com",
+//       email: partnerEmail.email,
+//       subject: "New Booking",
+//       html: `You have a new booking from ${req.User.fullName}. Please check your dashboard for details.`,
+//     });
+//     // console.log(req.User,"==========")
+//     await emailWithNodemailer({
+//       // email: 'mdnasifurahman@gmail.com',
+//       email: req.User.email,
+//       subject: "Booking Confirmation",
+//       html: `Thank you! Your booking has been successfully created. You can check your dashboard for details. and we will notify you once the partner approve your booking.`,
+//     });
+
+//     return res.status(status.CREATED).json(
+//       response({
+//         status: "success",
+//         statusCode: status.CREATED,
+//         type: "Booking",
+//         message: "Booking created successfully",
+//         data: booking
+//       })
+//     );
+//   }
+
+//   // Digital Payment flow - create payment link
+//   const user = await getUserById(userId);
+//   const tx_ref = `txn_${Date.now()}_${userId}`;
+
+//   const commissionRate = 0.10; // 10%
+//   const grossAmount = Number(totalPrice);
+//   const commission = grossAmount * commissionRate;
+//   const netAmount = grossAmount - commission;
+
+//   const partnerData = await userModel.findById(partner);
+
+//   if (!partnerData) {
+//     return res.status(400).json({
+//       message: "Partner not found",
+//     });
+//   }
+
+//   const pin = generate4DigitPin();
+
+//   const userData = await userModel.findById(partner);
+
+//   const cycleType = userData.payoutFrequency === "instant"
+//     ? "weekly"
+//     : userData.payoutFrequency;
+
+//   const cycle = await getOrCreateCycle(partner, cycleType);
+
+//   const transaction = await Transaction.create({
+//     tx_ref,
+//     user: userId,
+//     partner,
+//     service,
+
+//     user_email: user.email,
+//     currency: "NGN",
+
+//     gross_amount: grossAmount,
+//     commission,
+//     net_amount: netAmount,
+
+//     payout_status: "pending",
+//     payoutCycle: cycle._id,
+
+//     status: "pending",
+//     paymentMethod,
+//     paymentType: "booking",
+
+//     booking_data: {
+//       user: userId,
+//       service,
+//       provider: partner,
+//       date,
+//       startTime,
+//       endTime,
+//       isOneTime,
+//       servicePrice,
+//       totalPrice,
+//       addons,
+//       pin,
+//       paymentMethod,
+//       status: isAutoApproved ? "approved" : "pending"
+//     },
+//   });
+
+//   // await payoutCycleModel.findByIdAndUpdate(cycle._id, {
+//   //   $push: { transactions: transaction._id },
+//   //   $inc: { totalAmount: netAmount }
+//   // });
+
+//   await payoutCycleModel.updateOne(
+//     { _id: cycle._id },
+//     {
+//       $addToSet: { transactions: transaction._id },
+//       $inc: { totalAmount: netAmount }
+//     }
+//   );
 
 
-const purchaseCreditController = catchAsync(async (req, res) => {
+//   const paymentResponse = await axios.post(
+//     "https://api.flutterwave.com/v3/payments",
+//     {
+//       tx_ref,
+//       amount: grossAmount,
+//       currency: "NGN",
+//       redirect_url: process.env.FLW_SUCCESS_URL,
+//       payment_options: paymentMethod,
+//       customer: {
+//         email: user.email,
+//         name: user.fullName,
+//       },
+//     },
+//     {
+//       headers: {
+//         Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
+//       },
+//     }
+//   );
 
-  const {
-    amount,
-    paymentMethod
-  } = req.body;
-  let userId = req.User._id;
-  let idForTrack = req.User._id;
-  let company;
-  if (req.User.role === 'hr') {
-    company = await employerModel.findOne({ user: userId });
-    if (!company) return res.status(404).json({ error: "Company not found" });
-    idForTrack = company._id;
-    company.creditBalance = Number((company.creditBalance || 0) + Number(amount).toFixed(2));
-    await company.save();
-  }
-  const user = await getUserById(userId);
-
-  const tx_ref = `txn_${Date.now()}_${userId}`;
-
-  const commissionRate = 0.10; // 10%
-  const grossAmount = Number(amount);
-  const commission = grossAmount * commissionRate;
-  const netAmount = grossAmount - commission;
-
-
-  await Transaction.create({
-    tx_ref,
-    user: idForTrack,
-    user_email: user.email,
-
-    // amount: grossAmount,
-    currency: "NGN",
-
-    gross_amount: grossAmount,
-    commission,
-    net_amount: netAmount,
-
-    payout_status: "pending",
-    paymentType: "credit"
-  });
-
-  const response = await axios.post(
-    "https://api.flutterwave.com/v3/payments",
-    {
-      tx_ref,
-      amount: grossAmount,
-      currency: "NGN",
-      redirect_url: process.env.FLW_SUCCESS_URL,
-      payment_options: paymentMethod,
-      customer: {
-        email: user.email,
-        name: user.fullName,
-      },
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
-      },
-    }
-  );
-
-  res.json({
-    paymentLink: response.data.data.link,
-    tx_ref,
-  });
-});
+//   res.json({
+//     paymentLink: paymentResponse.data.data.link,
+//     tx_ref
+//   });
+// })
 
 
 
 
-const tipsController = catchAsync(async (req, res) => {
-  const { providerId, amount, paymentMethod, bookingId } = req.body;
-  const userId = req.User._id;
 
-  const user = await getUserById(userId);
+// const purchaseCreditController = catchAsync(async (req, res) => {
 
-  const tx_ref = `txn_${Date.now()}_${userId}`;
+//   const {
+//     amount,
+//     paymentMethod
+//   } = req.body;
+//   let userId = req.User._id;
+//   let idForTrack = req.User._id;
+//   let company;
+//   if (req.User.role === 'hr') {
+//     company = await employerModel.findOne({ user: userId });
+//     if (!company) return res.status(404).json({ error: "Company not found" });
+//     idForTrack = company._id;
+//     company.creditBalance = Number((company.creditBalance || 0) + Number(amount).toFixed(2));
+//     await company.save();
+//   }
+//   const user = await getUserById(userId);
 
-  const commissionRate = 0.10;
-  const grossAmount = Number(amount);
-  const commission = grossAmount * commissionRate;
-  const netAmount = grossAmount - commission;
+//   const tx_ref = `txn_${Date.now()}_${userId}`;
 
-  await Transaction.create({
-    tx_ref,
-    user: userId,
-    user_email: user.email,
-    currency: "NGN",
-    gross_amount: grossAmount,
-    commission,
-    net_amount: netAmount,
-    payout_status: "pending",
-    paymentType: "tip",
-    partner: providerId,
-    booking: bookingId
-  });
+//   const commissionRate = 0.10; // 10%
+//   const grossAmount = Number(amount);
+//   const commission = grossAmount * commissionRate;
+//   const netAmount = grossAmount - commission;
 
-  const response = await axios.post(
-    "https://api.flutterwave.com/v3/payments",
-    {
-      tx_ref,
-      amount: grossAmount,
-      currency: "NGN",
-      redirect_url: process.env.FLW_SUCCESS_URL,
-      payment_options: paymentMethod,
-      meta: { providerId },
-      customer: {
-        email: user.email,
-        name: user.fullName,
-      },
-    },
-    {
-      headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
-    }
-  );
 
-  res.json({ paymentLink: response.data.data.link, tx_ref });
-});
+//   await Transaction.create({
+//     tx_ref,
+//     user: idForTrack,
+//     user_email: user.email,
+
+//     // amount: grossAmount,
+//     currency: "NGN",
+
+//     gross_amount: grossAmount,
+//     commission,
+//     net_amount: netAmount,
+
+//     payout_status: "pending",
+//     paymentType: "credit"
+//   });
+
+//   const response = await axios.post(
+//     "https://api.flutterwave.com/v3/payments",
+//     {
+//       tx_ref,
+//       amount: grossAmount,
+//       currency: "NGN",
+//       redirect_url: process.env.FLW_SUCCESS_URL,
+//       payment_options: paymentMethod,
+//       customer: {
+//         email: user.email,
+//         name: user.fullName,
+//       },
+//     },
+//     {
+//       headers: {
+//         Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
+//       },
+//     }
+//   );
+
+//   res.json({
+//     paymentLink: response.data.data.link,
+//     tx_ref,
+//   });
+// });
+
+
+
+
+// const tipsController = catchAsync(async (req, res) => {
+//   const { providerId, amount, paymentMethod, bookingId } = req.body;
+//   const userId = req.User._id;
+
+//   const user = await getUserById(userId);
+
+//   const tx_ref = `txn_${Date.now()}_${userId}`;
+
+//   const commissionRate = 0.10;
+//   const grossAmount = Number(amount);
+//   const commission = grossAmount * commissionRate;
+//   const netAmount = grossAmount - commission;
+
+//   await Transaction.create({
+//     tx_ref,
+//     user: userId,
+//     user_email: user.email,
+//     currency: "NGN",
+//     gross_amount: grossAmount,
+//     commission,
+//     net_amount: netAmount,
+//     payout_status: "pending",
+//     paymentType: "tip",
+//     partner: providerId,
+//     booking: bookingId
+//   });
+
+//   const response = await axios.post(
+//     "https://api.flutterwave.com/v3/payments",
+//     {
+//       tx_ref,
+//       amount: grossAmount,
+//       currency: "NGN",
+//       redirect_url: process.env.FLW_SUCCESS_URL,
+//       payment_options: paymentMethod,
+//       meta: { providerId },
+//       customer: {
+//         email: user.email,
+//         name: user.fullName,
+//       },
+//     },
+//     {
+//       headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
+//     }
+//   );
+
+//   res.json({ paymentLink: response.data.data.link, tx_ref });
+// });
 
 
 
@@ -451,37 +1691,37 @@ const initializePayment = async (req, res) => {
   }
 };
 
-const verifyPayment = async (req, res) => {
+// const verifyPayment = async (req, res) => {
 
-  const { transaction_id } = req.query;
+//   const { transaction_id } = req.query;
 
-  if (!transaction_id)
-    return res.send("Transaction missing");
+//   if (!transaction_id)
+//     return res.send("Transaction missing");
 
-  const response = await axios.get(
-    `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`,
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
-      },
-    }
-  );
+//   const response = await axios.get(
+//     `https://api.flutterwave.com/v3/transactions/${transaction_id}/verify`,
+//     {
+//       headers: {
+//         Authorization: `Bearer ${process.env.FLW_SECRET_KEY}`,
+//       },
+//     }
+//   );
 
-  const payment = response.data.data;
+//   const payment = response.data.data;
 
-  await Transaction.findOneAndUpdate(
-    { tx_ref: payment.tx_ref },
-    {
-      transaction_id: payment.id,
-      status:
-        payment.status === "successful"
-          ? "successful"
-          : "failed",
-    }
-  );
+//   await Transaction.findOneAndUpdate(
+//     { tx_ref: payment.tx_ref },
+//     {
+//       transaction_id: payment.id,
+//       status:
+//         payment.status === "successful"
+//           ? "successful"
+//           : "failed",
+//     }
+//   );
 
-  res.send("Payment verification complete");
-};
+//   res.send("Payment verification complete");
+// };
 
 
 const earningController = catchAsync(async (req, res) => {
