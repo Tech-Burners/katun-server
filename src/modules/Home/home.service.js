@@ -69,22 +69,133 @@ const pendingBookingService = async (user) => {
 };
 
 
-const nearestService = async (longitude, latitude) => {
+// const nearestService = async (longitude, latitude) => {
 
-  return await userModel.aggregate([
-    {
+//   return await userModel.aggregate([
+//     {
+//       $geoNear: {
+//         near: {
+//           type: "Point",
+//           coordinates: [longitude, latitude]
+//         },
+//         distanceField: "distance",
+//         spherical: true,
+//         distanceMultiplier: 0.001, // KM
+//         maxDistance: 8000 // 8 KM radius
+//       }
+//     },
+
+//     {
+//       $match: {
+//         role: "partner",
+//         isDeleted: false
+//       }
+//     },
+
+//     {
+//       $lookup: {
+//         from: "services",
+//         localField: "_id",
+//         foreignField: "user",
+//         as: "service"
+//       }
+//     },
+
+//     { $unwind:{ path: "$service", preserveNullAndEmptyArrays: true } },
+
+//     {
+//       $match: {
+//         "service.isActive": true,
+//         "service.isDeleted": false
+//       }
+//     },
+//     {
+//       $lookup: {
+//         from: "subcategories",
+//         localField: "service.subCategory",
+//         foreignField: "_id",
+//         as: "subCategory"
+//       }
+//     },
+//     {
+//       $unwind: {
+//         path: "$subCategory",
+//         preserveNullAndEmptyArrays: true
+//       }
+//     },
+//     {
+//       $addFields: {
+//         score: {
+//           $add: [
+
+//             // distance penalty
+//             { $multiply: ["$distance", 0.5] },
+
+//             // high rating boost
+//             { $multiply: ["$service.avgRating", -2] },
+
+//             // popularity boost
+//             { $multiply: ["$service.sell", -0.01] }
+//           ]
+//         }
+//       }
+//     },
+
+//     {
+//       $sort: { score: 1 }
+//     },
+
+//     {
+//       $sample: { size: 2 }
+//     },
+//     {
+//       $project: {
+//         _id: "$service._id",
+//         name: "$service.name",
+//         image: "$service.image",
+//         servicefee: "$service.servicefee",
+//         avgRating: "$service.avgRating",
+//         ratingCount: "$service.ratingCount",
+//         sell: "$service.sell",
+//         subCategoryName: "$subCategory.name",
+//         isVerified: 1,
+//         distance: { $round: ["$distance", 2] },
+//       }
+//     }
+//   ]);
+// };
+
+
+
+const nearestService = async (longitude, latitude) => {
+  console.log(longitude, latitude);
+  const pipeline = [];
+
+  // =========================
+  // LOGGED-IN USER WITH LOCATION
+  // =========================
+  if (longitude != null && latitude != null) {
+    pipeline.push({
       $geoNear: {
         near: {
           type: "Point",
-          coordinates: [longitude, latitude]
+          coordinates: [
+            Number(longitude),
+            Number(latitude)
+          ]
         },
         distanceField: "distance",
         spherical: true,
-        distanceMultiplier: 0.001, // KM
-        maxDistance: 8000 // 8 KM radius
+        distanceMultiplier: 0.001,
+        maxDistance: 8000 // 8 KM
       }
-    },
+    });
+  }
 
+  // =========================
+  // COMMON FILTER
+  // =========================
+  pipeline.push(
     {
       $match: {
         role: "partner",
@@ -101,7 +212,12 @@ const nearestService = async (longitude, latitude) => {
       }
     },
 
-    { $unwind:{ path: "$service", preserveNullAndEmptyArrays: true } },
+    {
+      $unwind: {
+        path: "$service",
+        preserveNullAndEmptyArrays: false
+      }
+    },
 
     {
       $match: {
@@ -109,6 +225,7 @@ const nearestService = async (longitude, latitude) => {
         "service.isDeleted": false
       }
     },
+
     {
       $lookup: {
         from: "subcategories",
@@ -117,53 +234,102 @@ const nearestService = async (longitude, latitude) => {
         as: "subCategory"
       }
     },
+
     {
       $unwind: {
         path: "$subCategory",
         preserveNullAndEmptyArrays: true
       }
-    },
-    {
+    }
+  );
+
+  // =========================
+  // ONLY LOGGED-IN USER
+  // =========================
+  if (longitude != null && latitude != null) {
+    pipeline.push({
       $addFields: {
         score: {
           $add: [
+            // Distance penalty
+            {
+              $multiply: ["$distance", 0.5]
+            },
 
-            // distance penalty
-            { $multiply: ["$distance", 0.5] },
+            // Rating boost
+            {
+              $multiply: [
+                "$service.avgRating",
+                -2
+              ]
+            },
 
-            // high rating boost
-            { $multiply: ["$service.avgRating", -2] },
-
-            // popularity boost
-            { $multiply: ["$service.sell", -0.01] }
+            // Popularity boost
+            {
+              $multiply: [
+                "$service.sell",
+                -0.01
+              ]
+            }
           ]
         }
       }
-    },
+    });
 
-    {
-      $sort: { score: 1 }
-    },
+    pipeline.push({
+      $sort: {
+        score: 1
+      }
+    });
+  } else {
+    // =========================
+    // GUEST USER
+    // =========================
+    // Show all active services
+    pipeline.push({
+      $sort: {
+        "service.avgRating": -1,
+        "service.sell": -1
+      }
+    });
+  }
 
-    {
-      $sample: { size: 2 }
-    },
-    {
-      $project: {
-        _id: "$service._id",
-        name: "$service.name",
-        image: "$service.image",
-        servicefee: "$service.servicefee",
-        avgRating: "$service.avgRating",
-        ratingCount: "$service.ratingCount",
-        sell: "$service.sell",
-        subCategoryName: "$subCategory.name",
-        isVerified: 1,
-        distance: { $round: ["$distance", 2] },
+  // =========================
+  // FINAL RESPONSE
+  // =========================
+  pipeline.push({
+    $project: {
+      _id: "$service._id",
+      name: "$service.name",
+      image: "$service.image",
+      servicefee: "$service.servicefee",
+      avgRating: "$service.avgRating",
+      ratingCount: "$service.ratingCount",
+      sell: "$service.sell",
+      subCategoryName: "$subCategory.name",
+      isVerified: 1,
+
+      distance: {
+        $cond: [
+          {
+            $ne: [
+              { $type: "$distance" },
+              "missing"
+            ]
+          },
+          {
+            $round: ["$distance", 2]
+          },
+          null
+        ]
       }
     }
-  ]);
+  });
+
+  return await userModel.aggregate(pipeline);
 };
+
+
 
 
 const allNearestService = async (longitude, latitude, options) => {
