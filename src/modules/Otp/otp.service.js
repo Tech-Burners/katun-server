@@ -21,6 +21,67 @@ const normalizeSentTo = (sentTo, receiverType) => {
   return sentTo;
 };
 
+// const sendOTP = async (
+//   name,
+//   sentTo,
+//   receiverType,
+//   purpose = "email-verification"
+// ) => {
+//   sentTo = normalizeSentTo(sentTo, receiverType);
+
+//   console.log({ name, sentTo, receiverType, purpose });
+
+//   const otp = Math.floor(100000 + Math.random() * 900000);
+
+//   const otpExpiryTime =
+//     parseInt(process.env.OTP_EXPIRY_TIME) || 3;
+
+//   const expiredAt = new Date(
+//     Date.now() + otpExpiryTime * 60 * 1000
+//   );
+
+//   await OTP.findOneAndUpdate(
+//     {
+//       sentTo,
+//       receiverType,
+//       purpose,
+//       status: "pending",
+//     },
+//     {
+//       otp,
+//       expiredAt,
+//       status: "pending",
+//       verifiedAt: null,
+//     },
+//     {
+//       upsert: true,
+//       new: true,
+//     }
+//   );
+
+//   // Email
+//   if (receiverType === "email") {
+//     const subject =
+//       purpose === "email-verification"
+//         ? "Email verification code"
+//         : "Forgot password code";
+
+//     await emailWithNodemailer({
+//       email: sentTo,
+//       subject,
+//       html: `Your OTP is <b>${otp}</b>. It will expire in ${otpExpiryTime} minutes.`,
+//     });
+//   }
+
+//   // SMS
+//   if (receiverType === "phone") {
+//     await sendSMSOtp(sentTo, otp);
+//   }
+
+//   return true;
+// };
+
+
 const sendOTP = async (
   name,
   sentTo,
@@ -29,7 +90,12 @@ const sendOTP = async (
 ) => {
   sentTo = normalizeSentTo(sentTo, receiverType);
 
-  console.log({ name, sentTo, receiverType, purpose });
+  console.log({
+    name,
+    sentTo,
+    receiverType,
+    purpose,
+  });
 
   const otp = Math.floor(100000 + Math.random() * 900000);
 
@@ -39,6 +105,34 @@ const sendOTP = async (
   const expiredAt = new Date(
     Date.now() + otpExpiryTime * 60 * 1000
   );
+
+  // ==========================================
+  // 1. SEND OTP FIRST
+  // ==========================================
+
+  if (receiverType === "email") {
+    const subject =
+      purpose === "email-verification"
+        ? "Email verification code"
+        : "Forgot password code";
+
+    await emailWithNodemailer({
+      email: sentTo,
+      subject,
+      html: `
+        Your OTP is <b>${otp}</b>.
+        It will expire in ${otpExpiryTime} minutes.
+      `,
+    });
+  }
+
+  if (receiverType === "phone") {
+    await sendSMSOtp(sentTo, otp);
+  }
+
+  // ==========================================
+  // 2. ONLY SAVE OTP IF SENDING SUCCESSFUL
+  // ==========================================
 
   await OTP.findOneAndUpdate(
     {
@@ -59,27 +153,15 @@ const sendOTP = async (
     }
   );
 
-  // Email
-  if (receiverType === "email") {
-    const subject =
-      purpose === "email-verification"
-        ? "Email verification code"
-        : "Forgot password code";
-
-    await emailWithNodemailer({
-      email: sentTo,
-      subject,
-      html: `Your OTP is <b>${otp}</b>. It will expire in ${otpExpiryTime} minutes.`,
-    });
-  }
-
-  // SMS
-  if (receiverType === "phone") {
-    await sendSMSOtp(sentTo, otp);
-  }
-
-  return true;
+  return {
+    success: true,
+    message:
+      receiverType === "email"
+        ? "OTP sent to your email"
+        : "OTP sent to your phone",
+  };
 };
+
 
 const checkOTPService = async (sentTo, receiverType) => {
   sentTo = normalizeSentTo(sentTo, receiverType);

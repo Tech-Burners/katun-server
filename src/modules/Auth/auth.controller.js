@@ -182,46 +182,76 @@ const signUp = catchAsync(async (req, res) => {
   }
 
   /* ---------- OTP ---------- */
+let message = "";
 
-  let message = "";
-
-  if (existingOTP) {
-    message = "OTP already sent. Please wait for a few minutes.";
-  } else {
-
-    const otpData = await sendOTP(
-      fullName,
-      sentTo,
-      receiverType,
-      "email-verification"
-    );
-
-    if (otpData) {
-      message =
-        receiverType === "email"
-          ? "OTP sent to your email"
-          : "OTP sent to your phone";
-    }
-  }
-
-  // console.log(req.body);
-
-  const accessToken = jwt.sign(
-    { ...req.body },
-    process.env.JWT_ACCESS_TOKEN,
-    { expiresIn: "1h" }
+if (existingOTP) {
+  message = "OTP already sent. Please wait for a few minutes.";
+} else {
+  const otpData = await sendOTP(
+    fullName,
+    sentTo,
+    receiverType,
+    "email-verification"
   );
 
-  return res.status(status.CREATED).json(
-    response({
-      status: "OK",
-      statusCode: status.CREATED,
-      type: "user",
-      message,
-      accessToken
-    })
-  );
+  message = otpData.message;
+}
+
+const accessToken = jwt.sign(
+  { ...req.body },
+  process.env.JWT_ACCESS_TOKEN,
+  { expiresIn: "1h" }
+);
+
+return res.status(status.CREATED).json(
+  response({
+    status: "OK",
+    statusCode: status.CREATED,
+    type: "user",
+    message,
+    accessToken,
+  })
+);
 });
+//   let message = "";
+
+//   if (existingOTP) {
+//     message = "OTP already sent. Please wait for a few minutes.";
+//   } else {
+
+//     const otpData = await sendOTP(
+//       fullName,
+//       sentTo,
+//       receiverType,
+//       "email-verification"
+//     );
+
+//     if (otpData) {
+//       message =
+//         receiverType === "email"
+//           ? "OTP sent to your email"
+//           : "OTP sent to your phone";
+//     }
+//   }
+
+//   // console.log(req.body);
+
+//   const accessToken = jwt.sign(
+//     { ...req.body },
+//     process.env.JWT_ACCESS_TOKEN,
+//     { expiresIn: "1h" }
+//   );
+
+//   return res.status(status.CREATED).json(
+//     response({
+//       status: "OK",
+//       statusCode: status.CREATED,
+//       type: "user",
+//       message,
+//       accessToken
+//     })
+//   );
+// });
 
 
 
