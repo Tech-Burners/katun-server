@@ -59,9 +59,8 @@ const sendSMSOtp = async (
   const otpExpiryTime =
     parseInt(process.env.OTP_EXPIRY_TIME) || 3;
 
-  const messageBody = `Your ${
-    process.env.APPNAME || "App"
-  } verification code is: ${otp}. It will expire in ${otpExpiryTime} minutes.`;
+  const messageBody = `Your ${process.env.APPNAME || "App"
+    } verification code is: ${otp}. It will expire in ${otpExpiryTime} minutes.`;
 
   try {
     const message = await TwilioClient.messages.create({
@@ -97,50 +96,55 @@ const sendSMSOtp = async (
       details: error.details,
     });
 
+    if (error.code === 21211) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        "The phone number you entered is invalid. Please check the number and try again."
+      );
+    }
+
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      `Failed to send OTP: ${error.message}${
-        error.code ? ` (Twilio Code: ${error.code})` : ""
-      }`
+      "We couldn't send the verification code. Please try again later."
     );
   }
 };
 
 const sendSMSINNumber = async (phoneNumber, message, type = "general") => {
 
-    if (!phoneNumber) {
-        throw new ApiError(httpStatus.BAD_REQUEST, "Phone number is required");
+  if (!phoneNumber) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Phone number is required");
+  }
+
+  try {
+
+    // console.log(`Sending SMS of type "${type}" to ${phoneNumber}: ${message}`);
+
+    const smsResponse = await TwilioClient.messages.create({
+      body: message,
+      from: twilioPhone,
+      to: phoneNumber,
+    });
+
+    if (!smsResponse) {
+      throw new ApiError(
+        httpStatus.INTERNAL_SERVER_ERROR,
+        `Failed to send SMS of type "${type}"`
+      );
     }
 
-    try {
+    return smsResponse;
 
-        // console.log(`Sending SMS of type "${type}" to ${phoneNumber}: ${message}`);
-
-        const smsResponse = await TwilioClient.messages.create({
-            body: message,
-            from: twilioPhone,
-            to: phoneNumber,
-        });
-
-        if (!smsResponse) {
-            throw new ApiError(
-                httpStatus.INTERNAL_SERVER_ERROR,
-                `Failed to send SMS of type "${type}"`
-            );
-        }
-
-        return smsResponse;
-
-    } catch (error) {
-        throw new ApiError(
-            httpStatus.INTERNAL_SERVER_ERROR,
-            `Failed to send message of type "${type}": ${error.message}`
-        );
-    }
+  } catch (error) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      `Failed to send message of type "${type}": ${error.message}`
+    );
+  }
 };
 
 
 module.exports = {
-    sendSMSOtp,
-    sendSMSINNumber
+  sendSMSOtp,
+  sendSMSINNumber
 };
