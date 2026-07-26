@@ -8,7 +8,7 @@ const uploadUsers = userFileUploadMiddleware(UPLOADS_FOLDER_USERS);
 const convertHeicToPng = require('../../middlewares/converter');
 const ensureUploadFolderExists = require('../../helpers/fileExists');
 const parseData = require('../../middlewares/parseData');
-const { localAuth, userDetailsByID, forgetPassword, resendOTP, resetPassword, changePassword, updateProfile, otpVerification, signUp, partnerProfileController, myDocumentsController, otpVerificationForPartner, createPartnerController, partnerSignUpController, allUserController, deleteAccountController, allPartnerController, updateDocuments, refreshToken } = require("./auth.controller");
+const { localAuth, userDetailsByID, forgetPassword, resendOTP, resetPassword, changePassword, updateProfile, otpVerification, signUp, partnerProfileController, myDocumentsController, otpVerificationForPartner, createPartnerController, partnerSignUpController, allUserController, deleteAccountController, allPartnerController, updateDocuments, refreshToken, googleAuthController, appleAuthController } = require("./auth.controller");
 ensureUploadFolderExists(UPLOADS_FOLDER_USERS);
 
 
@@ -32,6 +32,8 @@ router.post(
 );
 
 router.post("/signin", localAuth);
+router.post("/google", googleAuthController);
+router.post("/apple-login", appleAuthController);
 router.post("/refresh-token", refreshToken);
 router.get('/my-profile', auth(['user', 'partner','hr', 'sub_hr_admin', 'admin', 'sub_admin']), userDetailsByID);
 router.get('/my-documents', auth(['admin', 'hr', 'user', 'partner', 'sub_hr_admin', 'sub_admin']), myDocumentsController);

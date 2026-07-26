@@ -1,4 +1,3 @@
-const { default: mongoose } = require('mongoose');
 const ApiError = require('../../helpers/ApiError');
 const User = require('../User/user.model');
 const bcrypt = require('bcryptjs');
@@ -38,6 +37,108 @@ const addUser = async (userBody) => {
   }
   return user;
 }
+
+
+const googleAuthService = async (
+  accessToken
+) => {
+  const googleUser = await verifyGoogleToken(accessToken);
+
+  if (!googleUser) {
+    throw new ApiError(status.FORBIDDEN, "Invalid Google token");
+  }
+
+  let user = await User.findOne({
+    email: googleUser.email,
+  }).setOptions({ ignoreDeleted: true });
+
+  // User exists
+  if (user) {
+    if (user.isBanned) {
+      throw new ApiError(
+        status.FORBIDDEN,
+        "This account is blocked"
+      );
+    }
+
+    if (user.loginWith !== "google") {
+      throw new ApiError(
+        status.FORBIDDEN,
+        `This account is registered with ${user.loginWith}. Please use that login method.`
+      );
+    }
+  }
+
+  // User doesn't exist -> create account
+  if (!user) {
+    user = await User.create({
+      email: googleUser.email,
+      googleId: googleUser.googleId,
+      password: googleUser.googleId,
+      fullName: googleUser.name || "",
+      role: "user", // or take from req.body if needed
+      loginWith: "google",
+    });
+  }
+
+  user.isLoginToken = true;
+  await user.save();
+
+  return user;
+};
+
+
+ const  createOrLoginUserWithApple = async (payload) => {
+  const { accessToken } = payload;
+
+  const appleUser = await verifyAppleToken(accessToken);
+
+  // 1. CASE: user already exists by appleId
+  let user = await User.findOne({ appleId: appleUser.appleId });
+
+  if (user) {
+    const token = await tokenGenerator(user);
+
+    return {
+      user,
+      accessToken: token,
+    };
+  }
+
+  // 2. CASE: email already exists (important fix)
+  if (appleUser.email) {
+    const existingUser = await User.findOne({ email: appleUser.email });
+
+    if (existingUser) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        `Email already registered with ${existingUser.loginWith}. Please login with ${existingUser.loginWith}`
+      );
+    }
+  }
+
+  // 3. CREATE USER
+  const newUser = await User.create({
+    appleId: appleUser.appleId,
+    fullName: appleUser.name,
+    email: appleUser.email,
+    loginWith: "apple",
+    password: appleUser.appleId, // optional fallback
+  });
+
+  if (!newUser) {
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, "User creation failed");
+  }
+
+  const token = await tokenGenerator(newUser);
+
+  return {
+    user: newUser,
+    accessToken: token,
+  };
+};
+
+
 
 const deleteAccountService = async (id) => {
 
@@ -460,5 +561,7 @@ module.exports = {
   partnerProfileService,
   allUserService,
   deleteAccountService,
-  allPartnersService
+  allPartnersService,
+  createOrLoginUserWithApple,
+  googleAuthService
 };

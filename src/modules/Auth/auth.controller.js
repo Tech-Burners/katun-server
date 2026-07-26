@@ -1,3 +1,4 @@
+const jwt = require("jsonwebtoken");
 const { tokenGenerator, refreshTokenGenerator, resetTokenGenerator } = require("../../helpers/tokenGenerator");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
@@ -8,7 +9,6 @@ const { login, getUserByEmail, addUser, updateUserById, profileByIdService, getU
   deleteAccountService,
   allPartnersService } = require("./auth.service");
 const { addToken, verifyToken, deleteToken } = require("../Token/token.service");
-const jwt = require("jsonwebtoken");
 const { default: status } = require("http-status");
 const ApiError = require("../../helpers/ApiError");
 const unlinkImage = require('../../helpers/fileExists');
@@ -224,6 +224,61 @@ const signUp = catchAsync(async (req, res) => {
 });
 
 
+
+
+const googleAuthController = catchAsync(
+  async (req, res) => {
+    const user = await googleAuthService(req.body.accessToken);
+
+    const token = await tokenGenerator(user);
+
+    return res.status(status.OK).json(
+      response({
+        statusCode: status.OK,
+        status: "OK",
+        message: "Authentication successful",
+        data: user,
+        accessToken: token,
+      })
+    );
+  }
+);
+
+const appleAuthController = catchAsync(async (req, res) => {
+  const { accessToken } = req.body;
+
+  if (!accessToken) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "Error",
+        statusCode: status.BAD_REQUEST,
+        type: "user",
+        message: "Apple accessToken is required",
+      })
+    );
+  }
+
+  const { user, accessToken: token } = await createOrLoginUserWithApple({ accessToken });
+
+  user.isLoginToken = true;
+  await user.save();
+
+  return res.status(status.OK).json(
+    response({
+      statusCode: status.OK,
+      status: "OK",
+      message: "Apple login successful",
+      data: user,
+      accessToken: token,
+    })
+  );
+});
+
+
+
+
+
+
 const updateDocuments = catchAsync(async (req, res) => {
   if (req.files) {
     if (req.files.image?.[0]) {
@@ -284,7 +339,7 @@ const partnerSignUpController = catchAsync(async (req, res) => {
   } else {
 
     const otpData = await sendOTP(
-      fullName = 'Partner',
+      fullName = '',
       sentTo,
       receiverType,
       "email-verification"
@@ -1145,5 +1200,7 @@ module.exports = {
   allUserController,
   deleteAccountController,
   updateDocuments,
-  refreshToken
+  refreshToken,
+  googleAuthController,
+  appleAuthController
 };

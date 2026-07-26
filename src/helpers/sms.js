@@ -12,39 +12,99 @@ const twilioPhone = "AuraVive";
 const TwilioClient = twilio(accountSid, authToken);
 
 
-const sendSMSOtp = async (phoneNumber, otp, purpose = "verification") => {
-    // console.log({ phoneNumber, otp, purpose });
-    if (!phoneNumber) {
-        throw new ApiError(httpStatus.BAD_REQUEST, "Phone number is required");
+// const sendSMSOtp = async (phoneNumber, otp, purpose = "verification") => {
+//     // console.log({ phoneNumber, otp, purpose });
+//     if (!phoneNumber) {
+//         throw new ApiError(httpStatus.BAD_REQUEST, "Phone number is required");
+//     }
+
+//     const otpExpiryTime = parseInt(process.env.OTP_EXPIRY_TIME) || 3; // minutes
+
+//     // Friendly, professional SMS
+//     let messageBody = `Your ${process.env.APPNAME || "App"} verification code is: ${otp}. It will expire in ${otpExpiryTime} minutes.`;
+
+//     try {
+//         const message = await TwilioClient.messages.create({
+//             body: messageBody,
+//             from: twilioPhone,
+//             to: phoneNumber,
+//         });
+
+//         if (!message) {
+//             throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, "Failed to send OTP");
+//         }
+
+//         return otp;
+
+//     } catch (error) {
+//         throw new ApiError(
+//             httpStatus.INTERNAL_SERVER_ERROR,
+//             `Failed to send OTP: ${error.message}`
+//         );
+//     }
+// };
+
+const sendSMSOtp = async (
+  phoneNumber,
+  otp,
+  purpose = "verification"
+) => {
+  if (!phoneNumber) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Phone number is required"
+    );
+  }
+
+  const otpExpiryTime =
+    parseInt(process.env.OTP_EXPIRY_TIME) || 3;
+
+  const messageBody = `Your ${
+    process.env.APPNAME || "App"
+  } verification code is: ${otp}. It will expire in ${otpExpiryTime} minutes.`;
+
+  try {
+    const message = await TwilioClient.messages.create({
+      body: messageBody,
+      from: twilioPhone,
+      to: phoneNumber,
+    });
+
+    console.log("Twilio SMS Response:", {
+      sid: message.sid,
+      status: message.status,
+      to: message.to,
+      errorCode: message.errorCode,
+      errorMessage: message.errorMessage,
+    });
+
+    // Twilio should always return a message SID
+    if (!message?.sid) {
+      throw new Error("Twilio did not return a message SID");
     }
 
-    const otpExpiryTime = parseInt(process.env.OTP_EXPIRY_TIME) || 3; // minutes
+    return {
+      sid: message.sid,
+      status: message.status,
+    };
 
-    // Friendly, professional SMS
-    let messageBody = `Your ${process.env.APPNAME || "App"} verification code is: ${otp}. It will expire in ${otpExpiryTime} minutes.`;
+  } catch (error) {
+    console.error("Twilio SMS Error:", {
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      moreInfo: error.moreInfo,
+      details: error.details,
+    });
 
-    try {
-        const message = await TwilioClient.messages.create({
-            body: messageBody,
-            from: twilioPhone,
-            to: phoneNumber,
-        });
-
-        if (!message) {
-            throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, "Failed to send OTP");
-        }
-
-        return otp;
-
-    } catch (error) {
-        throw new ApiError(
-            httpStatus.INTERNAL_SERVER_ERROR,
-            `Failed to send OTP: ${error.message}`
-        );
-    }
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Failed to send OTP: ${error.message}${
+        error.code ? ` (Twilio Code: ${error.code})` : ""
+      }`
+    );
+  }
 };
-
-
 
 const sendSMSINNumber = async (phoneNumber, message, type = "general") => {
 
