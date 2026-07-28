@@ -9,7 +9,7 @@ const userSchema = new mongoose.Schema({
   // phoneNumber: { type: String },
   // whatsappNumber: { type: String },
   image: { type: String, required: false, default: '/uploads/users/user.jpg' },
-  role: { type: String, enum: ['user', 'hr', 'sub_hr_admin', 'partner', 'admin','sub_admin'], default: 'user' },
+  role: { type: String, enum: ['user', 'hr', 'sub_hr_admin', 'partner', 'admin', 'sub_admin'], default: 'user' },
   isLoginToken: { type: Boolean, default: true },
   isVerified: { type: Boolean, default: false },
   isBan: { type: Boolean, default: false },
@@ -51,6 +51,13 @@ const userSchema = new mongoose.Schema({
   activePayoutCycle: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "PayoutCycle",
+  },
+  googleId: { type: String },
+  appleId: { type: String },
+  loginWith: {
+    type: String,
+    enum: ["local", "google", "apple"],
+    default: "local",
   },
 },
   {

@@ -48,9 +48,7 @@ const verifyAppleToken = async (idToken) => {
   }
 };
 
-module.exports = {
-  verifyAppleToken,
-};
+
 
 
 const auth = (userRoles, { optional = false } = {}) => {
@@ -165,4 +163,4 @@ const requirePermission = catchAsync((permission) => {
 
 
 
-module.exports = { auth, tokenCheck, requirePermission, resetTokenCheck };
+module.exports = { auth, tokenCheck, requirePermission, resetTokenCheck, verifyAppleToken };

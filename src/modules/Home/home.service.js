@@ -332,9 +332,158 @@ const nearestService = async (longitude, latitude) => {
 
 
 
-const allNearestService = async (longitude, latitude, options) => {
+// const allNearestService = async (longitude, latitude, options) => {
 
+//   const { page = 1, limit = 10, search } = options;
+//   const skip = (page - 1) * limit;
+
+//   const serviceMatch = {
+//     "service.isActive": true,
+//     "service.isDeleted": false,
+//   };
+
+//   if (search && search.trim() !== "") {
+//     serviceMatch["service.name"] = {
+//       $regex: search,
+//       $options: "i",
+//     };
+//   }
+
+//   const pipeline = [
+
+//     // ---------- GEO ----------
+//     {
+//       $geoNear: {
+//         near: {
+//           type: "Point",
+//           coordinates: [longitude, latitude],
+//         },
+//         distanceField: "distance",
+//         spherical: true,
+//         distanceMultiplier: 0.001,
+//         maxDistance: 8000,
+//       },
+//     },
+
+//     // ---------- PARTNER ----------
+//     {
+//       $match: {
+//         role: "partner",
+//         isDeleted: false,
+//       },
+//     },
+
+//     // ---------- SERVICE ----------
+//     {
+//       $lookup: {
+//         from: "services",
+//         localField: "_id",
+//         foreignField: "user",
+//         as: "service",
+//       },
+//     },
+
+//     {
+//       $unwind: {
+//         path: "$service",
+//         preserveNullAndEmptyArrays: false,
+//       },
+//     },
+
+//     {
+//       $match: serviceMatch,
+//     },
+
+//     // ---------- PROVIDER ----------
+//     {
+//       $lookup: {
+//         from: "users",
+//         localField: "service.user",
+//         foreignField: "_id",
+//         as: "providerInfo",
+//       },
+//     },
+//     {
+//       $unwind: {
+//         path: "$providerInfo",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     },
+
+//     // ---------- SUBCATEGORY ----------
+//     {
+//       $lookup: {
+//         from: "subcategories",
+//         localField: "service.subCategory",
+//         foreignField: "_id",
+//         as: "subCategory",
+//       },
+//     },
+//     {
+//       $unwind: {
+//         path: "$subCategory",
+//         preserveNullAndEmptyArrays: true,
+//       },
+//     },
+
+//     // ---------- SMART SCORE ----------
+//     {
+//       $addFields: {
+//         score: {
+//           $add: [
+//             { $multiply: ["$distance", 0.5] },
+//             { $multiply: ["$service.avgRating", -2] },
+//             { $multiply: ["$service.sell", -0.01] },
+//           ],
+//         },
+//       },
+//     },
+
+//     { $sort: { score: 1 } },
+//     { $skip: skip },
+//     { $limit: limit },
+
+//     // ---------- RESPONSE ----------
+//     {
+//       $project: {
+//         _id: "$service._id",
+//         name: "$service.name",
+//         image: "$service.image",
+//         servicefee: "$service.servicefee",
+//         avgRating: "$service.avgRating",
+//         ratingCount: "$service.ratingCount",
+//         sell: "$service.sell",
+//         subCategoryName: "$subCategory.name",
+//         providerName: "$providerInfo.fullName",
+//           providerId: "$providerInfo._id",
+//         distance: { $round: ["$distance", 2] },
+//       },
+//     },
+//   ];
+
+//   const [result, count] = await Promise.all([
+//     userModel.aggregate(pipeline),
+
+//     userModel.countDocuments({
+//       role: "partner",
+//       isDeleted: false,
+//     }),
+//   ]);
+
+//   return {
+//     result,
+//     pagination: {
+//       totalResults: count,
+//       totalPages: Math.ceil(count / limit),
+//       currentPage: page,
+//       limit,
+//     },
+//   };
+// };
+
+const allNearestService = async (longitude, latitude, options) => {
   const { page = 1, limit = 10, search } = options;
+
   const skip = (page - 1) * limit;
 
   const serviceMatch = {
@@ -349,22 +498,25 @@ const allNearestService = async (longitude, latitude, options) => {
     };
   }
 
-  const pipeline = [
+  const pipeline = [];
 
-    // ---------- GEO ----------
-    {
+  // Only use $geoNear when location exists
+  if (longitude != null && latitude != null) {
+    pipeline.push({
       $geoNear: {
         near: {
           type: "Point",
-          coordinates: [longitude, latitude],
+          coordinates: [Number(longitude), Number(latitude)],
         },
         distanceField: "distance",
         spherical: true,
         distanceMultiplier: 0.001,
         maxDistance: 8000,
       },
-    },
+    });
+  }
 
+  pipeline.push(
     // ---------- PARTNER ----------
     {
       $match: {
@@ -403,6 +555,7 @@ const allNearestService = async (longitude, latitude, options) => {
         as: "providerInfo",
       },
     },
+
     {
       $unwind: {
         path: "$providerInfo",
@@ -419,15 +572,18 @@ const allNearestService = async (longitude, latitude, options) => {
         as: "subCategory",
       },
     },
+
     {
       $unwind: {
         path: "$subCategory",
         preserveNullAndEmptyArrays: true,
       },
-    },
+    }
+  );
 
-    // ---------- SMART SCORE ----------
-    {
+  // Only calculate smart score if location exists
+  if (longitude != null && latitude != null) {
+    pipeline.push({
       $addFields: {
         score: {
           $add: [
@@ -437,9 +593,24 @@ const allNearestService = async (longitude, latitude, options) => {
           ],
         },
       },
-    },
+    });
 
-    { $sort: { score: 1 } },
+    pipeline.push({
+      $sort: {
+        score: 1,
+      },
+    });
+  } else {
+    // Guest: no location, so sort by rating/sales
+    pipeline.push({
+      $sort: {
+        "service.avgRating": -1,
+        "service.sell": -1,
+      },
+    });
+  }
+
+  pipeline.push(
     { $skip: skip },
     { $limit: limit },
 
@@ -455,15 +626,25 @@ const allNearestService = async (longitude, latitude, options) => {
         sell: "$service.sell",
         subCategoryName: "$subCategory.name",
         providerName: "$providerInfo.fullName",
-          providerId: "$providerInfo._id",
-        distance: { $round: ["$distance", 2] },
+        providerId: "$providerInfo._id",
+
+        distance: {
+          $round: [
+            {
+              $ifNull: ["$distance", 0],
+            },
+            2,
+          ],
+        },
       },
-    },
-  ];
+    }
+  );
 
   const [result, count] = await Promise.all([
     userModel.aggregate(pipeline),
 
+    // IMPORTANT: Your current countDocuments counts
+    // all partners, not filtered active services.
     userModel.countDocuments({
       role: "partner",
       isDeleted: false,
@@ -480,6 +661,7 @@ const allNearestService = async (longitude, latitude, options) => {
     },
   };
 };
+
 
 const promoService = async () => {
   return await promoModel.aggregate([

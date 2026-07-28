@@ -4,6 +4,9 @@ const { auth } = require('../../middlewares/auth');
 const router = express.Router();
 
 router.post('/home', auth(['user'], { optional: true }), homeController);
-router.post('/all-nearest', auth(['user']), allNerestController)
-
+router.post(
+  "/all-nearest",
+  auth(["user"], { optional: true }),
+  allNerestController
+);
 module.exports = router

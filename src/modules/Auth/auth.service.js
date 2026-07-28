@@ -6,7 +6,165 @@ const userModel = require('../User/user.model');
 const { addPartnerService, editPartnerService } = require('../Partner/partner.service');
 const partnerModel = require('../Partner/partner.model');
 const employerModel = require('../Employer/employer.model');
+const { tokenGenerator } = require('../../helpers/tokenGenerator');
+const { verifyAppleToken, verifyGoogleToken } = require('../../helpers/verifyAppleToken');
 
+
+
+
+
+
+const socialLoginWithAppleService = async (payload) => {
+  const {
+    accessToken,
+    role,
+    fullName,
+  } = payload;
+
+  // 1. Verify Apple Firebase ID Token
+  const appleUser = await verifyAppleToken(accessToken);
+
+  console.log(
+    appleUser,
+    "appleUser======>"
+  );
+
+  if (!appleUser) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Unable to verify Apple account"
+    );
+  }
+
+  // 2. Find existing user using Apple ID
+  let user = await User.findOne({
+    appleId: appleUser.appleId,
+  }).setOptions({
+    ignoreDeleted: true,
+  });
+
+  // =================================================
+  // EXISTING USER → SIGN IN
+  // =================================================
+
+  if (user) {
+    if(user.isBan){
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        "This account is blocked"
+      );
+    }
+    return user;
+  }
+
+  // =================================================
+  // NEW USER → SIGN UP
+  // =================================================
+
+
+  const userData = {
+    appleId: appleUser.appleId,
+    email: appleUser.email,
+    fullName:
+      appleUser.name ||
+      fullName ||
+      "New User",
+    password: appleUser.appleId,
+    role,
+    loginWith: "apple",
+  };
+
+  // 3. Create new user
+  user = await User.create(userData);
+
+  console.log(
+    user,
+    "New Apple user created"
+  );
+
+  if (!user) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "User creation failed"
+    );
+  }
+
+  // 4. Generate tokens
+  return user;
+};
+
+
+
+
+
+const socialLoginWithGoogleService = async (payload) => {
+  const {
+    accessToken,
+    role,
+    fullName,
+  } = payload;
+
+  // 1. Verify Google Firebase ID Token
+  const googleUser = await verifyGoogleToken(accessToken);
+
+  if (!googleUser) {
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Unable to verify Google account"
+    );
+  }
+
+  // 2. Find existing user using Google ID
+  let user = await User.findOne({
+    googleId: googleUser.googleId,
+  }).setOptions({
+    ignoreDeleted: true,
+  });
+
+  // ==========================================
+  // EXISTING USER → SIGN IN
+  // ==========================================
+
+  if (user) {
+    if (user.isBan) {
+      throw new ApiError(
+        httpStatus.FORBIDDEN,
+        "This account is blocked"
+      );
+    }
+
+    return user;
+  }
+
+  // ==========================================
+  // NEW USER → SIGN UP
+  // ==========================================
+
+  const userData = {
+    googleId: googleUser.googleId,
+    email: googleUser.email,
+    fullName:
+      googleUser.name ||
+      fullName ||
+      "New User",
+    password: googleUser.googleId,
+    role,
+    loginWith: "google",
+  };
+
+  // 3. Create new user
+  user = await User.create(userData);
+
+  if (!user) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "User creation failed"
+    );
+  }
+
+  // 4. Generate tokens
+  return user;
+};
 
 
 const addUser = async (userBody) => {
@@ -39,56 +197,8 @@ const addUser = async (userBody) => {
 }
 
 
-const googleAuthService = async (
-  accessToken
-) => {
-  const googleUser = await verifyGoogleToken(accessToken);
 
-  if (!googleUser) {
-    throw new ApiError(status.FORBIDDEN, "Invalid Google token");
-  }
-
-  let user = await User.findOne({
-    email: googleUser.email,
-  }).setOptions({ ignoreDeleted: true });
-
-  // User exists
-  if (user) {
-    if (user.isBanned) {
-      throw new ApiError(
-        status.FORBIDDEN,
-        "This account is blocked"
-      );
-    }
-
-    if (user.loginWith !== "google") {
-      throw new ApiError(
-        status.FORBIDDEN,
-        `This account is registered with ${user.loginWith}. Please use that login method.`
-      );
-    }
-  }
-
-  // User doesn't exist -> create account
-  if (!user) {
-    user = await User.create({
-      email: googleUser.email,
-      googleId: googleUser.googleId,
-      password: googleUser.googleId,
-      fullName: googleUser.name || "",
-      role: "user", // or take from req.body if needed
-      loginWith: "google",
-    });
-  }
-
-  user.isLoginToken = true;
-  await user.save();
-
-  return user;
-};
-
-
- const  createOrLoginUserWithApple = async (payload) => {
+const createOrLoginUserWithApple = async (payload) => {
   const { accessToken } = payload;
 
   const appleUser = await verifyAppleToken(accessToken);
@@ -249,11 +359,10 @@ const login = async (identifier, receiverType, inputPassword) => {
     if (!user) {
       throw new ApiError(status.NOT_FOUND, "User not found");
     }
-
     if (["admin", "hr", "partner", "sub_admin", "sub_hr_admin"].includes(user.role)) {
       throw new ApiError(
         status.UNAUTHORIZED,
-        "This role must login using email"
+        "Invalid login credentials"
       );
     }
   }
@@ -320,7 +429,7 @@ const getUserById = async (id) => {
 };
 
 const updateUserById = async (id, data) => {
-  // console.log({id, data });
+  console.log({id, data });
   const userPayload = {
     fullName: data.fullName,
     image: data.image,
@@ -331,7 +440,7 @@ const updateUserById = async (id, data) => {
     number: data.number,
     countryCode: data.countryCode
   };
-// console.log({ userPayload });
+  // console.log({ userPayload });
   const user = await userModel.findByIdAndUpdate(id, userPayload, { new: true });
   // console.log({ user });
 
@@ -369,7 +478,7 @@ const updateUserById = async (id, data) => {
     );
   }
   // console.log({ user, partnerData, companyData });
-  
+
   return {
     user,
     partner: partnerData,
@@ -393,6 +502,7 @@ const profileByIdService = async (userId) => {
 
   if (user.role === 'partner') {
     partnerData = await partnerModel.findOne({ user: userId });
+    console.log({ partnerData });
   }
 
   if (user.role === 'hr') {
@@ -449,14 +559,14 @@ const allUserService = async (options) => {
 
   const searchMatch = search
     ? {
-        $or: [
-          { fullName: { $regex: search, $options: "i" } },
-          { email: { $regex: search, $options: "i" } },
-          { number: { $regex: search, $options: "i" } },
-          { "companyData.companyName": { $regex: search, $options: "i" } },
-          { role: { $regex: search, $options: "i" } },
-        ],
-      }
+      $or: [
+        { fullName: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } },
+        { number: { $regex: search, $options: "i" } },
+        { "companyData.companyName": { $regex: search, $options: "i" } },
+        { role: { $regex: search, $options: "i" } },
+      ],
+    }
     : {};
 
   const banMatch =
@@ -562,6 +672,6 @@ module.exports = {
   allUserService,
   deleteAccountService,
   allPartnersService,
-  createOrLoginUserWithApple,
-  googleAuthService
+  socialLoginWithAppleService,
+  socialLoginWithGoogleService
 };

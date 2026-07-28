@@ -7,7 +7,12 @@ const { login, getUserByEmail, addUser, updateUserById, profileByIdService, getU
   partnerProfileService,
   allUserService,
   deleteAccountService,
-  allPartnersService } = require("./auth.service");
+  allPartnersService, 
+  googleAuthService,
+  createOrLoginUserWithApple,
+  createUserWithApple,
+  socialLoginWithAppleService,
+  socialLoginWithGoogleService} = require("./auth.service");
 const { addToken, verifyToken, deleteToken } = require("../Token/token.service");
 const { default: status } = require("http-status");
 const ApiError = require("../../helpers/ApiError");
@@ -16,6 +21,36 @@ const { myDocumentsService, updateDocumentsService } = require("../Partner/partn
 const { getAdminByUserId } = require("../Admin/admin.service");
 const { add } = require("winston");
 const userModel = require("../User/user.model");
+
+
+
+
+
+
+const socialLoginWithAppleController = catchAsync(async (req, res) => {
+  const result = await socialLoginWithAppleService(req.body);
+  const accessToken = await tokenGenerator(result);
+
+  return res.status(status.OK).json(response({ status: 'success',
+     statusCode: status.OK, message: "User created successfully", 
+    data: result, accessToken }));
+});
+
+
+
+
+const socialLoginWithGoogleController = catchAsync(async (req, res) => {
+  const result = await socialLoginWithGoogleService(req.body);
+  const accessToken = await tokenGenerator(result);
+
+  return res.status(status.OK).json(response({ status: 'success',
+     statusCode: status.OK, message: "User created successfully", 
+    data: result, accessToken }));
+});
+
+
+
+
 
 
 
@@ -256,53 +291,55 @@ return res.status(status.CREATED).json(
 
 
 
-const googleAuthController = catchAsync(
-  async (req, res) => {
-    const user = await googleAuthService(req.body.accessToken);
+// const googleAuthController = catchAsync(
+//   async (req, res) => {
+//     const user = await googleAuthService(req.body.accessToken);
 
-    const token = await tokenGenerator(user);
+//     const token = await tokenGenerator(user);
 
-    return res.status(status.OK).json(
-      response({
-        statusCode: status.OK,
-        status: "OK",
-        message: "Authentication successful",
-        data: user,
-        accessToken: token,
-      })
-    );
-  }
-);
+//     return res.status(status.OK).json(
+//       response({
+//         statusCode: status.OK,
+//         status: "OK",
+//         message: "Authentication successful",
+//         data: user,
+//         accessToken: token,
+//       })
+//     );
+//   }
+// );
 
-const appleAuthController = catchAsync(async (req, res) => {
-  const { accessToken } = req.body;
 
-  if (!accessToken) {
-    return res.status(status.BAD_REQUEST).json(
-      response({
-        status: "Error",
-        statusCode: status.BAD_REQUEST,
-        type: "user",
-        message: "Apple accessToken is required",
-      })
-    );
-  }
 
-  const { user, accessToken: token } = await createOrLoginUserWithApple({ accessToken });
+// const appleAuthController = catchAsync(async (req, res) => {
+//   const { accessToken } = req.body;
 
-  user.isLoginToken = true;
-  await user.save();
+//   if (!accessToken) {
+//     return res.status(status.BAD_REQUEST).json(
+//       response({
+//         status: "Error",
+//         statusCode: status.BAD_REQUEST,
+//         type: "user",
+//         message: "Apple accessToken is required",
+//       })
+//     );
+//   }
 
-  return res.status(status.OK).json(
-    response({
-      statusCode: status.OK,
-      status: "OK",
-      message: "Apple login successful",
-      data: user,
-      accessToken: token,
-    })
-  );
-});
+//   const { user, accessToken: token } = await createOrLoginUserWithApple({ accessToken });
+
+//   // user.isLoginToken = true;
+//   // await user.save();
+
+//   return res.status(status.OK).json(
+//     response({
+//       statusCode: status.OK,
+//       status: "OK",
+//       message: "Apple login successful",
+//       data: user,
+//       accessToken: token,
+//     })
+//   );
+// });
 
 
 
@@ -1231,6 +1268,6 @@ module.exports = {
   deleteAccountController,
   updateDocuments,
   refreshToken,
-  googleAuthController,
-  appleAuthController
+  socialLoginWithAppleController,
+  socialLoginWithGoogleController
 };

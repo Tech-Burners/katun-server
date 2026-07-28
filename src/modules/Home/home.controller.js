@@ -65,20 +65,47 @@ const homeController = catchAsync(async (req, res) => {
 
 
 
+// const allNerestController = catchAsync(async (req, res) => {
+//   const { longitude, latitude } = req.body;
+
+//   if (!longitude || !latitude) {
+//     throw new ApiError(status.BAD_REQUEST, "Longitude and latitude are required");
+//   }
+
+//   const options = {
+//     page: Number(req.query.page) || 1,
+//     limit: Number(req.query.limit) || 10,
+//     search: req.query.search || ""  
+//   };
+
+//   const nearest = await allNearestService(longitude, latitude, options);
+
+//   return res.status(status.OK).json(
+//     response({
+//       status: "Success",
+//       statusCode: status.OK,
+//       type: "home",
+//       message: "home",
+//       data: { nearest },
+//     })
+//   );
+// });
+
 const allNerestController = catchAsync(async (req, res) => {
   const { longitude, latitude } = req.body;
-
-  if (!longitude || !latitude) {
-    throw new ApiError(status.BAD_REQUEST, "Longitude and latitude are required");
-  }
 
   const options = {
     page: Number(req.query.page) || 1,
     limit: Number(req.query.limit) || 10,
-    search: req.query.search || ""  
+    search: req.query.search || "",
   };
 
-  const nearest = await allNearestService(longitude, latitude, options);
+  const nearest = await allNearestService(
+    longitude,
+    latitude,
+    options,
+    req.User
+  );
 
   return res.status(status.OK).json(
     response({
