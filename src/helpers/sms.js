@@ -63,6 +63,11 @@ const sendSMSOtp = async (
     } verification code is: ${otp}. It will expire in ${otpExpiryTime} minutes.`;
 
   try {
+    console.log(
+ {     body: messageBody,
+      from: twilioPhone,
+      to: phoneNumber,}
+    )
     const message = await TwilioClient.messages.create({
       body: messageBody,
       from: twilioPhone,

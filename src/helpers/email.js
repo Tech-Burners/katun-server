@@ -1,41 +1,3 @@
-const nodemailer = require("nodemailer");
-require("dotenv").config();
-
-const transporter = nodemailer.createTransport({
-  host: "smtp.zoho.com",
-  port: 465,
-  secure: true,
-  auth: {
-    user: process.env.SMTP_USERNAME,
-    pass: process.env.SMTP_PASSWORD,
-  },
-});
-
-const emailWithNodemailer = async (emailData) => {
-  try {
-    const mailOptions = {
-      from: process.env.SMTP_USERNAME,
-      to: emailData.email,
-      subject: emailData.subject,
-      html: emailData.html,
-    };
-
-    const info = await transporter.sendMail(mailOptions);
-
-    console.log("Email sent:", info.response);
-  } catch (error) {
-    console.error("Error sending mail:", error);
-    throw error;
-  }
-};
-
-module.exports = {
-  emailWithNodemailer,
-};
-
-
-
-////local
 // const nodemailer = require("nodemailer");
 // require('dotenv').config();
 
@@ -70,21 +32,102 @@ module.exports = {
 // };
 
 
-const supportEmailWithNodemailer = async (emailData) => {
+// const supportEmailWithNodemailer = async (emailData) => {
+//   try {
+//     const mailOptions = {
+//       from: emailData.email, // sender address
+//       to: "xyz@gmail.com", // list of receivers
+//       subject: emailData.subject, // Subject line
+//       html: emailData.html, // html body
+//     }
+//     const info = await transporter.sendMail(mailOptions);
+//     console.log("---> Email sent %s", info.response);
+//   } catch (error) {
+//     console.error('Error sending mail', error);
+//     throw error;
+//   }
+// };
+
+
+// module.exports = {emailWithNodemailer, supportEmailWithNodemailer};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+const nodemailer = require("nodemailer");
+require("dotenv").config();
+
+const transporter = nodemailer.createTransport({
+  host: "smtppro.zoho.com",
+  port: 465,
+  secure: true,
+  auth: {
+    user: process.env.SMTP_USERNAME,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
+
+const emailWithNodemailer = async (emailData) => {
   try {
     const mailOptions = {
-      from: emailData.email, // sender address
-      to: "xyz@gmail.com", // list of receivers
-      subject: emailData.subject, // Subject line
-      html: emailData.html, // html body
-    }
+      from: process.env.SMTP_USERNAME,
+      to: emailData.email,
+      subject: emailData.subject,
+      html: emailData.html,
+    };
+
     const info = await transporter.sendMail(mailOptions);
+
     console.log("---> Email sent %s", info.response);
   } catch (error) {
-    console.error('Error sending mail', error);
+    console.error("Error sending mail", error);
     throw error;
   }
 };
 
+const supportEmailWithNodemailer = async (emailData) => {
+  try {
+    const mailOptions = {
+      // Always send FROM your authenticated Zoho account
+      from: process.env.SMTP_USERNAME,
 
-module.exports = {emailWithNodemailer, supportEmailWithNodemailer};
+      // Your support/admin email
+      to: "xyz@gmail.com",
+
+      // Reply to the person who submitted the support request
+      replyTo: emailData.email,
+
+      subject: emailData.subject,
+      html: emailData.html,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+
+    console.log("---> Email sent %s", info.response);
+  } catch (error) {
+    console.error("Error sending mail", error);
+    throw error;
+  }
+};
+
+module.exports = {
+  emailWithNodemailer,
+  supportEmailWithNodemailer,
+};
