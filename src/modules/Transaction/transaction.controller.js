@@ -47,6 +47,7 @@ const { getAllTransactions, getPendingPayoutService, getcompletePayoutService,
   getPartnerMonthlyCompletedPayoutService, getAllPayoutService,
   getPlatformEarningTransactionsService, allPayoutOfAPartnerService,
   getAllRefundData, withdrawCreditService } = require("./transaction.service");
+const employerModel = require("../Employer/employer.model");
 
 
 
