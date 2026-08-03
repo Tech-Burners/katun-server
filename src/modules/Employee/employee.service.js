@@ -8,15 +8,78 @@ const userModel = require("../User/user.model");
 const employeeModel = require("./employee.model");
 const mongoose = require("mongoose");
 
+// const addEmployeeService = async (data) => {
+
+//     if (data.phone) {
+//         const existingUser = await userModel.findOne({
+//             number: data.phone
+//         });
+
+//         if (existingUser) {
+//             throw new ApiError(400, 'This number already used!');
+//         }
+//     }
+
+//     const session = await mongoose.startSession();
+
+//     try {
+
+//         session.startTransaction();
+
+//         // ✅ Create User
+//         const user = await userModel.create([{
+//             fullName: data.name,
+//             number: data.phone,
+//             password: process.env.DEFAULT_PASSWORD,
+//         }], { session });
+
+//         data.user = user[0]._id;
+
+//         // ✅ Create Employee
+//         const employee = await employeeModel.create([data], { session });
+
+//         // ✅ Get Employer safely
+//         const employer = await employerModel
+//             .findById(data.company)
+//             .session(session);
+
+//         if (!employer) {
+//             throw new ApiError(404, 'Employer not found');
+//         }
+
+//         // ✅ Update counts safely
+//         employer.employeeCount = (employer.employeeCount || 0) + 1;
+//         employer.activeEmployeeCount =
+//             (employer.activeEmployeeCount || 0) + 1;
+
+//         await employer.save({ session });
+
+//         await session.commitTransaction();
+
+//         return employee[0];
+
+//     } catch (err) {
+
+//         await session.abortTransaction();
+//         throw err;
+
+//     } finally {
+//         session.endSession();
+//     }
+// };
+
+
 const addEmployeeService = async (data) => {
 
-    if (data.phone) {
+    // Check duplicate phone number
+    if (data.number) {
         const existingUser = await userModel.findOne({
-            number: data.phone
+            number: data.number,
+            countryCode: data.countryCode,
         });
 
         if (existingUser) {
-            throw new ApiError(400, 'This number already used!');
+            throw new ApiError(400, 'This number is already used!');
         }
     }
 
@@ -24,21 +87,25 @@ const addEmployeeService = async (data) => {
 
     try {
 
-        session.startTransaction();
+        await session.startTransaction();
 
-        // ✅ Create User
+        // Create User
         const user = await userModel.create([{
             fullName: data.name,
-            number: data.phone,
+            number: data.number,
+            countryCode: data.countryCode,
             password: process.env.DEFAULT_PASSWORD,
         }], { session });
 
         data.user = user[0]._id;
 
-        // ✅ Create Employee
+        // Combine country code + number for Employee phone
+        data.phone = `${data.countryCode}${data.number}`;
+
+        // Create Employee
         const employee = await employeeModel.create([data], { session });
 
-        // ✅ Get Employer safely
+        // Get Employer
         const employer = await employerModel
             .findById(data.company)
             .session(session);
@@ -47,7 +114,7 @@ const addEmployeeService = async (data) => {
             throw new ApiError(404, 'Employer not found');
         }
 
-        // ✅ Update counts safely
+        // Update counts
         employer.employeeCount = (employer.employeeCount || 0) + 1;
         employer.activeEmployeeCount =
             (employer.activeEmployeeCount || 0) + 1;
@@ -64,9 +131,10 @@ const addEmployeeService = async (data) => {
         throw err;
 
     } finally {
-        session.endSession();
+        await session.endSession();
     }
 };
+
 
 const getEmployeeService = async (id) => {
     return await employeeModel.aggregate([

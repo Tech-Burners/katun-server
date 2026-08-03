@@ -17,7 +17,7 @@ const addEmployeeController = catchAsync(async (req, res) => {
 
     let company;
 
-    // ✅ Sub HR Admin
+    //  Sub HR Admin
     if (req.User.role === 'sub_hr_admin') {
 
         const parentAdmin = await adminModel.findOne({
