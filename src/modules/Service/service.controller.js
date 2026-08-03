@@ -1,5 +1,5 @@
 const { default: status } = require("http-status");
-const { deleteServiceService, editServiceService, addServiceService, getAllServiceService, aServiceDetailsService, disableServiceService, activeEmployerService, getPartnerAllServiceService, popularService, allServiceService } = require("./service.service");
+const { deleteServiceService, editServiceService, addServiceService, getAllServiceService, aServiceDetailsService, disableServiceService, activeEmployerService, getPartnerAllServiceService, popularService, allServiceService, nearestPopularService } = require("./service.service");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 
@@ -92,6 +92,45 @@ const popularServiceController = catchAsync(async (req, res) => {
   );
 });
 
+
+
+const nearestPopularServiceController = catchAsync(async (req, res) => {
+  const { lat, lng } = req.query;
+ 
+  if (lat === undefined || lng === undefined) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "error",
+        statusCode: status.BAD_REQUEST,
+        type: "Service",
+        message: "lat and lng are required to fetch nearby services",
+      })
+    );
+  }
+ 
+  const option = {
+    page: Number(req.query.page) || 1,
+    limit: Number(req.query.limit) || 10,
+    lat,
+    lng,
+    search: req.query.search || "",
+  };
+ 
+  const result = await nearestPopularService(option);
+ 
+  return res.status(status.OK).json(
+    response({
+      status: "success",
+      statusCode: status.OK,
+      type: "Service",
+      message: "Nearest popular service fetched successfully",
+      data: result,
+    })
+  );
+});
+ 
+
+
 const allServiceController = catchAsync(async (req, res) => {
   const option = {
     page: Number(req.query.page) || 1,
@@ -171,5 +210,6 @@ module.exports = {
     aServiceDetailsController, disableServiceController, activeServiceController,
     getPartnerAllServiceController,
     popularServiceController,
+    nearestPopularServiceController,
     allServiceController
 }

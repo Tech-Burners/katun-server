@@ -1,5 +1,5 @@
 const express = require("express");
-const { addServiceController, editServiceController, deleteServiceController, getAllServiceController, aServiceDetailsController, disableServiceController, activeServiceController, getPartnerAllServiceController, popularServiceController, allServiceController } = require("./service.controller");
+const { addServiceController, editServiceController, deleteServiceController, getAllServiceController, aServiceDetailsController, disableServiceController, activeServiceController, getPartnerAllServiceController, popularServiceController, allServiceController, nearestPopularServiceController } = require("./service.controller");
 const router = express.Router();
 
 const fileUploadMiddleware = require("../../middlewares/fileUpload");
@@ -20,6 +20,7 @@ router.patch("/active/:id", activeServiceController);
 router.get("/admin/all", auth(['admin', 'sub_admin']), getAllServiceController);
 router.get("/partner/all", auth(['partner']), getPartnerAllServiceController);
 router.get("/popular", auth(["user"], { optional: true }), popularServiceController);
+router.get("/popular/nearest", nearestPopularServiceController);
 router.get("/all", auth(["user"], { optional: true }), allServiceController);
 router.get('/details/:id', auth(['partner','user', 'admin', 'sub_admin'], { optional: true }), aServiceDetailsController);
 

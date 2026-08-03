@@ -431,7 +431,16 @@ const aServiceDetailsService = async (id, userId = null) => {
       }
     },
     { $unwind: { path: "$category", preserveNullAndEmptyArrays: true } },
-
+    // category
+    {
+      $lookup: {
+        from: "subcategories",
+        localField: "subCategory",
+        foreignField: "_id",
+        as: "subcategory"
+      }
+    },
+    { $unwind: { path: "$subcategory", preserveNullAndEmptyArrays: true } },
     // commission
     {
       $lookup: {
@@ -515,7 +524,8 @@ const aServiceDetailsService = async (id, userId = null) => {
         availability: "$availability.slot",
         categoryName: "$category.name",
         categoryId: "$category._id",
-        subCategory: 1,
+        subCategoryName: "$subcategory.name",
+        // subCategory: 1,
 
         avgRating: 1,
         ratingCount: 1,
@@ -529,98 +539,98 @@ const aServiceDetailsService = async (id, userId = null) => {
 
 
 const checkServiceAvailabilityService = async (userId) => {
-const result = await serviceModel.aggregate([
-  {
-    $match: {
-      user: new mongoose.Types.ObjectId(userId),
-      isDeleted: false,
-      isActive: true,
-    },
-  },
-
-  {
-    $lookup: {
-      from: "commissions",
-      localField: "category",
-      foreignField: "category",
-      as: "commission",
-    },
-  },
-
-  {
-    $unwind: {
-      path: "$commission",
-      preserveNullAndEmptyArrays: true,
-    },
-  },
-
-  {
-    $addFields: {
-      servicefeeNum: { $toDouble: "$servicefee" },
-
-      commissionRate: {
-        $ifNull: ["$commission.commission", 0],
-      },
-
-      commissionAmount: {
-        $multiply: [
-          { $toDouble: "$servicefee" },
-          {
-            $divide: [
-              { $ifNull: ["$commission.commission", 0] },
-              100,
-            ],
-          },
-        ],
+  const result = await serviceModel.aggregate([
+    {
+      $match: {
+        user: new mongoose.Types.ObjectId(userId),
+        isDeleted: false,
+        isActive: true,
       },
     },
-  },
 
-  {
-    $group: {
-      _id: "$user",
-      maxCommissionAmount: { $max: "$commissionAmount" },
-    },
-  },
-
-  {
-    $lookup: {
-      from: "users",
-      localField: "_id",
-      foreignField: "_id",
-      as: "user",
-    },
-  },
-
-  { $unwind: "$user" },
-
-  {
-    $addFields: {
-      walletBalance: {
-        $ifNull: ["$user.digitalWallet", 0],
+    {
+      $lookup: {
+        from: "commissions",
+        localField: "category",
+        foreignField: "category",
+        as: "commission",
       },
     },
-  },
 
-  {
-    $project: {
-      _id: 0,
-
-      walletBalance: { $round: ["$walletBalance", 3] },
-
-      maxCommissionAmount: {
-        $round: ["$maxCommissionAmount", 3],
-      },
-
-      hasAvailableBalance: {
-        $gte: [
-          { $ifNull: ["$user.digitalWallet", 0] },
-          { $ifNull: ["$maxCommissionAmount", 0] },
-        ],
+    {
+      $unwind: {
+        path: "$commission",
+        preserveNullAndEmptyArrays: true,
       },
     },
-  },
-]);
+
+    {
+      $addFields: {
+        servicefeeNum: { $toDouble: "$servicefee" },
+
+        commissionRate: {
+          $ifNull: ["$commission.commission", 0],
+        },
+
+        commissionAmount: {
+          $multiply: [
+            { $toDouble: "$servicefee" },
+            {
+              $divide: [
+                { $ifNull: ["$commission.commission", 0] },
+                100,
+              ],
+            },
+          ],
+        },
+      },
+    },
+
+    {
+      $group: {
+        _id: "$user",
+        maxCommissionAmount: { $max: "$commissionAmount" },
+      },
+    },
+
+    {
+      $lookup: {
+        from: "users",
+        localField: "_id",
+        foreignField: "_id",
+        as: "user",
+      },
+    },
+
+    { $unwind: "$user" },
+
+    {
+      $addFields: {
+        walletBalance: {
+          $ifNull: ["$user.digitalWallet", 0],
+        },
+      },
+    },
+
+    {
+      $project: {
+        _id: 0,
+
+        walletBalance: { $round: ["$walletBalance", 3] },
+
+        maxCommissionAmount: {
+          $round: ["$maxCommissionAmount", 3],
+        },
+
+        hasAvailableBalance: {
+          $gte: [
+            { $ifNull: ["$user.digitalWallet", 0] },
+            { $ifNull: ["$maxCommissionAmount", 0] },
+          ],
+        },
+      },
+    },
+  ]);
 
   return (
     result[0] || {
@@ -987,7 +997,7 @@ const allServiceService = async (options) => {
   if (locationFilterApplied && totalResults === 0) {
     // console.log("⚠️ No services found nearby. Fetching all services as fallback...");
     // Re-run pipeline without location filter stages
-    const fallbackPipeline = pipeline.filter(stage => 
+    const fallbackPipeline = pipeline.filter(stage =>
       !stage.$addFields &&
       !(stage.$sort && stage.$sort.distance) &&
       !(stage.$match && stage.$match.distance)
@@ -1207,6 +1217,156 @@ const popularService = async (userId, options) => {
 };
 
 
+
+ 
+const DEFAULT_RADIUS_KM = 200; //200KM
+ 
+const nearestPopularService = async (options) => {
+  const { page = 1, limit = 10, lat, lng, search, radius, userId = null } = options;
+ 
+  if (lat === undefined || lat === null || lng === undefined || lng === null) {
+    const err = new Error("lat and lng are required to fetch nearby services");
+    err.statusCode = 400;
+    throw err;
+  }
+ 
+  const skip = (page - 1) * limit;
+  const coordinates = [Number(lng), Number(lat)];
+  const radiusKm = radius !== undefined && radius !== null && radius !== ""
+    ? Number(radius)
+    : DEFAULT_RADIUS_KM;
+ 
+  const pipeline = [];
+ 
+  // ---------- STEP 1: NEAREST PARTNERS FIRST (uses 2dsphere index) ----------
+  // $geoNear MUST be the first stage in the pipeline.
+  pipeline.push({
+    $geoNear: {
+      near: { type: "Point", coordinates },
+      distanceField: "distance", // meters, since spherical: true
+      spherical: true,
+      maxDistance: radiusKm * 1000, // km -> meters
+      query: {
+        role: "partner",
+        isDeleted: false,
+        isBan: false,
+        // guest users have no userId, so this simply never excludes anyone
+        ...(userId ? { _id: { $ne: new mongoose.Types.ObjectId(userId) } } : {}),
+      },
+    },
+  });
+ 
+  // ---------- STEP 2: PARTNER PROFILE LOOKUP ----------
+  pipeline.push(
+    {
+      $lookup: {
+        from: "partners",
+        localField: "_id",
+        foreignField: "user",
+        as: "partner",
+      },
+    },
+    { $unwind: "$partner" } // only keep users that actually have a partner profile
+  );
+ 
+  // ---------- STEP 3: PULL EACH PROVIDER'S SINGLE BEST QUALIFYING SERVICE ----------
+  pipeline.push({
+    $lookup: {
+      from: "services",
+      let: { userId: "$_id" },
+      pipeline: [
+        {
+          $match: {
+            $expr: { $eq: ["$user", "$$userId"] },
+            isDeleted: false,
+            isActive: true,
+            ...(search && search.trim() !== ""
+              ? { name: { $regex: search, $options: "i" } }
+              : {}),
+          },
+        },
+        // availability check (only services with at least one slot)
+        {
+          $lookup: {
+            from: "availabilities",
+            let: { serviceId: "$_id" },
+            pipeline: [
+              { $match: { $expr: { $eq: ["$service", "$$serviceId"] } } },
+              { $match: { "slot.0": { $exists: true } } },
+            ],
+            as: "availability",
+          },
+        },
+        {
+          $match: {
+            $expr: { $gt: [{ $size: "$availability" }, 0] },
+          },
+        },
+        // pick this provider's most popular qualifying service
+        { $sort: { sell: -1, avgRating: -1 } },
+        { $limit: 1 },
+      ],
+      as: "topService",
+    },
+  });
+ 
+  // keep only providers that actually have a qualifying service
+  pipeline.push(
+    { $match: { "topService.0": { $exists: true } } },
+    { $unwind: "$topService" }
+  );
+ 
+  // ---------- STEP 4: NEAREST FIRST ----------
+  // $geoNear already sorts by distance ascending, but the $lookup/$unwind
+  // stages above don't guarantee stable ordering, so we sort explicitly.
+  pipeline.push({ $sort: { distance: 1 } });
+ 
+  // ---------- STEP 5: RESPONSE SHAPE ----------
+  pipeline.push({
+    $project: {
+      _id: "$topService._id",
+      name: "$topService.name",
+      image: "$topService.image",
+      servicefee: "$topService.servicefee",
+      avgRating: "$topService.avgRating",
+      ratingCount: "$topService.ratingCount",
+      sell: "$topService.sell",
+ 
+      partnerId: "$_id",
+      partnerName: "$partner.businessName",
+      isVerified: { $ifNull: ["$partner.isVerified", false] },
+      isCertified: { $ifNull: ["$partner.isCertified", false] },
+ 
+      // meters -> km, rounded to 2 decimals
+      distance: { $round: [{ $divide: ["$distance", 1000] }, 2] },
+    },
+  });
+ 
+  // ---------- STEP 6: PAGINATION ----------
+  pipeline.push({
+    $facet: {
+      result: [{ $skip: skip }, { $limit: Number(limit) }],
+      totalCount: [{ $count: "count" }],
+    },
+  });
+ 
+  const result = await userModel.aggregate(pipeline);
+ 
+  const services = result[0]?.result || [];
+  const totalResults = result[0]?.totalCount[0]?.count || 0;
+ 
+  return {
+    result: services,
+    pagination: {
+      totalResults,
+      totalPages: Math.ceil(totalResults / limit),
+      currentPage: Number(page),
+      limit: Number(limit),
+    },
+  };
+};
+
+
 module.exports = {
   addServiceService, editServiceService,
   getPartnerAllServiceService,
@@ -1214,5 +1374,6 @@ module.exports = {
   getAllServiceService, aServiceDetailsService, disableServiceService,
   popularService,
   allServiceService,
-  checkServiceAvailabilityService
+  checkServiceAvailabilityService,
+  nearestPopularService
 }
