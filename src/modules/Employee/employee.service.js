@@ -577,24 +577,25 @@ const allocateCreditEmployeeService = async (employeeId, data) => {
 
     try {
         session.startTransaction();
-        let company;
+        let company = null;
+
         if (data.role === 'hr') {
-            // console.log("hr")
             company = await employerModel.findOne({ user: data.performedBy })
-            // console.log({ company })
         } else if (data.role === 'sub_hr_admin') {
-            // console.log("sub_hr_admin")
             const parent = await adminModel.findOne({ user: data.performedBy })
-            // console.log({ parent })
-            company = await employerModel.findOne({ user: parent.parent })
-            // console.log({ company })
+            if (parent) {
+                company = await employerModel.findOne({ user: parent.parent })
+            }
         }
-        if (company.creditBalance < data.amount) {
-            throw new ApiError(412, "Insufficient balance")
-        } else {
-            company.creditBalance -= data.amount
+
+        if (company) {
+            if (Number(company.creditBalance) < Number(data.amount)) {
+                throw new ApiError(412, "Insufficient balance")
+            }
+
+            company.creditBalance = Number(company.creditBalance) - Number(data.amount);
+            await company.save();
         }
-        company.save()
 
         const employee = await employeeModel
             .findById(employeeId)
@@ -642,7 +643,7 @@ console.log({ employeeIds, data });
     try {
         session.startTransaction();
 
-        let company;
+        let company = null;
 
         if (data.role === "hr") {
             company = await employerModel
@@ -653,17 +654,11 @@ console.log({ employeeIds, data });
                 .findOne({ user: data.performedBy })
                 .session(session);
 
-            if (!admin) {
-                throw new ApiError(404, "Admin not found");
+            if (admin) {
+                company = await employerModel
+                    .findOne({ user: admin.parent })
+                    .session(session);
             }
-
-            company = await employerModel
-                .findOne({ user: admin.parent })
-                .session(session);
-        }
-
-        if (!company) {
-            throw new ApiError(404, "Employer not found");
         }
 
         const employees = await employeeModel
@@ -680,30 +675,24 @@ console.log({ employeeIds, data });
         const amount = Number(data.amount);
         const totalAmount = amount * employees.length;
 
-        // Debug
-        // console.log({
-        //     companyBalance: company.creditBalance,
-        //     employeeCount: employees.length,
-        //     amount,
-        //     totalAmount,
-        // });
+        if (company) {
+            if (Number(company.creditBalance) < totalAmount) {
+                throw new ApiError(
+                    412,
+                    `Insufficient balance. Available ${company.creditBalance}, Required ${totalAmount}`
+                );
+            }
 
-        if (Number(company.creditBalance) < totalAmount) {
-            throw new ApiError(
-                412,
-                `Insufficient balance. Available ${company.creditBalance}, Required ${totalAmount}`
+            await employerModel.findByIdAndUpdate(
+                company._id,
+                {
+                    $inc: {
+                        creditBalance: -totalAmount,
+                    },
+                },
+                { session }
             );
         }
-
-        await employerModel.findByIdAndUpdate(
-            company._id,
-            {
-                $inc: {
-                    creditBalance: -totalAmount,
-                },
-            },
-            { session }
-        );
 
         const userIds = employees.map((e) => e.user._id);
 
@@ -1033,9 +1022,74 @@ const bulkActiveEmployeeService = async (employeeIds, performedBy) => {
     }
 };
 
+// const editEmployeeService = async (id, data) => {
+//     return await employeeModel.findByIdAndUpdate(id, data, { new: true });
+// }
+
 const editEmployeeService = async (id, data) => {
-    return await employeeModel.findByIdAndUpdate(id, data, { new: true });
-}
+    const session = await mongoose.startSession();
+
+    try {
+        await session.startTransaction();
+
+        // Find employee
+        const employee = await employeeModel.findById(id).session(session);
+
+        if (!employee) {
+            throw new ApiError(404, "Employee not found");
+        }
+
+        // Check duplicate phone number
+        if (data.number && data.countryCode) {
+            const existingUser = await userModel.findOne({
+                number: data.number,
+                countryCode: data.countryCode,
+                _id: { $ne: employee.user }
+            });
+
+            if (existingUser) {
+                throw new ApiError(400, "This number is already used!");
+            }
+        }
+
+        // Update User
+        const userUpdate = {};
+
+        if (data.name) userUpdate.fullName = data.name;
+        if (data.number) userUpdate.number = data.number;
+        if (data.countryCode) userUpdate.countryCode = data.countryCode;
+
+        if (Object.keys(userUpdate).length > 0) {
+            await userModel.findByIdAndUpdate(
+                employee.user,
+                userUpdate,
+                { new: true, session }
+            );
+        }
+
+        // Update employee phone
+        if (data.number && data.countryCode) {
+            data.phone = `${data.countryCode}${data.number}`;
+        }
+
+        // Update Employee
+        const updatedEmployee = await employeeModel.findByIdAndUpdate(
+            id,
+            data,
+            { new: true, session }
+        );
+
+        await session.commitTransaction();
+
+        return updatedEmployee;
+
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        await session.endSession();
+    }
+};
 
 
 const deleteEmployeeService = async (id, performedBy) => {
