@@ -2,7 +2,12 @@ const { editEmployeeService, getCompanyAllEmployeeService,
     suspendEmployeeService, activeEmployeeService,
     flagEmployeeService,
     allocateCreditEmployeeService,
-    addNoteService } = require("./employee.service");
+    addNoteService, 
+    bulkFlagEmployeeService,
+    bulkSuspendEmployeeService,
+    bulkActiveEmployeeService,
+    bulkAddNoteService,
+    bulkAllocateCreditEmployeeService} = require("./employee.service");
 const { addEmployeeService, getEmployeeService,
     getAllEmployeeService, deleteEmployeeService } = require("./employee.service");
 const { status } = require("http-status");
@@ -10,6 +15,7 @@ const response = require("../../helpers/response");
 const catchAsync = require("../../helpers/catchAsync");
 const adminModel = require("../Admin/admin.model");
 const employerModel = require("../Employer/employer.model");
+const ApiError = require("../../helpers/ApiError");
 
 
 
@@ -150,6 +156,36 @@ const flagEmployeeController = catchAsync(async (req, res) => {
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Employee", message: "Employee flaged successfully", data: result, }));
 })
 
+
+const bulkFlagEmployeeController = catchAsync(async (req, res) => {
+    const { employeeIds } = req.body;
+
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide employeeIds.",
+            })
+        );
+    }
+
+    const result = await bulkFlagEmployeeService(
+        employeeIds,
+        req.User._id
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Employee",
+            message: `${result.modifiedCount} employee(s) flagged successfully.`,
+            data: result,
+        })
+    );
+});
+
 const allocateCreditEmployeeController = catchAsync(async (req, res) => {
     req.body.performedBy = req.User._id;
     req.body.role = req.User.role;
@@ -157,16 +193,159 @@ const allocateCreditEmployeeController = catchAsync(async (req, res) => {
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Employee", message: "Employee flaged successfully", data: result, }));
 })
 
+
+
+const bulkAllocateCreditEmployeeController = catchAsync(async (req, res) => {
+    const { employeeIds, amount } = req.body;
+
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide employeeIds.",
+            })
+        );
+    }
+
+    if (amount === undefined || amount === null || isNaN(Number(amount))) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide a valid amount.",
+            })
+        );
+    }
+
+    const result = await bulkAllocateCreditEmployeeService(employeeIds, {
+        amount: Number(amount),
+        performedBy: req.User._id,
+        role: req.User.role,
+    });
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Employee",
+            message: `${result.modifiedCount} employee(s) credited successfully.`,
+            data: result,
+        })
+    );
+});
+
 const addNoteController = catchAsync(async (req, res) => {
     req.body.performedBy = req.User._id;
     const result = await addNoteService(req.params.id, req.body);
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Employee", message: "Employee note successfully", data: result, }));
 })
 
+
+const bulkAddNoteController = catchAsync(async (req, res) => {
+    const { employeeIds, note } = req.body;
+
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide employeeIds.",
+            })
+        );
+    }
+
+    if (!note || !note.trim()) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide a note.",
+            })
+        );
+    }
+
+    const result = await bulkAddNoteService(employeeIds, {
+        note,
+        performedBy: req.User._id,
+    });
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Employee",
+            message: `${result.modifiedCount} employee(s) updated successfully.`,
+            data: result,
+        })
+    );
+});
+
 const suspendEmployeeController = catchAsync(async (req, res) => {
     const result = await suspendEmployeeService(req.params.id, req.User._id);
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Employee", message: "Employee suspended successfully", data: result, }));
 })
+
+
+const bulkSuspendEmployeeController = catchAsync(async (req, res) => {
+    const { employeeIds } = req.body;
+
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide employeeIds.",
+            })
+        );
+    }
+
+    const result = await bulkSuspendEmployeeService(
+        employeeIds,
+        req.User._id
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Employee",
+            message: `${result.modifiedCount} employee(s) suspended successfully.`,
+            data: result,
+        })
+    );
+});
+
+
+const bulkActiveEmployeeController = catchAsync(async (req, res) => {
+    const { employeeIds } = req.body;
+
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide employeeIds.",
+            })
+        );
+    }
+
+    const result = await bulkActiveEmployeeService(
+        employeeIds,
+        req.User._id
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Employee",
+            message: `${result.modifiedCount} employee(s) activated successfully.`,
+            data: result,
+        })
+    );
+});
+
 
 const activeEmployeeController = catchAsync(async (req, res) => {
     const result = await activeEmployeeService(req.params.id, req.User._id);
@@ -191,5 +370,10 @@ module.exports = {
     getCompanyAllEmployeeController,
     flagEmployeeController,
     allocateCreditEmployeeController,
-    addNoteController
+    addNoteController,
+    bulkFlagEmployeeController,
+    bulkSuspendEmployeeController,
+    bulkActiveEmployeeController,
+    bulkAddNoteController,
+    bulkAllocateCreditEmployeeController
 }

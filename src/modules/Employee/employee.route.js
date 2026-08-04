@@ -7,14 +7,48 @@ const { addEmployeeController,
     getCompanyAllEmployeeController, 
     flagEmployeeController,
     allocateCreditEmployeeController,
-    addNoteController} = require("./employee.controller");
+    addNoteController,
+    bulkFlagEmployeeController,
+    bulkSuspendEmployeeController,
+    bulkActiveEmployeeController,
+    bulkAddNoteController,
+    bulkAllocateCreditEmployeeController} = require("./employee.controller");
 const { auth } = require("../../middlewares/auth");
 const router = express.Router();
 
 
 router.post("/add", auth(['hr','sub_hr_admin','admin','sub_admin']), addEmployeeController);
-router.get("/admin/all", getAllEmployeeController);
+router.get("/admin/all",auth(['admin','sub_admin','hr','sub_hr_admin']), getAllEmployeeController);
 router.get("/company/all",auth(['hr','sub_hr_admin']), getCompanyAllEmployeeController);
+router.patch(
+    "/bulk-flag",
+    auth(['hr','sub_hr_admin', 'admin', 'sub_admin']),
+    bulkFlagEmployeeController
+);
+router.patch(
+    "/bulk-suspend",
+    auth(['hr','sub_hr_admin', 'admin', 'sub_admin']),
+    bulkSuspendEmployeeController
+);
+
+router.patch(
+    "/bulk-active",
+    auth(['hr','sub_hr_admin', 'admin', 'sub_admin']),
+    bulkActiveEmployeeController
+);
+
+router.patch(
+    "/bulk-note",
+    auth(['admin','sub_admin', 'hr','sub_hr_admin']),
+    bulkAddNoteController
+);
+
+router.patch(
+    "/bulk-allocate-credit",
+    auth(['admin','sub_admin', 'hr','sub_hr_admin']),
+    bulkAllocateCreditEmployeeController
+);
+
 router.get("/details/:id", getEmployeeController);
 router.put("/edit/:id", auth(['hr',,'sub_hr_admin','admin','sub_admin']), editEmployeeController);
 router.patch("/flag/:id", auth(['hr','sub_hr_admin', 'admin', 'sub_admin']), flagEmployeeController);

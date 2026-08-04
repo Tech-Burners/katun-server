@@ -19,7 +19,7 @@ const userSchema = new mongoose.Schema({
   note: { type: String, default: "" },
   isDeleted: { type: Boolean, default: false },
   password: { type: String, required: false },
-  wallet: { type: Number, default: 0 },
+  wallet: { type: Number, default: 0 }, //no need ig
   digitalWallet: { type: Number, default: 0, set: v => Math.round(v * 100) / 100 },
   totalRevenue: { type: Number, default: 0, set: v => Math.round(v * 100) / 100 },
   usages: { type: Number, default: 0 },

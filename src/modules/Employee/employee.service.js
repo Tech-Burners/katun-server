@@ -511,6 +511,65 @@ const addNoteService = async (id, data) => {
     }
 }
 
+const bulkAddNoteService = async (employeeIds, data) => {
+    console.log({ employeeIds, data });
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const employees = await employeeModel
+            .find({
+                _id: { $in: employeeIds },
+            })
+            .populate("user", "fullName")
+            .session(session);
+
+        if (!employees.length) {
+            throw new Error("No employees found");
+        }
+
+        const userIds = employees.map(employee => employee.user._id);
+console.log({ userIds });
+        const result = await userModel.updateMany(
+            {
+                _id: { $in: userIds },
+            },
+            {
+                $set: {
+                    note: data.note,
+                },
+            },
+            { session }
+        );
+console.log({ result });
+        await Promise.all(
+            employees.map(employee =>
+                addAuditReport(
+                    {
+                        action: "Note",
+                        summary: `Note added for employee ${employee.name}`,
+                        performedBy: data.performedBy,
+                    },
+                    { session }
+                )
+            )
+        );
+
+        await session.commitTransaction();
+
+        return {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount,
+        };
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        session.endSession();
+    }
+};
+
 
 const allocateCreditEmployeeService = async (employeeId, data) => {
     // console.log({ data });
@@ -577,6 +636,115 @@ const allocateCreditEmployeeService = async (employeeId, data) => {
     }
 };
 
+const bulkAllocateCreditEmployeeService = async (employeeIds, data) => {
+    const session = await mongoose.startSession();
+console.log({ employeeIds, data });
+    try {
+        session.startTransaction();
+
+        let company;
+
+        if (data.role === "hr") {
+            company = await employerModel
+                .findOne({ user: data.performedBy })
+                .session(session);
+        } else if (data.role === "sub_hr_admin") {
+            const admin = await adminModel
+                .findOne({ user: data.performedBy })
+                .session(session);
+
+            if (!admin) {
+                throw new ApiError(404, "Admin not found");
+            }
+
+            company = await employerModel
+                .findOne({ user: admin.parent })
+                .session(session);
+        }
+
+        if (!company) {
+            throw new ApiError(404, "Employer not found");
+        }
+
+        const employees = await employeeModel
+            .find({
+                _id: { $in: employeeIds },
+            })
+            .populate("user", "fullName")
+            .session(session);
+
+        if (!employees.length) {
+            throw new ApiError(404, "No employees found");
+        }
+
+        const amount = Number(data.amount);
+        const totalAmount = amount * employees.length;
+
+        // Debug
+        // console.log({
+        //     companyBalance: company.creditBalance,
+        //     employeeCount: employees.length,
+        //     amount,
+        //     totalAmount,
+        // });
+
+        if (Number(company.creditBalance) < totalAmount) {
+            throw new ApiError(
+                412,
+                `Insufficient balance. Available ${company.creditBalance}, Required ${totalAmount}`
+            );
+        }
+
+        await employerModel.findByIdAndUpdate(
+            company._id,
+            {
+                $inc: {
+                    creditBalance: -totalAmount,
+                },
+            },
+            { session }
+        );
+
+        const userIds = employees.map((e) => e.user._id);
+
+        const result = await userModel.updateMany(
+            {
+                _id: { $in: userIds },
+            },
+            {
+                $inc: {
+                    digitalWallet: amount,
+                },
+            },
+            { session }
+        );
+
+        await Promise.all(
+            employees.map((employee) =>
+                addAuditReport(
+                    {
+                        action: "Allocate",
+                        summary: `Credit allocated to ${employee.user.fullName}`,
+                        performedBy: data.performedBy,
+                    },
+                    { session }
+                )
+            )
+        );
+
+        await session.commitTransaction();
+
+        return {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount,
+        };
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        session.endSession();
+    }
+};
 
 const flagEmployeeService = async (employeeId, performedBy) => {
 
@@ -618,6 +786,65 @@ const flagEmployeeService = async (employeeId, performedBy) => {
     }
 };
 
+
+const bulkFlagEmployeeService = async (employeeIds, performedBy) => {
+    console.log({ employeeIds, performedBy });
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const employees = await employeeModel
+            .find({
+                _id: { $in: employeeIds },
+            })
+            .populate("user", "fullName")
+            .session(session);
+console.log({ employees });
+        if (!employees.length) {
+            throw new Error("No employees found");
+        }
+
+        const userIds = employees.map(employee => employee.user._id);
+
+        const result = await userModel.updateMany(
+            {
+                _id: { $in: userIds },
+            },
+            {
+                $inc: {
+                    flagCount: 1,
+                },
+            },
+            { session }
+        );
+
+        await Promise.all(
+            employees.map((employee) =>
+                addAuditReport(
+                    {
+                        action: "Flag",
+                        summary: `Employee ${employee.user.fullName} got a flag.`,
+                        performedBy,
+                    },
+                    { session }
+                )
+            )
+        );
+
+        await session.commitTransaction();
+
+        return {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount,
+        };
+    } catch (error) {
+        await session.abortTransaction();
+        throw error;
+    } finally {
+        session.endSession();
+    }
+};
 
 const suspendEmployeeService = async (id, user) => {
     const session = await mongoose.startSession();
@@ -665,6 +892,146 @@ const activeEmployeeService = async (id, user) => {
     }
 }
 
+
+const bulkSuspendEmployeeService = async (employeeIds, performedBy) => {
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const employees = await employeeModel
+            .find({
+                _id: { $in: employeeIds },
+            })
+            .populate("user", "fullName")
+            .session(session);
+
+        if (!employees.length) {
+            throw new Error("No employees found");
+        }
+
+        await employeeModel.updateMany(
+            {
+                _id: { $in: employeeIds },
+            },
+            {
+                $set: {
+                    status: "suspended",
+                },
+            },
+            { session }
+        );
+
+        const userIds = employees.map(employee => employee.user._id);
+
+        const result = await userModel.updateMany(
+            {
+                _id: { $in: userIds },
+            },
+            {
+                $set: {
+                    isBan: true,
+                },
+            },
+            { session }
+        );
+
+        await Promise.all(
+            employees.map(employee =>
+                addAuditReport(
+                    {
+                        action: "Suspend",
+                        summary: `Employee ${employee.name} suspended`,
+                        performedBy,
+                    },
+                    { session }
+                )
+            )
+        );
+
+        await session.commitTransaction();
+
+        return {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount,
+        };
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        session.endSession();
+    }
+};
+
+const bulkActiveEmployeeService = async (employeeIds, performedBy) => {
+    const session = await mongoose.startSession();
+
+    try {
+        session.startTransaction();
+
+        const employees = await employeeModel
+            .find({
+                _id: { $in: employeeIds },
+            })
+            .populate("user", "fullName")
+            .session(session);
+
+        if (!employees.length) {
+            throw new Error("No employees found");
+        }
+
+        await employeeModel.updateMany(
+            {
+                _id: { $in: employeeIds },
+            },
+            {
+                $set: {
+                    status: "active",
+                },
+            },
+            { session }
+        );
+
+        const userIds = employees.map(employee => employee.user._id);
+
+        const result = await userModel.updateMany(
+            {
+                _id: { $in: userIds },
+            },
+            {
+                $set: {
+                    isBan: false,
+                },
+            },
+            { session }
+        );
+
+        await Promise.all(
+            employees.map(employee =>
+                addAuditReport(
+                    {
+                        action: "Activate",
+                        summary: `Employee ${employee.name} activated`,
+                        performedBy,
+                    },
+                    { session }
+                )
+            )
+        );
+
+        await session.commitTransaction();
+
+        return {
+            matchedCount: result.matchedCount,
+            modifiedCount: result.modifiedCount,
+        };
+    } catch (err) {
+        await session.abortTransaction();
+        throw err;
+    } finally {
+        session.endSession();
+    }
+};
 
 const editEmployeeService = async (id, data) => {
     return await employeeModel.findByIdAndUpdate(id, data, { new: true });
@@ -739,5 +1106,10 @@ module.exports = {
     getCompanyAllEmployeeService,
     flagEmployeeService,
     allocateCreditEmployeeService,
-    addNoteService
+    addNoteService,
+    bulkSuspendEmployeeService,
+    bulkActiveEmployeeService,
+    bulkFlagEmployeeService,
+    bulkAddNoteService,
+    bulkAllocateCreditEmployeeService
 }

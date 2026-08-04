@@ -23,7 +23,7 @@ router.patch("/bulk-flag", auth(['admin', 'sub_admin']), bulkAddFlagController);
 router.patch("/note/:id", addNoteController) 
 router.patch("/bulk-note", auth(['admin', 'sub_admin']), bulkAddNoteController);
 router.patch("/add-credit/:id", addCreditController) 
-router.patch("/bulk-credit", auth(['admin', 'sub_admin']), bulkAddCreditController);
+router.patch("/bulk-credit", auth(['admin', 'sub_admin','sub_hr_admin', 'hr']), bulkAddCreditController);
 router.get("/check-service-availability",auth(['partner']), checkServiceAvailability)
 router.get("/get-pushnotification",auth(['user', 'partner']), getPushNotificationController)
 router.post("/add-fcmToken", auth(['user', 'partner']), fcmTokenController);
