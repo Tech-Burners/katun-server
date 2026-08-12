@@ -186,6 +186,7 @@ const markAsCompletedService = async (id, data) => {
         if (booking.sessionLeft == 0) {
             booking.status = "completed";
         }
+        booking.pin = generate4DigitPin();
         await booking.save();
         const receiverData = await userModel.findById(booking.user);
         console.log({ receiverData });
@@ -363,7 +364,6 @@ const assignStuffService = async (id, stuff) => {
         service = await serviceModel.findById(result.service);
     }
     const userData = await userModel.findById(result.user);
-    console.log({ userData })
     if (userData && userData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             result.user,
@@ -579,6 +579,7 @@ const bookingDetailsService = async (id, loginUserId) => {
         {
             $project: {
                 bookingId: '$_id',
+                customBookingId: "$bookingId",
                 serviceName: '$serviceData.name',
                 serviceId: '$serviceData._id',
                 endTime: 1,
@@ -751,6 +752,7 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
         {
             $project: {
                 bookingId: '$_id',
+                customBookingId: "$bookingId",
                 serviceName: '$serviceData.name',
                 serviceId: '$serviceData._id',
                 userName: '$userData.fullName',
@@ -791,7 +793,7 @@ const pendingBookingService = async (user, option) => {
             {
                 $match: {
                     user: new mongoose.Types.ObjectId(String(user)),
-                    // status: "approved",
+                    status: "pending",
                     endTime: { $gt: new Date() },
                     $or: [
                         { paymentStatus: "paid" },

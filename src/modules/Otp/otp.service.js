@@ -1,8 +1,10 @@
 const OTP = require("./otp.model");
+const crypto = require("crypto");
 const { emailWithNodemailer } = require("../../helpers/email");
 const ApiError = require("../../helpers/ApiError");
 const httpStatus = require("http-status");
 const { sendSMSOtp } = require("../../helpers/sms");
+const { sendWhatsAppOtp } = require("../../helpers/sendWhatsAppOtp");
 
 const normalizeSentTo = (sentTo, receiverType) => {
   if (!sentTo) return sentTo;
@@ -97,7 +99,10 @@ const sendOTP = async (
     purpose,
   });
 
-  const otp = Math.floor(100000 + Math.random() * 900000);
+  // const otp = Math.floor(100000 + Math.random() * 900000);
+  const crypto = require("crypto");
+
+  const otp = crypto.randomInt(100000, 1000000);
 
   const otpExpiryTime =
     parseInt(process.env.OTP_EXPIRY_TIME) || 3;
@@ -126,10 +131,13 @@ const sendOTP = async (
     });
   }
 
-  if (receiverType === "phone") {
-    await sendSMSOtp(sentTo, otp);
-  }
+  // if (receiverType === "phone") {
+  //   await sendSMSOtp(sentTo, otp);
+  // }
 
+  if (receiverType === "phone") {
+    await sendWhatsAppOtp(sentTo, otp);
+  }
   // ==========================================
   // 2. ONLY SAVE OTP IF SENDING SUCCESSFUL
   // ==========================================
@@ -288,7 +296,7 @@ module.exports = {
 //     emailWithNodemailer(emailData).catch(console.error);
 //   }
 
-//   //SMS 
+//   //SMS
 //   if (receiverType === 'phone') {
 //     console.log({ sentTo, otp });
 //     await sendSMSOtp(sentTo, otp);

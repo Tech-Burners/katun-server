@@ -166,11 +166,14 @@ const getPartnerBookingTrend = async (partnerUserId, year) => {
   ];
   const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
   const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
+  console.log('partnerUserId', partnerUserId);
+  console.log('startDate', startDate);
+  console.log('endDate', endDate);
 
   const bookingTrendAgg = await Booking.aggregate([
     {
       $match: {
-        provider: partnerUserId,
+        provider: new mongoose.Types.ObjectId(partnerUserId),
         createdAt: { $gte: startDate, $lte: endDate }
       }
     },
@@ -215,6 +218,9 @@ const getPartnerEarningOverview = async (partnerUserId, year) => {
   ];
   const startDate = new Date(`${year}-01-01T00:00:00.000Z`);
   const endDate = new Date(`${year}-12-31T23:59:59.999Z`);
+
+  console.log('startDate', startDate);
+  console.log('endDate', endDate);
 
   const earningTrendAgg = await Transaction.aggregate([
     {
