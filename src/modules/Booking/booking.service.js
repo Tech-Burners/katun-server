@@ -195,7 +195,7 @@ const markAsCompletedService = async (id, data) => {
                 booking.user,
                 'Service Completed',
                 'Your service has been completed',
-                booking._id, 
+                booking._id,
                 'booking'
             );
         }
@@ -1754,38 +1754,60 @@ const pastBookingService = async (user, option) => {
 
     const [result, total] = await Promise.all([
         bookingModel.aggregate([
-            // {
-            //     $match: {
-            //         user: new mongoose.Types.ObjectId(String(user)),
-            //         status: { $in: ["completed", "approved"] },
-            //         paymentStatus: "paid",
-            //         expireDate: { $lt: now }
-            //     }
-            // },
             {
                 $match: {
                     user: new mongoose.Types.ObjectId(String(user)),
-                    $or: [
-                        // non-cash payments must be paid
-                        {
-                            paymentMethod: { $ne: "cash" },
-                            paymentStatus: "paid"
-                        },
 
-                        // cash payments can stay pending (but still valid booking logic)
+                    $and: [
                         {
-                            paymentMethod: "cash"
-                        }
-                    ],
-                    $or: [
-                        { status: "completed" },
+                            $or: [
+                                {
+                                    paymentMethod: { $ne: "cash" },
+                                    paymentStatus: "paid"
+                                },
+                                {
+                                    paymentMethod: "cash"
+                                }
+                            ]
+                        },
                         {
-                            status: "approved",
-                            expireDate: { $lt: now }
+                            $or: [
+                                {
+                                    status: "completed"
+                                },
+                                {
+                                    status: "approved",
+                                    expireDate: { $lt: now }
+                                }
+                            ]
                         }
                     ]
                 }
             },
+            // {
+            //     $match: {
+            //         user: new mongoose.Types.ObjectId(String(user)),
+            //         $or: [
+            //             // non-cash payments must be paid
+            //             {
+            //                 paymentMethod: { $ne: "cash" },
+            //                 paymentStatus: "paid"
+            //             },
+
+            //             // cash payments can stay pending (but still valid booking logic)
+            //             {
+            //                 paymentMethod: "cash"
+            //             }
+            //         ],
+            //         $or: [
+            //             { status: "completed" },
+            //             {
+            //                 status: "approved",
+            //                 expireDate: { $lt: now }
+            //             }
+            //         ]
+            //     }
+            // },
             { $sort: { updatedAt: -1 } },
             { $skip: skip },
             { $limit: limit },
