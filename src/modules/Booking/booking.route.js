@@ -13,7 +13,8 @@ const { bookingController,
     markAsCompletedController,
     serviceFeedbackController,
     modifyBookingController,
-    cancelBookingController} = require("./booking.controller");
+    cancelBookingController,
+    upcomingBookingController} = require("./booking.controller");
 const router = express.Router();
 
 
@@ -25,7 +26,8 @@ router.get('/partner/active', auth(['partner']), allActiveBookingController);
 router.get('/partner/completed', auth(['partner']), allCompletedBookingController);
 router.get('/partner/cancelled', auth(['partner']), allCancelledBookingController);
 router.get('/partner/details/:id', auth(['partner']), bookingDetailsAdminEndController);
-router.get('/upcoming-userend', auth(['user']), pendingBookingController);
+router.get('/pending-userend', auth(['user']), pendingBookingController);
+router.get('/upcoming-userend', auth(['user']), upcomingBookingController);
 router.get('/active-userend', auth(['user']), activeBookingController);
 router.get('/past-userend', auth(['user']), pastBookingController);
 router.get('/details-userend/:id', auth(['user']), bookingDetailsController);

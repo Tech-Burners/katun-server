@@ -1,5 +1,5 @@
 const { default: status } = require("http-status");
-const { bookingService, pendingBookingService, activeBookingService, pastBookingService, bookingDetailsService, bookingFeedbackService, allPendingBookingService,
+const { bookingService, pendingBookingService, upcomingBookingService, activeBookingService, pastBookingService, bookingDetailsService, bookingFeedbackService, allPendingBookingService,
     allActiveBookingService,
     allCompletedBookingService,
     allCancelledBookingService,
@@ -35,7 +35,16 @@ const pendingBookingController = catchAsync(async (req, res) => {
         limit: Number(req.query.limit) || 10
     }
     const result = await pendingBookingService(req.User._id, option);
-    return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking added successfully", data: result, }));
+    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "Pending bookings fetched successfully", data: result, }));
+})
+
+const upcomingBookingController = catchAsync(async (req, res) => {
+    const option = {
+        page: Number(req.query.page) || 1,
+        limit: Number(req.query.limit) || 10
+    }
+    const result = await upcomingBookingService(req.User._id, option);
+    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "Upcoming bookings fetched successfully", data: result, }));
 })
 
 const allPendingBookingController = catchAsync(async (req, res) => {
@@ -249,5 +258,6 @@ module.exports = {
     assignStuffController,
     markAsCompletedController,
     modifyBookingController,
-    cancelBookingController
+    cancelBookingController,
+    upcomingBookingController
 }

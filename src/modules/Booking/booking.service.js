@@ -177,14 +177,20 @@ const modifyBookingService = async (bookingId, loginUser, data) => {
 
 const markAsCompletedService = async (id, data) => {
     const booking = await bookingModel.findById(id);
-    if (booking.pin == data.pin && booking.status == "approved") {
+    if (booking.pin == data.pin && booking.status == 'approved') {
         if (booking.sessionLeft <= 0) {
             throw new ApiError(status.BAD_REQUEST, 'No sessions left in this booking');
         }
         booking.sessionLeft -= 1;
         booking.checkin = new Date();
+
+
+
+
+
+
         if (booking.sessionLeft == 0) {
-            booking.status = "completed";
+            booking.status = 'completed';
         }
         booking.pin = generate4DigitPin();
         await booking.save();
@@ -196,7 +202,7 @@ const markAsCompletedService = async (id, data) => {
                 'Service Completed',
                 'Your service has been completed',
                 booking._id,
-                'booking'
+                'booking',
             );
         }
         return true
@@ -788,17 +794,21 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
 const pendingBookingService = async (user, option) => {
     const { page, limit } = option;
     const skip = (page - 1) * limit;
+    const now = new Date();
+
+    const paymentMatch = [
+        { paymentMethod: "cash" },
+        { paymentMethod: { $ne: "cash" }, paymentStatus: "paid" }
+    ];
+
     const [result, total] = await Promise.all([
         bookingModel.aggregate([
             {
                 $match: {
                     user: new mongoose.Types.ObjectId(String(user)),
                     status: "pending",
-                    endTime: { $gt: new Date() },
-                    $or: [
-                        { paymentStatus: "paid" },
-                        { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }
-                    ]
+                    expireDate: { $gte: now },
+                    $or: paymentMatch
                 }
             },
             {
@@ -856,16 +866,98 @@ const pendingBookingService = async (user, option) => {
         ]),
         bookingModel.countDocuments({
             user: new mongoose.Types.ObjectId(String(user)),
-            // status: "approved",
-            $or: [
-                { paymentStatus: "paid" },
-                { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }
-            ]
+            status: "pending",
+            expireDate: { $gte: now }
         })
     ])
     return { result, pagination: { totalResults: total, totalPages: Math.ceil(total / limit), currentPage: page, limit } }
 }
 
+const upcomingBookingService = async (user, option) => {
+    const { page, limit } = option;
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    const paymentMatch = [
+        { paymentMethod: "cash" },
+        { paymentMethod: { $ne: "cash" }, paymentStatus: "paid" }
+    ];
+
+    const [result, total] = await Promise.all([
+        bookingModel.aggregate([
+            {
+                $match: {
+                    user: new mongoose.Types.ObjectId(String(user)),
+                    status: "approved",
+                    sessionLeft: { $gt: 0 },
+                    date: { $gt: now },
+                    expireDate: { $gte: now },
+                    $or: paymentMatch
+                }
+            },
+            {
+                $sort: {
+                    createdAt: -1
+                }
+            },
+            {
+                $skip: skip
+            },
+            {
+                $limit: limit
+            },
+            {
+                $lookup: {
+                    from: 'services',
+                    localField: 'service',
+                    foreignField: '_id',
+                    as: 'serviceData'
+                }
+            },
+            {
+                $unwind: {
+                    path: '$serviceData',
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'serviceData.user',
+                    foreignField: '_id',
+                    as: 'userData'
+                }
+            },
+            {
+                $unwind: {
+                    path: '$userData',
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
+                $project: {
+                    image: '$serviceData.image',
+                    serviceName: '$serviceData.name',
+                    serviceId: '$serviceData._id',
+                    providerName: '$userData.fullName',
+                    sessionLeft: 1,
+                    date: 1,
+                    startTime: 1,
+                    endTime: 1,
+                    createdAt: 1
+                }
+            }
+        ]),
+        bookingModel.countDocuments({
+            user: new mongoose.Types.ObjectId(String(user)),
+            status: "approved",
+            sessionLeft: { $gt: 0 },
+            date: { $gt: now },
+            expireDate: { $gte: now }
+        })
+    ])
+    return { result, pagination: { totalResults: total, totalPages: Math.ceil(total / limit), currentPage: page, limit } }
+}
 
 
 const allPendingBookingService = async (user, option) => {
@@ -1641,12 +1733,12 @@ const activeBookingService = async (user, option) => {
                     user: new mongoose.Types.ObjectId(String(user)),
                     status: "approved",
                     sessionLeft: { $gt: 0 },
-                    $expr: {
-                        $and: [
-                            { $gte: ["$expireDate", now] }
-                        ]
-                    },
+                    expireDate: { $gte: now },
                     $or: [
+
+
+
+
                         // cash bookings allowed even if pending
                         {
                             paymentMethod: "cash",
@@ -1713,24 +1805,24 @@ const activeBookingService = async (user, option) => {
             user: new mongoose.Types.ObjectId(String(user)),
             status: "approved",
             sessionLeft: { $gt: 0 },
-            $expr: {
-                $and: [
-                    { $gte: ["$expireDate", now] }
-                ]
-            },
+            expireDate: { $gte: now },
             $or: [
                 // cash bookings allowed even if pending
                 {
-                    paymentMethod: "cash",
-                    paymentStatus: "pending"
+                    paymentMethod: 'cash',
+                    paymentStatus: 'pending'
                 },
 
                 // other methods must be paid
                 {
-                    paymentMethod: { $ne: "cash" },
-                    paymentStatus: "paid"
+                    paymentMethod: { $ne: 'cash' },
+                    paymentStatus: 'paid'
                 }
             ]
+
+
+
+
         })
     ]);
 
@@ -1752,62 +1844,23 @@ const pastBookingService = async (user, option) => {
 
     const now = new Date();
 
+    const paymentMatch = [
+        { paymentMethod: "cash" },
+        { paymentMethod: { $ne: "cash" }, paymentStatus: "paid" }
+    ];
+
     const [result, total] = await Promise.all([
         bookingModel.aggregate([
             {
                 $match: {
                     user: new mongoose.Types.ObjectId(String(user)),
-
-                    $and: [
-                        {
-                            $or: [
-                                {
-                                    paymentMethod: { $ne: "cash" },
-                                    paymentStatus: "paid"
-                                },
-                                {
-                                    paymentMethod: "cash"
-                                }
-                            ]
-                        },
-                        {
-                            $or: [
-                                {
-                                    status: "completed"
-                                },
-                                {
-                                    status: "approved",
-                                    expireDate: { $lt: now }
-                                }
-                            ]
-                        }
-                    ]
+                    $or: [
+                        { status: 'completed' },
+                        { status: 'approved', expireDate: { $lt: now } }
+                    ],
+                    $or: paymentMatch
                 }
             },
-            // {
-            //     $match: {
-            //         user: new mongoose.Types.ObjectId(String(user)),
-            //         $or: [
-            //             // non-cash payments must be paid
-            //             {
-            //                 paymentMethod: { $ne: "cash" },
-            //                 paymentStatus: "paid"
-            //             },
-
-            //             // cash payments can stay pending (but still valid booking logic)
-            //             {
-            //                 paymentMethod: "cash"
-            //             }
-            //         ],
-            //         $or: [
-            //             { status: "completed" },
-            //             {
-            //                 status: "approved",
-            //                 expireDate: { $lt: now }
-            //             }
-            //         ]
-            //     }
-            // },
             { $sort: { updatedAt: -1 } },
             { $skip: skip },
             { $limit: limit },
@@ -1857,31 +1910,10 @@ const pastBookingService = async (user, option) => {
         ]),
 
         bookingModel.countDocuments({
-            // user: new mongoose.Types.ObjectId(String(user)),
-            // status: { $in: ["completed", "approved"] },
-            // paymentStatus: "paid",
-            // expireDate: { $lt: now }
-
-
             user: new mongoose.Types.ObjectId(String(user)),
             $or: [
-                // non-cash payments must be paid
-                {
-                    paymentMethod: { $ne: "cash" },
-                    paymentStatus: "paid"
-                },
-
-                // cash payments can stay pending (but still valid booking logic)
-                {
-                    paymentMethod: "cash"
-                }
-            ],
-            $or: [
                 { status: "completed" },
-                {
-                    status: "approved",
-                    expireDate: { $lt: now }
-                }
+                { status: "approved", expireDate: { $lt: now } }
             ]
         })
     ]);
@@ -1901,6 +1933,7 @@ const pastBookingService = async (user, option) => {
 module.exports = {
     bookingService,
     pendingBookingService,
+    upcomingBookingService,
     activeBookingService,
     pastBookingService,
     bookingDetailsService,
