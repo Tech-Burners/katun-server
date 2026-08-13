@@ -791,7 +791,7 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
     return result[0] || null;
 };
 
-const pendingBookingService = async (user, option) => {
+const userPendingBookingService = async (user, option) => {
     const { page, limit } = option;
     const skip = (page - 1) * limit;
     const now = new Date();
@@ -873,27 +873,40 @@ const pendingBookingService = async (user, option) => {
     return { result, pagination: { totalResults: total, totalPages: Math.ceil(total / limit), currentPage: page, limit } }
 }
 
-const upcomingBookingService = async (user, option) => {
+const userUpcomingBookingService = async (user, option) => {
     const { page, limit } = option;
     const skip = (page - 1) * limit;
+
     const now = new Date();
 
     const paymentMatch = [
-        { paymentMethod: "cash" },
-        { paymentMethod: { $ne: "cash" }, paymentStatus: "paid" }
+        {
+            paymentMethod: "cash"
+        },
+        {
+            paymentMethod: { $ne: "cash" },
+            paymentStatus: "paid"
+        }
     ];
+
+    const matchStage = {
+        user: new mongoose.Types.ObjectId(String(user)),
+        status: "approved",
+        sessionLeft: { $gt: 0 },
+
+        // Future booking only
+        date: { $gt: now },
+
+        // Not expired
+        expireDate: { $gte: now },
+
+        $or: paymentMatch
+    };
 
     const [result, total] = await Promise.all([
         bookingModel.aggregate([
             {
-                $match: {
-                    user: new mongoose.Types.ObjectId(String(user)),
-                    status: "approved",
-                    sessionLeft: { $gt: 0 },
-                    date: { $gt: now },
-                    expireDate: { $gte: now },
-                    $or: paymentMatch
-                }
+                $match: matchStage
             },
             {
                 $sort: {
@@ -908,70 +921,82 @@ const upcomingBookingService = async (user, option) => {
             },
             {
                 $lookup: {
-                    from: 'services',
-                    localField: 'service',
-                    foreignField: '_id',
-                    as: 'serviceData'
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
                 }
             },
             {
                 $unwind: {
-                    path: '$serviceData',
+                    path: "$serviceData",
                     preserveNullAndEmptyArrays: true
                 }
             },
             {
                 $lookup: {
-                    from: 'users',
-                    localField: 'serviceData.user',
-                    foreignField: '_id',
-                    as: 'userData'
+                    from: "users",
+                    localField: "serviceData.user",
+                    foreignField: "_id",
+                    as: "userData"
                 }
             },
             {
                 $unwind: {
-                    path: '$userData',
+                    path: "$userData",
                     preserveNullAndEmptyArrays: true
                 }
             },
             {
                 $project: {
-                    image: '$serviceData.image',
-                    serviceName: '$serviceData.name',
-                    serviceId: '$serviceData._id',
-                    providerName: '$userData.fullName',
+                    image: "$serviceData.image",
+                    serviceName: "$serviceData.name",
+                    serviceId: "$serviceData._id",
+
+                    providerName: "$userData.fullName",
+
                     sessionLeft: 1,
                     date: 1,
                     startTime: 1,
                     endTime: 1,
+                    expireDate: 1,
                     createdAt: 1
                 }
             }
         ]),
-        bookingModel.countDocuments({
-            user: new mongoose.Types.ObjectId(String(user)),
-            status: "approved",
-            sessionLeft: { $gt: 0 },
-            date: { $gt: now },
-            expireDate: { $gte: now }
-        })
-    ])
-    return { result, pagination: { totalResults: total, totalPages: Math.ceil(total / limit), currentPage: page, limit } }
-}
+
+        bookingModel.countDocuments(matchStage)
+    ]);
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
 
 
-const allPendingBookingService = async (user, option) => {
+const allUpcomingBookingService = async (user, option) => {
 
     const { page, limit, search, isOneTime } = option;
+
     const skip = (page - 1) * limit;
+
+    const now = new Date();
 
     const matchStage = {
         provider: new mongoose.Types.ObjectId(String(user)),
-        status: "pending",
-        $or: [
-            { paymentStatus: "paid" },
-            { $and: [{ paymentMethod: "cash" }, { paymentStatus: "pending" }] }
-        ]
+        status: "approved",
+
+        // Booking has not started yet
+        date: { $gt: now },
+
+        // Booking must not already be expired
+        expireDate: { $gt: now }
     };
 
     if (isOneTime !== undefined) {
@@ -983,9 +1008,30 @@ const allPendingBookingService = async (user, option) => {
     if (search) {
         searchMatch = {
             $or: [
-                { "userData.number": { $regex: search, $options: "i" } },
-                { "userData.fullName": { $regex: search, $options: "i" } },
-                { "serviceData.name": { $regex: search, $options: "i" } }
+                {
+                    "serviceData.name": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    "userData.fullName": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    phoneNumberString: {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    "assignedToData.name": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                }
             ]
         };
     }
@@ -1002,7 +1048,13 @@ const allPendingBookingService = async (user, option) => {
                 as: "serviceData"
             }
         },
-        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
 
         {
             $lookup: {
@@ -1012,60 +1064,146 @@ const allPendingBookingService = async (user, option) => {
                 as: "userData"
             }
         },
-        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$assignedToData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $addFields: {
+                phoneNumberString: {
+                    $toString: "$userData.phoneNumber"
+                }
+            }
+        },
 
         ...(search ? [{ $match: searchMatch }] : []),
 
-        { $sort: { createdAt: -1 } },
+        {
+            $sort: {
+                date: 1
+            }
+        },
 
         { $skip: skip },
         { $limit: limit },
 
         {
             $project: {
+                name: "$serviceData.image",
+
                 serviceName: "$serviceData.name",
                 serviceId: "$serviceData._id",
+
                 userName: "$userData.fullName",
-                userImage: "$serviceData.image",
+                userImage: "$userData.image",
+
                 number: "$userData.number",
                 countryCode: "$userData.countryCode",
+
+                assignedStaff: "$assignedToData.name",
+
+                isOneTime: 1,
+
                 date: 1,
                 startTime: 1,
                 endTime: 1,
-                isOneTime: 1,
+                expireDate: 1,
+
                 createdAt: 1
             }
         }
     ];
 
+    const countPipeline = [
+
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$assignedToData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $addFields: {
+                phoneNumberString: {
+                    $toString: "$userData.phoneNumber"
+                }
+            }
+        },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        {
+            $count: "total"
+        }
+    ];
+
     const [result, totalCount] = await Promise.all([
         bookingModel.aggregate(pipeline),
-
-        bookingModel.aggregate([
-            { $match: matchStage },
-            {
-                $lookup: {
-                    from: "services",
-                    localField: "service",
-                    foreignField: "_id",
-                    as: "serviceData"
-                }
-            },
-            { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
-            {
-                $lookup: {
-                    from: "users",
-                    localField: "user",
-                    foreignField: "_id",
-                    as: "userData"
-                }
-            },
-            { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
-
-            ...(search ? [{ $match: searchMatch }] : []),
-
-            { $count: "total" }
-        ])
+        bookingModel.aggregate(countPipeline)
     ]);
 
     const total = totalCount[0]?.total || 0;
@@ -1224,31 +1362,18 @@ const allActiveBookingService = async (user, option) => {
     const { page, limit, search, isOneTime } = option;
 
     const skip = (page - 1) * limit;
+
     const now = new Date();
 
-    // const matchStage = {
-    //     provider: new mongoose.Types.ObjectId(String(user)),
-    //     status: "approved",
-    //     paymentStatus: "paid",
-    //     expireDate: { $gte: now }
-    // };
     const matchStage = {
         provider: new mongoose.Types.ObjectId(String(user)),
         status: "approved",
-        expireDate: { $gte: now },
-        $or: [
-            // cash bookings allowed even if pending
-            {
-                paymentMethod: "cash",
-                paymentStatus: "pending"
-            },
 
-            // all other methods must be paid
-            {
-                paymentMethod: { $ne: "cash" },
-                paymentStatus: "paid"
-            }
-        ]
+        // Booking has actually started
+        date: { $lte: now },
+
+        // Booking is still active
+        expireDate: { $gt: now }
     };
 
     if (isOneTime !== undefined) {
@@ -1260,10 +1385,30 @@ const allActiveBookingService = async (user, option) => {
     if (search) {
         searchMatch = {
             $or: [
-                { "serviceData.name": { $regex: search, $options: "i" } },
-                { "userData.fullName": { $regex: search, $options: "i" } },
-                { phoneNumberString: { $regex: search, $options: "i" } },
-                { "assignedToData.fullName": { $regex: search, $options: "i" } }
+                {
+                    "serviceData.name": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    "userData.fullName": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    phoneNumberString: {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    "assignedToData.name": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                }
             ]
         };
     }
@@ -1271,6 +1416,7 @@ const allActiveBookingService = async (user, option) => {
     const pipeline = [
 
         { $match: matchStage },
+
         {
             $lookup: {
                 from: "services",
@@ -1279,7 +1425,13 @@ const allActiveBookingService = async (user, option) => {
                 as: "serviceData"
             }
         },
-        { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
 
         {
             $lookup: {
@@ -1289,7 +1441,13 @@ const allActiveBookingService = async (user, option) => {
                 as: "userData"
             }
         },
-        { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
 
         {
             $lookup: {
@@ -1299,86 +1457,131 @@ const allActiveBookingService = async (user, option) => {
                 as: "assignedToData"
             }
         },
-        { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $unwind: {
+                path: "$assignedToData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
 
         {
             $addFields: {
-                phoneNumberString: { $toString: "$userData.phoneNumber" }
+                phoneNumberString: {
+                    $toString: "$userData.phoneNumber"
+                }
             }
         },
 
         ...(search ? [{ $match: searchMatch }] : []),
 
-        { $sort: { updatedAt: -1 } },
+        {
+            $sort: {
+                expireDate: 1
+            }
+        },
+
         { $skip: skip },
         { $limit: limit },
+
         {
             $project: {
                 name: "$serviceData.image",
+
                 serviceName: "$serviceData.name",
                 serviceId: "$serviceData._id",
+
                 userName: "$userData.fullName",
                 userImage: "$userData.image",
+
                 number: "$userData.number",
                 countryCode: "$userData.countryCode",
+
                 assignedStaff: "$assignedToData.name",
+
                 isOneTime: 1,
+
+                date: 1,
                 startTime: 1,
                 endTime: 1,
-                date: 1,
-                checkin: 1,
-                createdAt: 1,
+                expireDate: 1,
 
+                checkin: 1,
+                createdAt: 1
             }
+        }
+    ];
+
+    const countPipeline = [
+
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$assignedToData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $addFields: {
+                phoneNumberString: {
+                    $toString: "$userData.phoneNumber"
+                }
+            }
+        },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        {
+            $count: "total"
         }
     ];
 
     const [result, totalCount] = await Promise.all([
         bookingModel.aggregate(pipeline),
-
-        bookingModel.aggregate([
-            { $match: matchStage },
-
-            {
-                $lookup: {
-                    from: "services",
-                    localField: "service",
-                    foreignField: "_id",
-                    as: "serviceData"
-                }
-            },
-            { $unwind: { path: "$serviceData", preserveNullAndEmptyArrays: true } },
-
-            {
-                $lookup: {
-                    from: "users",
-                    localField: "user",
-                    foreignField: "_id",
-                    as: "userData"
-                }
-            },
-            { $unwind: { path: "$userData", preserveNullAndEmptyArrays: true } },
-
-            {
-                $lookup: {
-                    from: "users",
-                    localField: "assignedTo",
-                    foreignField: "_id",
-                    as: "assignedToData"
-                }
-            },
-            { $unwind: { path: "$assignedToData", preserveNullAndEmptyArrays: true } },
-
-            {
-                $addFields: {
-                    numberString: { $toString: "$userData.number" }
-                }
-            },
-
-            ...(search ? [{ $match: searchMatch }] : []),
-
-            { $count: "total" }
-        ])
+        bookingModel.aggregate(countPipeline)
     ]);
 
     const total = totalCount[0]?.total || 0;
@@ -1394,6 +1597,273 @@ const allActiveBookingService = async (user, option) => {
     };
 };
 
+
+
+const allDueBookingService = async (user, option) => {
+
+    const { page, limit, search, isOneTime } = option;
+
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    const matchStage = {
+        provider: new mongoose.Types.ObjectId(String(user)),
+        status: "approved",
+
+        // Expired approved bookings
+        expireDate: { $lte: now }
+    };
+
+    if (isOneTime !== undefined) {
+        matchStage.isOneTime = isOneTime === "true";
+    }
+
+    // নিচের pipeline তোমার allActiveBookingService-এর মতোই থাকবে
+    // শুধু matchStage এবং sorting পরিবর্তন করবে।
+
+    const pipeline = [
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$assignedToData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $addFields: {
+                phoneNumberString: {
+                    $toString: "$userData.phoneNumber"
+                }
+            }
+        },
+
+        ...(search
+            ? [{
+                $match: {
+                    $or: [
+                        {
+                            "serviceData.name": {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        },
+                        {
+                            "userData.fullName": {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        },
+                        {
+                            phoneNumberString: {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        },
+                        {
+                            "assignedToData.name": {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        }
+                    ]
+                }
+            }]
+            : []),
+
+        {
+            $sort: {
+                expireDate: -1
+            }
+        },
+
+        { $skip: skip },
+        { $limit: limit },
+
+        {
+            $project: {
+                name: "$serviceData.image",
+
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+
+                userName: "$userData.fullName",
+                userImage: "$userData.image",
+
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
+
+                assignedStaff: "$assignedToData.name",
+
+                isOneTime: 1,
+
+                date: 1,
+                startTime: 1,
+                endTime: 1,
+                expireDate: 1,
+
+                checkin: 1,
+                createdAt: 1
+            }
+        }
+    ];
+
+    const countPipeline = [
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "staffs",
+                localField: "assignedTo",
+                foreignField: "_id",
+                as: "assignedToData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$assignedToData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $addFields: {
+                phoneNumberString: {
+                    $toString: "$userData.phoneNumber"
+                }
+            }
+        },
+
+        ...(search
+            ? [{
+                $match: {
+                    $or: [
+                        {
+                            "serviceData.name": {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        },
+                        {
+                            "userData.fullName": {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        },
+                        {
+                            phoneNumberString: {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        },
+                        {
+                            "assignedToData.name": {
+                                $regex: search,
+                                $options: "i"
+                            }
+                        }
+                    ]
+                }
+            }]
+            : []),
+
+        {
+            $count: "total"
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+        bookingModel.aggregate(pipeline),
+        bookingModel.aggregate(countPipeline)
+    ]);
+
+    const total = totalCount[0]?.total || 0;
+
+    return {
+        result,
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
 
 const allCompletedBookingService = async (user, option) => {
 
@@ -1707,163 +2177,60 @@ const allCancelledBookingService = async (user, option) => {
 
 
 
-const activeBookingService = async (user, option) => {
+const userActiveBookingService = async (user, option) => {
+
     const { page, limit } = option;
-    const skip = (page - 1) * limit;
 
-    const now = new Date();
-
-    const [result, total] = await Promise.all([
-        bookingModel.aggregate([
-            {
-                // $match: {
-                //     user: new mongoose.Types.ObjectId(String(user)),
-                //     status: "approved",
-                //     paymentStatus: "paid",
-                //     sessionLeft: { $gt: 0 },
-                //     $expr: {
-                //         $and: [
-                //             // { $lte: ["$date", now] },       // booking started
-                //             { $gte: ["$expireDate", now] }  // not expired
-                //         ]
-                //     }
-                // }
-
-                $match: {
-                    user: new mongoose.Types.ObjectId(String(user)),
-                    status: "approved",
-                    sessionLeft: { $gt: 0 },
-                    expireDate: { $gte: now },
-                    $or: [
-
-
-
-
-                        // cash bookings allowed even if pending
-                        {
-                            paymentMethod: "cash",
-                            paymentStatus: "pending"
-                        },
-
-                        // other methods must be paid
-                        {
-                            paymentMethod: { $ne: "cash" },
-                            paymentStatus: "paid"
-                        }
-                    ]
-
-                }
-            },
-            { $sort: { createdAt: -1 } },
-            { $skip: skip },
-            { $limit: limit },
-            {
-                $lookup: {
-                    from: "services",
-                    localField: "service",
-                    foreignField: "_id",
-                    as: "serviceData"
-                }
-            },
-            {
-                $unwind: {
-                    path: "$serviceData",
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
-                $lookup: {
-                    from: "users",
-                    localField: "serviceData.user",
-                    foreignField: "_id",
-                    as: "userData"
-                }
-            },
-            {
-                $unwind: {
-                    path: "$userData",
-                    preserveNullAndEmptyArrays: true
-                }
-            },
-            {
-                $project: {
-                    image: 1,
-                    name: "$serviceData.image",
-                    serviceName: "$serviceData.name",
-                    serviceId: "$serviceData._id",
-                    providerName: '$userData.fullName',
-                    sessionLeft: 1,
-                    date: 1,
-                    startTime: 1,
-                    endTime: 1,
-                    createdAt: 1
-                }
-            }
-        ]),
-
-        bookingModel.countDocuments({
-            user: new mongoose.Types.ObjectId(String(user)),
-            status: "approved",
-            sessionLeft: { $gt: 0 },
-            expireDate: { $gte: now },
-            $or: [
-                // cash bookings allowed even if pending
-                {
-                    paymentMethod: 'cash',
-                    paymentStatus: 'pending'
-                },
-
-                // other methods must be paid
-                {
-                    paymentMethod: { $ne: 'cash' },
-                    paymentStatus: 'paid'
-                }
-            ]
-
-
-
-
-        })
-    ]);
-
-    return {
-        result,
-        pagination: {
-            totalResults: total,
-            totalPages: Math.ceil(total / limit),
-            currentPage: page,
-            limit
-        }
-    };
-};
-
-
-const pastBookingService = async (user, option) => {
-    const { page, limit } = option;
     const skip = (page - 1) * limit;
 
     const now = new Date();
 
     const paymentMatch = [
-        { paymentMethod: "cash" },
-        { paymentMethod: { $ne: "cash" }, paymentStatus: "paid" }
+        {
+            paymentMethod: "cash",
+            paymentStatus: "pending"
+        },
+        {
+            paymentMethod: { $ne: "cash" },
+            paymentStatus: "paid"
+        }
     ];
 
+    const matchStage = {
+        user: new mongoose.Types.ObjectId(String(user)),
+        status: "approved",
+        sessionLeft: { $gt: 0 },
+
+        // Booking has started
+        date: { $lte: now },
+
+        // Booking has not expired
+        expireDate: { $gte: now },
+
+        $or: paymentMatch
+    };
+
     const [result, total] = await Promise.all([
+
         bookingModel.aggregate([
             {
-                $match: {
-                    user: new mongoose.Types.ObjectId(String(user)),
-                    $or: [
-                        { status: 'completed' },
-                        { status: 'approved', expireDate: { $lt: now } }
-                    ],
-                    $or: paymentMatch
+                $match: matchStage
+            },
+
+            {
+                $sort: {
+                    createdAt: -1
                 }
             },
-            { $sort: { updatedAt: -1 } },
-            { $skip: skip },
-            { $limit: limit },
+
+            {
+                $skip: skip
+            },
+
+            {
+                $limit: limit
+            },
+
             {
                 $lookup: {
                     from: "services",
@@ -1872,12 +2239,14 @@ const pastBookingService = async (user, option) => {
                     as: "serviceData"
                 }
             },
+
             {
                 $unwind: {
                     path: "$serviceData",
                     preserveNullAndEmptyArrays: true
                 }
             },
+
             {
                 $lookup: {
                     from: "users",
@@ -1886,37 +2255,360 @@ const pastBookingService = async (user, option) => {
                     as: "userData"
                 }
             },
+
             {
                 $unwind: {
                     path: "$userData",
                     preserveNullAndEmptyArrays: true
                 }
             },
+
             {
                 $project: {
-                    image: 1,
+                    image: "$serviceData.image",
+
                     name: "$serviceData.image",
                     serviceName: "$serviceData.name",
                     serviceId: "$serviceData._id",
-                    providerName: '$userData.fullName',
+
+                    providerName: "$userData.fullName",
+
                     sessionLeft: 1,
+
                     date: 1,
-                    status: 1,
                     startTime: 1,
                     endTime: 1,
+                    expireDate: 1,
+
                     createdAt: 1
                 }
             }
         ]),
 
-        bookingModel.countDocuments({
-            user: new mongoose.Types.ObjectId(String(user)),
-            $or: [
-                { status: "completed" },
-                { status: "approved", expireDate: { $lt: now } }
-            ]
-        })
+        bookingModel.countDocuments(matchStage)
     ]);
+
+    return {
+        result,
+
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const userPastBookingService = async (user, option) => {
+
+    const { page, limit } = option;
+
+    const skip = (page - 1) * limit;
+
+    const now = new Date();
+
+    const paymentMatch = [
+        {
+            paymentMethod: "cash"
+        },
+        {
+            paymentMethod: { $ne: "cash" },
+            paymentStatus: "paid"
+        }
+    ];
+
+    const matchStage = {
+        user: new mongoose.Types.ObjectId(String(user)),
+
+        $and: [
+            {
+                $or: [
+                    {
+                        status: "completed"
+                    },
+                    {
+                        status: "approved",
+                        expireDate: { $lt: now }
+                    }
+                ]
+            },
+            {
+                $or: paymentMatch
+            }
+        ]
+    };
+
+    const [result, total] = await Promise.all([
+
+        bookingModel.aggregate([
+
+            {
+                $match: matchStage
+            },
+
+            {
+                $sort: {
+                    updatedAt: -1
+                }
+            },
+
+            {
+                $skip: skip
+            },
+
+            {
+                $limit: limit
+            },
+
+            {
+                $lookup: {
+                    from: "services",
+                    localField: "service",
+                    foreignField: "_id",
+                    as: "serviceData"
+                }
+            },
+
+            {
+                $unwind: {
+                    path: "$serviceData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+
+            {
+                $lookup: {
+                    from: "users",
+                    localField: "serviceData.user",
+                    foreignField: "_id",
+                    as: "userData"
+                }
+            },
+
+            {
+                $unwind: {
+                    path: "$userData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+
+            {
+                $project: {
+                    image: 1,
+                    name: "$serviceData.image",
+
+                    serviceName: "$serviceData.name",
+                    serviceId: "$serviceData._id",
+
+                    providerName: "$userData.fullName",
+
+                    sessionLeft: 1,
+
+                    date: 1,
+                    status: 1,
+
+                    startTime: 1,
+                    endTime: 1,
+
+                    expireDate: 1,
+
+                    createdAt: 1
+                }
+            }
+        ]),
+
+        bookingModel.countDocuments(matchStage)
+    ]);
+
+    return {
+        result,
+
+        pagination: {
+            totalResults: total,
+            totalPages: Math.ceil(total / limit),
+            currentPage: page,
+            limit
+        }
+    };
+};
+
+
+const allPendingBookingService = async (user, option) => {
+
+    const { page, limit, search, isOneTime } = option;
+
+    const skip = (page - 1) * limit;
+    const now = new Date();
+
+    const matchStage = {
+        provider: new mongoose.Types.ObjectId(String(user)),
+        status: "pending",
+
+        // Do not show expired pending bookings
+        expireDate: { $gt: now },
+
+        $or: [
+            {
+                paymentStatus: "paid"
+            },
+            {
+                paymentMethod: "cash",
+                paymentStatus: "pending"
+            }
+        ]
+    };
+
+    if (isOneTime !== undefined) {
+        matchStage.isOneTime = isOneTime === "true";
+    }
+
+    let searchMatch = {};
+
+    if (search) {
+        searchMatch = {
+            $or: [
+                {
+                    "userData.number": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    "userData.fullName": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                },
+                {
+                    "serviceData.name": {
+                        $regex: search,
+                        $options: "i"
+                    }
+                }
+            ]
+        };
+    }
+
+    const pipeline = [
+
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        {
+            $sort: {
+                createdAt: -1
+            }
+        },
+
+        { $skip: skip },
+        { $limit: limit },
+
+        {
+            $project: {
+                serviceName: "$serviceData.name",
+                serviceId: "$serviceData._id",
+
+                userName: "$userData.fullName",
+                userImage: "$userData.image",
+
+                number: "$userData.number",
+                countryCode: "$userData.countryCode",
+
+                date: 1,
+                startTime: 1,
+                endTime: 1,
+                expireDate: 1,
+
+                isOneTime: 1,
+                createdAt: 1
+            }
+        }
+    ];
+
+    const countPipeline = [
+
+        { $match: matchStage },
+
+        {
+            $lookup: {
+                from: "services",
+                localField: "service",
+                foreignField: "_id",
+                as: "serviceData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$serviceData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        {
+            $lookup: {
+                from: "users",
+                localField: "user",
+                foreignField: "_id",
+                as: "userData"
+            }
+        },
+
+        {
+            $unwind: {
+                path: "$userData",
+                preserveNullAndEmptyArrays: true
+            }
+        },
+
+        ...(search ? [{ $match: searchMatch }] : []),
+
+        {
+            $count: "total"
+        }
+    ];
+
+    const [result, totalCount] = await Promise.all([
+        bookingModel.aggregate(pipeline),
+        bookingModel.aggregate(countPipeline)
+    ]);
+
+    const total = totalCount[0]?.total || 0;
 
     return {
         result,
@@ -1929,13 +2621,8 @@ const pastBookingService = async (user, option) => {
     };
 };
 
-
 module.exports = {
-    bookingService,
-    pendingBookingService,
-    upcomingBookingService,
-    activeBookingService,
-    pastBookingService,
+    bookingService,allPendingBookingService ,
     bookingDetailsService,
     allPendingBookingService,
     bookingFeedbackService,
@@ -1949,5 +2636,11 @@ module.exports = {
     assignStuffService,
     markAsCompletedService,
     modifyBookingService,
+    userPendingBookingService,
+    userActiveBookingService,
+    userUpcomingBookingService,
+    userPastBookingService,
+    allUpcomingBookingService,
+    allDueBookingService
     // cancelBookingService
 }

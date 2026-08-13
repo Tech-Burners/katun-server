@@ -14,22 +14,39 @@ const { bookingController,
     serviceFeedbackController,
     modifyBookingController,
     cancelBookingController,
-    upcomingBookingController} = require("./booking.controller");
+    upcomingBookingController,
+    userPendingBookingController,
+    userUpcomingBookingController,
+    userActiveBookingController,
+    userPastBookingController,
+    allUpcomingBookingController,
+    allDueBookingController} = require("./booking.controller");
 const router = express.Router();
 
 
 router.post("/add", auth(['user']), bookingController);
 router.put("/edit/:bookingId", auth(['user']), modifyBookingController);
-router.get('/partner/upcoming', auth(['partner']), allPendingBookingController);
+router.get(
+    '/partner/pending',
+    auth(['partner']),
+    allPendingBookingController
+);
+router.get(
+    '/partner/due',
+    auth(['partner']),
+    allDueBookingController
+);
+
+router.get('/partner/upcoming', auth(['partner']), allUpcomingBookingController);
 router.get('/admin/all-booking', auth(['admin','sub_admin']), allBookingController);
 router.get('/partner/active', auth(['partner']), allActiveBookingController);
 router.get('/partner/completed', auth(['partner']), allCompletedBookingController);
 router.get('/partner/cancelled', auth(['partner']), allCancelledBookingController);
 router.get('/partner/details/:id', auth(['partner']), bookingDetailsAdminEndController);
-router.get('/pending-userend', auth(['user']), pendingBookingController);
-router.get('/upcoming-userend', auth(['user']), upcomingBookingController);
-router.get('/active-userend', auth(['user']), activeBookingController);
-router.get('/past-userend', auth(['user']), pastBookingController);
+router.get('/pending-userend', auth(['user']), userPendingBookingController);
+router.get('/upcoming-userend', auth(['user']), userUpcomingBookingController);
+router.get('/active-userend', auth(['user']), userActiveBookingController);
+router.get('/past-userend', auth(['user']), userPastBookingController);
 router.get('/details-userend/:id', auth(['user']), bookingDetailsController);
 router.get('/details/:id', auth(['user']), bookingDetailsController);
 router.patch('/mark-completed/:id', auth(['partner']), markAsCompletedController);

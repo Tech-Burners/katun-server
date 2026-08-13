@@ -12,7 +12,13 @@ const { bookingService, pendingBookingService, upcomingBookingService, activeBoo
     markAsCompletedService,
     serviceFeedbackService,
     modifyBookingService,
-    cancelBookingService } = require("./booking.service")
+    cancelBookingService, 
+    userPendingBookingService,
+    userUpcomingBookingService,
+    userActiveBookingService,
+    userPastBookingService,
+    allUpcomingBookingService,
+    allDueBookingService} = require("./booking.service")
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 const serviceModel = require("../Service/service.model");
@@ -29,25 +35,40 @@ const modifyBookingController = catchAsync(async (req, res) => {
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking modified successfully", data: result, }));
 })
 
-const pendingBookingController = catchAsync(async (req, res) => {
+const userPendingBookingController = catchAsync(async (req, res) => {
     const option = {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10
     }
-    const result = await pendingBookingService(req.User._id, option);
+    const result = await userPendingBookingService(req.User._id, option);
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "Pending bookings fetched successfully", data: result, }));
 })
 
-const upcomingBookingController = catchAsync(async (req, res) => {
+const userUpcomingBookingController = catchAsync(async (req, res) => {
+
     const option = {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10
-    }
-    const result = await upcomingBookingService(req.User._id, option);
-    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "Upcoming bookings fetched successfully", data: result, }));
-})
+    };
 
-const allPendingBookingController = catchAsync(async (req, res) => {
+    const result = await userUpcomingBookingService(
+        req.User._id,
+        option
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Booking",
+            message: "Upcoming bookings fetched successfully",
+            data: result
+        })
+    );
+});
+
+const allUpcomingBookingController = catchAsync(async (req, res) => {
+
     const option = {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10,
@@ -55,19 +76,21 @@ const allPendingBookingController = catchAsync(async (req, res) => {
         isOneTime: req.query.isOneTime
     };
 
-    const result = await allPendingBookingService(req.User._id, option);
+    const result = await allUpcomingBookingService(
+        req.User._id,
+        option
+    );
 
     return res.status(status.OK).json(
         response({
             status: 'success',
             statusCode: status.OK,
             type: "Booking",
-            message: "Bookings fetched successfully",
+            message: "Upcoming bookings fetched successfully",
             data: result
         })
     );
 });
-
 
 const allBookingController = catchAsync(async (req, res) => {
     const option = {
@@ -92,25 +115,79 @@ const allBookingController = catchAsync(async (req, res) => {
 });
 
 
-const activeBookingController = catchAsync(async (req, res) => {
+const userActiveBookingController = catchAsync(async (req, res) => {
+
     const option = {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10
-    }
-    const result = await activeBookingService(req.User._id, option);
-    return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking added successfully", data: result, }));
-})
+    };
+
+    const result = await userActiveBookingService(
+        req.User._id,
+        option
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Booking",
+            message: "Active bookings fetched successfully",
+            data: result
+        })
+    );
+});
 
 const allActiveBookingController = catchAsync(async (req, res) => {
+
     const option = {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10,
         search: req.query.search || "",
         isOneTime: req.query.isOneTime
-    }
-    const result = await allActiveBookingService(req.User._id, option);
-    return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking added successfully", data: result, }));
-})
+    };
+
+    const result = await allActiveBookingService(
+        req.User._id,
+        option
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: 'success',
+            statusCode: status.OK,
+            type: "Booking",
+            message: "Active bookings fetched successfully",
+            data: result
+        })
+    );
+});
+
+const allDueBookingController = catchAsync(async (req, res) => {
+
+    const option = {
+        page: Number(req.query.page) || 1,
+        limit: Number(req.query.limit) || 10,
+        search: req.query.search || "",
+        isOneTime: req.query.isOneTime
+    };
+
+    const result = await allDueBookingService(
+        req.User._id,
+        option
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: 'success',
+            statusCode: status.OK,
+            type: "Booking",
+            message: "Due bookings fetched successfully",
+            data: result
+        })
+    );
+});
+
 
 const allCompletedBookingController = catchAsync(async (req, res) => {
     const option = {
@@ -136,12 +213,12 @@ const allCancelledBookingController = catchAsync(async (req, res) => {
 })
 
 
-const pastBookingController = catchAsync(async (req, res) => {
+const userPastBookingController = catchAsync(async (req, res) => {
     const option = {
         page: Number(req.query.page) || 1,
         limit: Number(req.query.limit) || 10
     }
-    const result = await pastBookingService(req.User._id, option);
+    const result = await userPastBookingService(req.User._id, option);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "pasted booking", data: result, }));
 })
 
@@ -238,13 +315,35 @@ const assignStuffController = catchAsync(async (req, res) => {
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking assigned successfully", data: result, }));
 })
 
+const allPendingBookingController = catchAsync(async (req, res) => {
+    const option = {
+        page: Number(req.query.page) || 1,
+        limit: Number(req.query.limit) || 10,
+        search: req.query.search || "",
+        isOneTime: req.query.isOneTime
+    };
+
+    const result = await allPendingBookingService(
+        req.User._id,
+        option
+    );
+
+    return res.status(status.OK).json(
+        response({
+            status: 'success',
+            statusCode: status.OK,
+            type: "Booking",
+            message: "Pending bookings fetched successfully",
+            data: result
+        })
+    );
+});
+
 
 
 module.exports = {
+    allPendingBookingController ,
     bookingController,
-    pendingBookingController,
-    activeBookingController,
-    pastBookingController,
     bookingDetailsController,
     bookingFeedbackController,
     allPendingBookingController,
@@ -259,5 +358,11 @@ module.exports = {
     markAsCompletedController,
     modifyBookingController,
     cancelBookingController,
-    upcomingBookingController
+    // upcomingBookingController,
+    userUpcomingBookingController,
+    userPendingBookingController,
+    userActiveBookingController,
+    userPastBookingController,
+    allUpcomingBookingController,
+    allDueBookingController
 }
