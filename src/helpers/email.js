@@ -76,7 +76,8 @@ const transporter = nodemailer.createTransport({
 const emailWithNodemailer = async (emailData) => {
   try {
     const mailOptions = {
-      from: process.env.SMTP_USERNAME,
+      // from: process.env.SMTP_USERNAME,
+      from: `"Aura Vive" <${process.env.SMTP_USERNAME}>`, 
       to: emailData.email,
       subject: emailData.subject,
       html: emailData.html,
@@ -94,7 +95,8 @@ const emailWithNodemailer = async (emailData) => {
 const supportEmailWithNodemailer = async (emailData) => {
   try {
     const mailOptions = {
-      from: process.env.SMTP_USERNAME,
+      // from: process.env.SMTP_USERNAME,
+      from: `"Aura Vive" <${process.env.SMTP_USERNAME}>`, 
       to: "xyz@gmail.com",
       replyTo: emailData.email,
       subject: emailData.subject,

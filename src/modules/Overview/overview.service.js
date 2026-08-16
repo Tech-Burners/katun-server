@@ -227,7 +227,7 @@ const getPartnerEarningOverview = async (partnerUserId, year) => {
       $match: {
         partner: new mongoose.Types.ObjectId(partnerUserId),
         payment_status: 'successful',
-        payout_status: 'completed',
+        // payout_status: 'completed',
         $expr: {
           $and: [
             { $gte: [{ $ifNull: ['$payout_completed_at', '$updatedAt'] }, startDate] },
