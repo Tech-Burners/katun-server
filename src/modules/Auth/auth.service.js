@@ -377,12 +377,12 @@ const login = async (identifier, receiverType, inputPassword) => {
       throw new ApiError(status.NOT_FOUND, "User not found");
     }
 
-    if (user.role === "user") {
-      throw new ApiError(
-        status.UNAUTHORIZED,
-        "User must login using phone number"
-      );
-    }
+    // if (user.role === "user") {
+    //   throw new ApiError(
+    //     status.UNAUTHORIZED,
+    //     "User must login using phone number"
+    //   );
+    // }
   }
 
   if (!user) {

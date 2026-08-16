@@ -1024,6 +1024,7 @@ const allServiceService = async (options) => {
   };
 };
 
+
 const popularService = async (userId, options) => {
   const { page = 1, limit = 10, lat, lng, search } = options;
 

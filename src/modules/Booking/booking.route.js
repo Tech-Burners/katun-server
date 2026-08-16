@@ -26,17 +26,8 @@ const router = express.Router();
 
 router.post("/add", auth(['user']), bookingController);
 router.put("/edit/:bookingId", auth(['user']), modifyBookingController);
-router.get(
-    '/partner/pending',
-    auth(['partner']),
-    allPendingBookingController
-);
-router.get(
-    '/partner/due',
-    auth(['partner']),
-    allDueBookingController
-);
-
+router.get('/partner/pending',auth(['partner']),allPendingBookingController);
+router.get('/partner/due',auth(['partner']),allDueBookingController);
 router.get('/partner/upcoming', auth(['partner']), allUpcomingBookingController);
 router.get('/admin/all-booking', auth(['admin','sub_admin']), allBookingController);
 router.get('/partner/active', auth(['partner']), allActiveBookingController);

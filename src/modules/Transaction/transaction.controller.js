@@ -129,8 +129,7 @@ const bookController = catchAsync(
       await partnerModel.findOne({
         user: partner,
       });
-
-
+const partnerUserDoc = await getUserById(partnerDetails.user);
     const isAutoApproved =
       Boolean(
         partnerDetails?.serviceAutoApproved
@@ -185,6 +184,12 @@ const bookController = catchAsync(
             booking._id,
             "booking"
           );
+          console.log(partnerUserDoc.email );
+          await emailWithNodemailer({
+            email: partnerUserDoc.email,
+            subject: "New Booking",
+            html: `<p>New Booking schedule</p>`,
+          })
 
 
           await addNotificationService({
@@ -230,6 +235,13 @@ const bookController = catchAsync(
             bookingId:
               booking._id,
           });
+          console.log({ userData });
+console.log(userData.email );
+          await emailWithNodemailer({
+            email: userData.email,
+            subject: "Booking approved",
+            html: `<p>Your booking has been approved</p>`,
+          })
 
         } else {
 
@@ -252,6 +264,12 @@ const bookController = catchAsync(
             bookingId:
               booking._id,
           });
+
+          await emailWithNodemailer({
+            email: partnerUserDoc.email,
+            subject: "New Booking",
+            html: `<p>New Booking waiting for approval</p>`,
+          })
         }
       }
 

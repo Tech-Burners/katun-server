@@ -172,34 +172,34 @@ const signUp = catchAsync(async (req, res) => {
   let receiverType;
   let existingOTP;
 
-  if (role === "user") {
+  // if (role === "user") {
 
-    if (!number || !countryCode) {
-      throw new ApiError(
-        status.BAD_REQUEST,
-        "Country code and phone number are required!"
-      );
-    }
+  //   if (!number || !countryCode) {
+  //     throw new ApiError(
+  //       status.BAD_REQUEST,
+  //       "Country code and phone number are required!"
+  //     );
+  //   }
 
-    const existingUser = await userModel.findOne({
-      number,
-      countryCode,
-    });
+  //   const existingUser = await userModel.findOne({
+  //     number,
+  //     countryCode,
+  //   });
 
-    if (existingUser) {
-      throw new ApiError(
-        status.CONFLICT,
-        "This phone number is already used!"
-      );
-    }
+  //   if (existingUser) {
+  //     throw new ApiError(
+  //       status.CONFLICT,
+  //       "This phone number is already used!"
+  //     );
+  //   }
 
-    const fullPhoneNumber = `${countryCode}${number}`;
+  //   const fullPhoneNumber = `${countryCode}${number}`;
 
-    sentTo = fullPhoneNumber;
-    receiverType = "phone";
-    existingOTP = await checkOTPService(fullPhoneNumber, "phone");
+  //   sentTo = fullPhoneNumber;
+  //   receiverType = "phone";
+  //   existingOTP = await checkOTPService(fullPhoneNumber, "phone");
 
-  } else {
+  // } else {
 
     if (!email) {
       throw new ApiError(status.BAD_REQUEST, "Email is required!");
@@ -214,7 +214,7 @@ const signUp = catchAsync(async (req, res) => {
     sentTo = email;
     receiverType = "email";
     existingOTP = await checkOTPService(email, "email");
-  }
+  // }
 
   /* ---------- OTP ---------- */
 let message = "";

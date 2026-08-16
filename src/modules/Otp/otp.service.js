@@ -124,10 +124,152 @@ const sendOTP = async (
     await emailWithNodemailer({
       email: sentTo,
       subject,
-      html: `
-        Your OTP is <b>${otp}</b>.
-        It will expire in ${otpExpiryTime} minutes.
-      `,
+       html: `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Verification Code</title>
+      </head>
+
+      <body style="
+        margin: 0;
+        padding: 0;
+        background-color: #f4f6f8;
+        font-family: Arial, Helvetica, sans-serif;
+      ">
+
+        <table width="100%" cellpadding="0" cellspacing="0" border="0"
+          style="background-color: #f4f6f8; padding: 40px 15px;">
+
+          <tr>
+            <td align="center">
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0"
+                style="
+                  max-width: 500px;
+                  background: #ffffff;
+                  border-radius: 10px;
+                  overflow: hidden;
+                ">
+
+                <!-- Header -->
+                <tr>
+                  <td align="center"
+                    style="
+                      padding: 25px;
+                      background-color: #111827;
+                    ">
+
+                    <h1 style="
+                      margin: 0;
+                      color: #ffffff;
+                      font-size: 22px;
+                      font-weight: 600;
+                    ">
+                      ${process.env.appName}
+                    </h1>
+
+                  </td>
+                </tr>
+
+                <!-- Content -->
+                <tr>
+                  <td style="padding: 40px 35px;">
+
+                    <h2 style="
+                      margin: 0 0 15px;
+                      color: #111827;
+                      font-size: 22px;
+                    ">
+                      Verification Code
+                    </h2>
+
+                    <p style="
+                      margin: 0 0 25px;
+                      color: #6b7280;
+                      font-size: 15px;
+                      line-height: 1.6;
+                    ">
+                      Use the verification code below to complete your
+                      verification.
+                    </p>
+
+                    <!-- OTP -->
+                    <div style="
+                      padding: 18px;
+                      background-color: #f3f4f6;
+                      border: 1px solid #e5e7eb;
+                      border-radius: 8px;
+                      text-align: center;
+                    ">
+
+                      <span style="
+                        font-size: 32px;
+                        font-weight: 700;
+                        letter-spacing: 8px;
+                        color: #111827;
+                      ">
+                        ${otp}
+                      </span>
+
+                    </div>
+
+                    <p style="
+                      margin: 20px 0 0;
+                      text-align: center;
+                      color: #6b7280;
+                      font-size: 14px;
+                    ">
+                      This code will expire in
+                      <strong>${otpExpiryTime} minutes</strong>.
+                    </p>
+
+                    <p style="
+                      margin: 30px 0 0;
+                      color: #9ca3af;
+                      font-size: 13px;
+                      line-height: 1.6;
+                    ">
+                      If you didn't request this code, you can safely
+                      ignore this email. Never share your verification
+                      code with anyone.
+                    </p>
+
+                  </td>
+                </tr>
+
+                <!-- Footer -->
+                <tr>
+                  <td align="center"
+                    style="
+                      padding: 20px;
+                      background-color: #f9fafb;
+                      border-top: 1px solid #e5e7eb;
+                    ">
+
+                    <p style="
+                      margin: 0;
+                      color: #9ca3af;
+                      font-size: 12px;
+                    ">
+                      This is an automated message. Please do not reply.
+                    </p>
+
+                  </td>
+                </tr>
+
+              </table>
+
+            </td>
+          </tr>
+
+        </table>
+
+      </body>
+      </html>
+    `,
     });
   }
 
@@ -135,9 +277,9 @@ const sendOTP = async (
   //   await sendSMSOtp(sentTo, otp);
   // }
 
-  if (receiverType === "phone") {
-    await sendWhatsAppOtp(sentTo, otp);
-  }
+  // if (receiverType === "phone") {
+  //   await sendWhatsAppOtp(sentTo, otp);
+  // }
   // ==========================================
   // 2. ONLY SAVE OTP IF SENDING SUCCESSFUL
   // ==========================================

@@ -852,6 +852,7 @@ const userPendingBookingService = async (user, option) => {
             },
             {
                 $project: {
+                    customBookingId: "$bookingId",
                     image: '$serviceData.image',
                     serviceName: '$serviceData.name',
                     serviceId: '$serviceData._id',
@@ -949,6 +950,7 @@ const userUpcomingBookingService = async (user, option) => {
             },
             {
                 $project: {
+                    customBookingId: "$bookingId",
                     image: "$serviceData.image",
                     serviceName: "$serviceData.name",
                     serviceId: "$serviceData._id",
@@ -1109,6 +1111,7 @@ const allUpcomingBookingService = async (user, option) => {
 
         {
             $project: {
+                customBookingId: "$bookingId",
                 name: "$serviceData.image",
 
                 serviceName: "$serviceData.name",
@@ -1297,6 +1300,7 @@ const allBookingService = async (option) => {
 
         {
             $project: {
+                customBookingId: "$bookingId",
                 serviceName: "$serviceData.name",
                 serviceId: "$serviceData._id",
                 userName: "$userData.fullName",
@@ -1486,6 +1490,7 @@ const allActiveBookingService = async (user, option) => {
 
         {
             $project: {
+                customBookingId: "$bookingId",
                 name: "$serviceData.image",
 
                 serviceName: "$serviceData.name",
@@ -1953,6 +1958,7 @@ const allCompletedBookingService = async (user, option) => {
         { $limit: limit },
         {
             $project: {
+                customBookingId: "$bookingId",
                 serviceName: "$serviceData.name",
                 serviceId: "$serviceData._id",
                 userName: "$userData.fullName",
@@ -2108,6 +2114,7 @@ const allCancelledBookingService = async (user, option) => {
 
         {
             $project: {
+                customBookingId: "$bookingId",
                 image: "$serviceData.image",
                 serviceName: "$serviceData.name",
                 serviceId: "$serviceData._id",
@@ -2265,6 +2272,7 @@ const userActiveBookingService = async (user, option) => {
 
             {
                 $project: {
+                    customBookingId: "$bookingId",
                     image: "$serviceData.image",
 
                     name: "$serviceData.image",
@@ -2396,6 +2404,7 @@ const userPastBookingService = async (user, option) => {
 
             {
                 $project: {
+                    customBookingId: "$bookingId",
                     image: 1,
                     name: "$serviceData.image",
 
@@ -2540,6 +2549,7 @@ const allPendingBookingService = async (user, option) => {
 
         {
             $project: {
+                customBookingId: "$bookingId",
                 serviceName: "$serviceData.name",
                 serviceId: "$serviceData._id",
 
