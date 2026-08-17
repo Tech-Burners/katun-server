@@ -16,7 +16,10 @@ const { addNotificationService } = require("../Notification/notification.service
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
 const { emailWithNodemailer } = require("../../helpers/email");
-const { calculateBookingRequestExpireAt } = require("./bookingExpiry.service");
+const {
+    calculateBookingRequestExpireAt,
+    adjustPayoutCycleOnRefund,
+} = require("./bookingExpiry.service");
 
 const bookingService = async (data) => {
 
@@ -185,20 +188,103 @@ const modifyBookingService = async (bookingId, loginUser, data) => {
 
 const checkPinService = async (bookingId, pin) => {
     const booking = await bookingModel.findById(bookingId);
+    if (!booking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+
     if (booking.pin == pin) {
         booking.pinVerified = true;
         await booking.save();
-        return true
+
+        let serviceName = "service";
+        try {
+            const serviceDoc = await serviceModel.findById(booking.service);
+            if (serviceDoc?.name) {
+                serviceName = serviceDoc.name;
+            }
+        } catch (_) {}
+
+        const [userDoc, partnerUserDoc] = await Promise.all([
+            userModel.findById(booking.user),
+            userModel.findById(booking.provider),
+        ]);
+
+        const userTitle = "PIN Verified";
+        const userMessage = `Your PIN for ${serviceName} has been verified successfully.`;
+        const partnerTitle = "Customer PIN Verified";
+        const partnerMessage = `Customer PIN for ${serviceName} (Booking ID: ${booking.bookingId || booking._id}) has been verified successfully.`;
+
+        // 1. Notify User (Customer)
+        if (userDoc) {
+            if (userDoc.enabledPushNotification !== false) {
+                await sendNotificationByFcmToken(
+                    booking.user,
+                    userTitle,
+                    userMessage,
+                    booking._id,
+                    'booking'
+                );
+            }
+
+            await addNotificationService({
+                sender: booking.provider,
+                targetUser: booking.user,
+                title: userTitle,
+                message: userMessage,
+                type: "booking",
+                bookingId: booking._id,
+            });
+
+            if (userDoc.email) {
+                await emailWithNodemailer({
+                    email: userDoc.email,
+                    subject: userTitle,
+                    html: `<p>Hello ${userDoc.fullName || "Valued Customer"},</p><p>${userMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p>`,
+                }).catch((e) => console.error("User PIN verification email error:", e.message));
+            }
+        }
+
+        // 2. Notify Provider (Partner)
+        if (partnerUserDoc) {
+            if (partnerUserDoc.enabledPushNotification !== false) {
+                await sendNotificationByFcmToken(
+                    booking.provider,
+                    partnerTitle,
+                    partnerMessage,
+                    booking._id,
+                    'booking'
+                );
+            }
+
+            await addNotificationService({
+                sender: booking.user,
+                targetUser: booking.provider,
+                title: partnerTitle,
+                message: partnerMessage,
+                type: "booking",
+                bookingId: booking._id,
+            });
+
+            if (partnerUserDoc.email) {
+                await emailWithNodemailer({
+                    email: partnerUserDoc.email,
+                    subject: partnerTitle,
+                    html: `<p>Hello ${partnerUserDoc.fullName || "Partner"},</p><p>${partnerMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p>`,
+                }).catch((e) => console.error("Partner PIN verification email error:", e.message));
+            }
+        }
+
+        return true;
     }
     else {
         throw new ApiError(status.BAD_REQUEST, 'Pin not matched');
     }
-}
+};
 
 
 const markAsCompletedService = async (id, data) => {
     const booking = await bookingModel.findById(id);
-    if (booking.pinVerified==true && booking.status == 'approved') {
+    if (booking.pinVerified == true && booking.status == 'approved') {
         if (booking.sessionLeft <= 0) {
             throw new ApiError(status.BAD_REQUEST, 'No sessions left in this booking');
         }
@@ -210,23 +296,55 @@ const markAsCompletedService = async (id, data) => {
         booking.pin = generate4DigitPin();
         booking.pinVerified = false;
         await booking.save();
+
+        let serviceName = "service";
+        try {
+            const serviceDoc = await serviceModel.findById(booking.service);
+            if (serviceDoc?.name) {
+                serviceName = serviceDoc.name;
+            }
+        } catch (_) {}
+
         const receiverData = await userModel.findById(booking.user);
-        // console.log({ receiverData });
-        if (receiverData && receiverData.enabledPushNotification) {
-            sendNotificationByFcmToken(
+        const title = "Service Completed";
+        const message = `Your service for ${serviceName} has been marked as completed.`;
+
+        // 1. Push Notification
+        if (receiverData && receiverData.enabledPushNotification !== false) {
+            await sendNotificationByFcmToken(
                 booking.user,
-                'Service Completed',
-                'Your service has been completed',
+                title,
+                message,
                 booking._id,
                 'booking',
             );
         }
-        return true
+
+        // 2. In-App Notification
+        await addNotificationService({
+            sender: booking.provider,
+            targetUser: booking.user,
+            title,
+            message,
+            type: "booking",
+            bookingId: booking._id,
+        });
+
+        // 3. Email Notification
+        if (receiverData?.email) {
+            await emailWithNodemailer({
+                email: receiverData.email,
+                subject: title,
+                html: `<p>Hello ${receiverData.fullName || "Valued Customer"},</p><p>Your service for <strong>${serviceName}</strong> has been marked as completed.</p>`,
+            }).catch((e) => console.error("Completion email error:", e.message));
+        }
+
+        return true;
     }
     else {
         throw new ApiError(status.BAD_REQUEST, 'You can not mark as completed');
     }
-}
+};
 
 
 const bookingFeedbackService = async (data) => {
@@ -358,63 +476,137 @@ const approveBookingService = async (id) => {
     const service = await serviceModel.findById(result.service);
     const serviceName = service?.name || "service";
     const userData = await userModel.findById(result.user);
+    const title = "Booking Approved";
+    const message = `Your booking for ${serviceName} has been approved.`;
 
-    if (userData && userData.enabledPushNotification) {
+    // 1. Push Notification
+    if (userData && userData.enabledPushNotification !== false) {
         await sendNotificationByFcmToken(
             result.user,
-            'approval',
-            `your booking for ${serviceName} has been approved`,
+            title,
+            message,
             result._id,
             'booking'
         );
     }
 
+    // 2. In-App Notification
     await addNotificationService(
         {
             sender: result.provider,
             targetUser: result.user,
-            title: `your booking for ${serviceName} has been approved`,
-            message: `your booking for ${serviceName} has been approved`,
+            title,
+            message,
             type: "booking",
             bookingId: result._id,
         }
     );
 
+    // 3. Email Notification
+    if (userData?.email) {
+        await emailWithNodemailer({
+            email: userData.email,
+            subject: title,
+            html: `<p>Hello ${userData.fullName || "Valued Customer"},</p><p>Your booking for <strong>${serviceName}</strong> has been approved by the provider.</p>`,
+        }).catch((e) => console.error("Approval email error:", e.message));
+    }
+
     return result;
 };
 
 
-// const cancelBookingService = async (id) => {
-//     const result = await bookingModel.findOneAndUpdate(
-//         { _id: id, status: "pending" },
-//         { status: "cancelled" },
-//         { new: true }
-//     );
-//     if (!result) {
-//         throw new ApiError(status.NOT_FOUND, 'Booking not found');
-//     }
-//     if(result.status === "cancelled"){
-//         const service = await serviceModel.findById(result.service);
-//         console.log({ service })
-//     }
-//     await sendNotificationByFcmToken(
-//         result.user,
-//         'booking cancellation',
-//         `your booking for ${service.name} has been cancelled`,
-//         result._id,
-//         'booking'
-//     )
-//     await addNotificationService(
-//         {
-//             sender: result.provider,
-//             targetUser: result.user,
-//             title: `your booking for ${service.name} has been cancelled`,
-//             message: `your booking for ${service.name} has been cancelled`,
-//             type: "booking",
-//         }
-//     )
-//     return result;
-// }
+const cancelBookingService = async (id, reason) => {
+    const booking = await bookingModel.findById(id);
+    if (!booking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+    if (booking.status === 'completed') {
+        throw new ApiError(status.BAD_REQUEST, "Completed booking cannot be cancelled");
+    }
+    if (booking.status === 'cancelled') {
+        throw new ApiError(status.BAD_REQUEST, "Booking is already cancelled");
+    }
+
+    const result = await bookingModel.findOneAndUpdate(
+        { _id: id, status: { $ne: "cancelled" } },
+        {
+            status: "cancelled",
+            reason: reason || "Cancelled by provider",
+        },
+        { new: true }
+    );
+
+    if (!result) {
+        throw new ApiError(status.BAD_REQUEST, 'Unable to cancel booking');
+    }
+
+    // Mark original transaction as refunded and adjust cycle
+    const originalTransactionId = result.transaction;
+    if (originalTransactionId) {
+        const updatedTx = await Transaction.findByIdAndUpdate(
+            originalTransactionId,
+            {
+                payout_status: "refund",
+                payment_status: "refunded",
+                status: "refunded",
+                paymentType: "refund",
+                refund_status: "completed",
+                refund_at: new Date(),
+                refund_reason: reason || "Cancelled by provider",
+            },
+            { new: true }
+        );
+        if (updatedTx) {
+            await adjustPayoutCycleOnRefund(updatedTx);
+        }
+    }
+
+    let serviceName = "service";
+    try {
+        const serviceDoc = await serviceModel.findById(result.service);
+        if (serviceDoc?.name) {
+            serviceName = serviceDoc.name;
+        }
+    } catch (_) {}
+
+    const receiverData = await userModel.findById(result.user);
+    const title = "Booking Cancelled";
+    const message = `Your booking for ${serviceName} has been cancelled by the provider.`;
+
+    // 1. Push Notification
+    if (receiverData && receiverData.enabledPushNotification !== false) {
+        await sendNotificationByFcmToken(
+            result.user,
+            title,
+            message,
+            result._id,
+            'booking'
+        );
+    }
+
+    // 2. In-App Notification
+    await addNotificationService(
+        {
+            sender: result.provider,
+            targetUser: result.user,
+            title,
+            message,
+            type: "booking",
+            bookingId: result._id,
+        }
+    );
+
+    // 3. Email Notification
+    if (receiverData?.email) {
+        await emailWithNodemailer({
+            email: receiverData.email,
+            subject: title,
+            html: `<p>Hello ${receiverData.fullName || "Valued Customer"},</p><p>${message}</p>`,
+        }).catch((e) => console.error("Cancellation email error:", e.message));
+    }
+
+    return result;
+};
 
 const assignStuffService = async (id, stuff) => {
     const now = new Date();
@@ -2763,6 +2955,6 @@ module.exports = {
     userPastBookingService,
     allUpcomingBookingService,
     allDueBookingService,
-    checkPinService
-    // cancelBookingService
+    checkPinService,
+    cancelBookingService
 }

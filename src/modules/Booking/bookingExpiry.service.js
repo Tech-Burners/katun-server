@@ -718,6 +718,114 @@ const processAllExpiredBookings = async () => {
   await retryFailedRefunds();
 };
 
+/**
+ * Send comprehensive notifications (FCM Push, In-App, and Email) to BOTH User and Provider upon new booking creation.
+ */
+const sendNewBookingNotifications = async (bookingDocOrId) => {
+  try {
+    const booking = typeof bookingDocOrId === 'object' && bookingDocOrId._id
+      ? bookingDocOrId
+      : await bookingModel.findById(bookingDocOrId);
+
+    if (!booking) return;
+
+    let serviceName = "service";
+    try {
+      const serviceDoc = await serviceModel.findById(booking.service);
+      if (serviceDoc?.name) serviceName = serviceDoc.name;
+    } catch (_) {}
+
+    const [userDoc, partnerUserDoc] = await Promise.all([
+      userModel.findById(booking.user),
+      userModel.findById(booking.provider),
+    ]);
+
+    const isAutoApproved = booking.status === "approved";
+
+    // -------------------------------------------------------------
+    // 1. NOTIFICATIONS FOR THE PROVIDER (PARTNER)
+    // -------------------------------------------------------------
+    if (partnerUserDoc) {
+      const partnerTitle = isAutoApproved ? "New Booking Scheduled" : "New Booking Request";
+      const partnerMessage = isAutoApproved
+        ? `A new booking for ${serviceName} has been scheduled.`
+        : `You have received a new booking request for ${serviceName} waiting for your approval.`;
+
+      // A. Push Notification
+      if (partnerUserDoc.enabledPushNotification !== false) {
+        await sendNotificationByFcmToken(
+          booking.provider,
+          partnerTitle,
+          partnerMessage,
+          booking._id,
+          "booking"
+        );
+      }
+
+      // B. In-App Notification
+      await addNotificationService({
+        sender: booking.user,
+        targetUser: booking.provider,
+        title: partnerTitle,
+        message: partnerMessage,
+        type: "booking",
+        bookingId: booking._id,
+      });
+
+      // C. Email Notification
+      if (partnerUserDoc.email) {
+        await emailWithNodemailer({
+          email: partnerUserDoc.email,
+          subject: partnerTitle,
+          html: `<p>Hello ${partnerUserDoc.fullName || "Partner"},</p><p>${partnerMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p>`,
+        }).catch((e) => console.error("Partner new booking email error:", e.message));
+      }
+    }
+
+    // -------------------------------------------------------------
+    // 2. NOTIFICATIONS FOR THE USER (CUSTOMER)
+    // -------------------------------------------------------------
+    if (userDoc) {
+      const userTitle = isAutoApproved ? "Booking Approved" : "Booking Placed Successfully";
+      const userMessage = isAutoApproved
+        ? `Your booking for ${serviceName} has been approved and confirmed.`
+        : `Your booking for ${serviceName} has been placed and is waiting for provider approval.`;
+
+      // A. Push Notification
+      if (userDoc.enabledPushNotification !== false) {
+        await sendNotificationByFcmToken(
+          booking.user,
+          userTitle,
+          userMessage,
+          booking._id,
+          "booking"
+        );
+      }
+
+      // B. In-App Notification
+      await addNotificationService({
+        sender: booking.provider,
+        targetUser: booking.user,
+        title: userTitle,
+        message: userMessage,
+        type: "booking",
+        bookingId: booking._id,
+      });
+
+      // C. Email Notification
+      if (userDoc.email) {
+        await emailWithNodemailer({
+          email: userDoc.email,
+          subject: userTitle,
+          html: `<p>Hello ${userDoc.fullName || "Valued Customer"},</p><p>${userMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p><p><strong>Total:</strong> ₦${booking.totalPrice || 0}</p>`,
+        }).catch((e) => console.error("User new booking email error:", e.message));
+      }
+    }
+  } catch (err) {
+    console.error("❌ Error sending new booking notifications:", err.message);
+  }
+};
+
 module.exports = {
   calculateBookingRequestExpireAt,
   adjustPayoutCycleOnRefund,
@@ -729,4 +837,5 @@ module.exports = {
   sendProviderExpiryReminders,
   processAllExpiredBookings,
   retryFailedRefunds,
+  sendNewBookingNotifications,
 };

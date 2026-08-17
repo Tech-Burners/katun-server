@@ -27,6 +27,7 @@ const {
 
 const {
   calculateBookingRequestExpireAt,
+  sendNewBookingNotifications,
 } = require("../modules/Booking/bookingExpiry.service");
 
 
@@ -900,86 +901,12 @@ const flutterwaveWebhook =
 
 
         // =================================================
-        // NOTIFICATIONS
+        // NOTIFICATIONS FOR NEW BOOKING (USER & PROVIDER)
         // =================================================
 
-        try {
-
-          const partnerDetails =
-            await partnerModel.findOne({
-
-              user:
-                data.provider,
-
-              isDeleted:
-                false,
-            });
-
-
-          if (
-            partnerDetails
-              ?.enabledPushNotification ===
-            true
-          ) {
-
-            if (
-              data.status ===
-              "approved"
-            ) {
-
-              await sendNotificationByFcmToken(
-
-                data.provider,
-
-                "New Booking schedule",
-
-                "A new booking has been scheduled.",
-
-                booking._id,
-
-                "booking"
-              );
-
-
-              await sendNotificationByFcmToken(
-
-                data.user,
-
-                "Booking approved",
-
-                "Your booking has been approved.",
-
-                booking._id,
-
-                "booking"
-              );
-
-            } else {
-
-              await sendNotificationByFcmToken(
-
-                data.provider,
-
-                "New Booking waiting for approval",
-
-                "You have a new booking waiting for approval.",
-
-                booking._id,
-
-                "booking"
-              );
-            }
-          }
-
-        } catch (
-          notificationError
-        ) {
-
-          console.error(
-            "Booking notification error:",
-            notificationError.message
-          );
-        }
+        await sendNewBookingNotifications(
+          booking
+        );
 
 
         return res

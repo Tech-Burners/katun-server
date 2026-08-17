@@ -16,6 +16,7 @@ const { bookingService } =
 const {
   calculateBookingRequestExpireAt,
   adjustPayoutCycleOnRefund,
+  sendNewBookingNotifications,
 } = require("../Booking/bookingExpiry.service");
 
 const { default: status } =
@@ -177,109 +178,8 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
         );
 
 
-      // Send notifications
-      if (
-        partnerDetails
-          ?.enabledPushNotification === true
-      ) {
-
-        if (isAutoApproved) {
-
-          await sendNotificationByFcmToken(
-            partner,
-            "New Booking",
-            "New Booking schedule",
-            booking._id,
-            "booking"
-          );
-          console.log(partnerUserDoc.email );
-          await emailWithNodemailer({
-            email: partnerUserDoc.email,
-            subject: "New Booking",
-            html: `<p>New Booking schedule</p>`,
-          })
-
-
-          await addNotificationService({
-            sender: userId,
-            targetUser: partner,
-            title: "New Booking",
-            message:
-              "New Booking schedule",
-            type: "booking",
-            bookingId:
-              booking._id,
-          });
-
-
-          const userData =
-            await userModel.findById(
-              userId
-            );
-
-
-          if (
-            userData
-              ?.enabledPushNotification
-          ) {
-
-            await sendNotificationByFcmToken(
-              userId,
-              "New Booking",
-              "Booking approved",
-              booking._id,
-              "booking"
-            );
-          }
-
-
-          await addNotificationService({
-            sender: partner,
-            targetUser: userId,
-            title: "Booking approved",
-            message:
-              "Your booking has been approved",
-            type: "booking",
-            bookingId:
-              booking._id,
-          });
-          console.log({ userData });
-console.log(userData.email );
-          await emailWithNodemailer({
-            email: userData.email,
-            subject: "Booking approved",
-            html: `<p>Your booking has been approved</p>`,
-          })
-
-        } else {
-
-          await sendNotificationByFcmToken(
-            partner,
-            "New Booking",
-            "New Booking waiting for approval",
-            booking._id,
-            "booking"
-          );
-
-
-          await addNotificationService({
-            sender: userId,
-            targetUser: partner,
-            title: "New Booking",
-            message:
-              "New Booking waiting for approval",
-            type: "booking",
-            bookingId:
-              booking._id,
-          });
-
-          await emailWithNodemailer({
-            email: partnerUserDoc.email,
-            subject: "New Booking",
-            html: `<p>New Booking waiting for approval</p>`,
-          })
-        }
-      }
+      // Send Push, In-App, and Email notifications to BOTH user and provider
+      await sendNewBookingNotifications(booking);
 
 
       return res.status(
@@ -306,19 +206,6 @@ console.log(userData.email );
       paymentMethod === "wallet"
     ) {
 
-      // IMPORTANT:
-      // Your existing code directly creates the booking
-      // without showing any wallet balance deduction.
-      //
-      // This should be handled atomically in your booking
-      // service before creating the booking.
-      //
-      // If bookingService already handles wallet deduction,
-      // keep this behavior.
-      //
-      // If it does not, DO NOT allow wallet booking until
-      // the balance is checked and deducted atomically.
-
       const bookingData = {
         user: userId,
         service,
@@ -344,6 +231,10 @@ console.log(userData.email );
         await bookingService(
           bookingData
         );
+
+
+      // Send Push, In-App, and Email notifications to BOTH user and provider
+      await sendNewBookingNotifications(booking);
 
 
       return res.status(
@@ -2324,46 +2215,67 @@ const cancelBooking = catchAsync(async (req, res) => {
     await booking.save();
   }
   if (cancelledBy === "partner") {
-    const receiverData = await userModel.findById(booking.user)
-    // console.log({ receiverData })
-    if (receiverData?.enabledPushNotification === true) {
+    const receiverData = await userModel.findById(booking.user);
+    const title = "Booking Cancelled";
+    const message = "Your booking has been cancelled by the provider.";
+
+    if (receiverData?.enabledPushNotification !== false) {
       await sendNotificationByFcmToken(
         booking.user,
-        'booking cancellation',
-        "Booking cancelled by partner",
+        title,
+        message,
         booking._id,
         'booking'
-      )
+      );
     }
 
     await addNotificationService({
       sender: booking.provider,
       targetUser: booking.user,
-      title: "Booking cancelled",
-      message: "Booking cancelled by partner",
+      title,
+      message,
       type: "booking",
-      bookingId: booking._id
-    })
+      bookingId: booking._id,
+    });
+
+    if (receiverData?.email) {
+      await emailWithNodemailer({
+        email: receiverData.email,
+        subject: title,
+        html: `<p>Hello ${receiverData.fullName || "Valued Customer"},</p><p>${message}</p>`,
+      }).catch((e) => console.error("Cancellation email error:", e.message));
+    }
   } else if (cancelledBy === "user") {
-    const providerData = await userModel.findById(booking.provider)
-    // console.log({ providerData })
-    if (providerData?.enabledPushNotification === true) {
+    const providerData = await userModel.findById(booking.provider);
+    const title = "Booking Cancelled";
+    const message = "A booking has been cancelled by the customer.";
+
+    if (providerData?.enabledPushNotification !== false) {
       await sendNotificationByFcmToken(
         booking.provider,
-        'booking cancellation',
-        "Booking cancelled by user",
+        title,
+        message,
         booking._id,
         'booking'
-      )
+      );
     }
+
     await addNotificationService({
       sender: booking.user,
       targetUser: booking.provider,
-      title: "Booking cancelled",
-      message: "Booking cancelled by user",
+      title,
+      message,
       type: "booking",
-      bookingId: booking._id
-    })
+      bookingId: booking._id,
+    });
+
+    if (providerData?.email) {
+      await emailWithNodemailer({
+        email: providerData.email,
+        subject: title,
+        html: `<p>Hello ${providerData.fullName || "Partner"},</p><p>${message}</p>`,
+      }).catch((e) => console.error("Cancellation email error:", e.message));
+    }
   }
 
   // =====================================
