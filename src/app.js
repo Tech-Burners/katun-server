@@ -32,9 +32,11 @@ app.post("/api/v1/webhook/flutterwave", flutterwaveWebhook);
 app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
 
 const startAllocationCron = require("./modules/AllocationManagement/allocation.cron");
+const startBookingCron = require("./modules/Booking/booking.cron");
 
 // Start cron jobs
 startAllocationCron();
+startBookingCron();
 
 // Session
 const MemoryStore = session.MemoryStore;

@@ -126,6 +126,17 @@ const bookingSchema = new mongoose.Schema(
     sessionLeft: Number,
 
     expireDate: Date,
+
+    bookingRequestExpireAt: {
+      type: Date,
+      index: true,
+    },
+
+    expiryReminderSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -186,6 +197,17 @@ bookingSchema.index(
     sparse: true,
   }
 );
+
+bookingSchema.index({
+  status: 1,
+  bookingRequestExpireAt: 1,
+});
+
+bookingSchema.index({
+  status: 1,
+  expiryReminderSent: 1,
+  bookingRequestExpireAt: 1,
+});
 
 
 module.exports =

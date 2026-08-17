@@ -25,6 +25,10 @@ const {
   sendNotificationByFcmToken,
 } = require("./sendNotificationByFcmToken");
 
+const {
+  calculateBookingRequestExpireAt,
+} = require("../modules/Booking/bookingExpiry.service");
+
 
 // =====================================================
 // NORMALIZE PAYMENT METHOD
@@ -124,8 +128,9 @@ const updatePayoutCycle =
         _id:
           transaction.payoutCycle,
 
-        status:
-          "open",
+        status: {
+          $ne: "completed",
+        },
       },
 
       {
@@ -156,8 +161,12 @@ const updatePayoutCycle =
             cycle.transactions,
         },
 
-        payment_status:
-          "successful",
+        payment_status: {
+          $in: [
+            "successful",
+            "paid",
+          ],
+        },
 
         payout_status: {
           $in: [
@@ -640,12 +649,7 @@ const flutterwaveWebhook =
         }
 
 
-        // Update payout cycle
-        await updatePayoutCycle(
-          transaction
-        );
-
-
+        // Mark successful
         transaction.payment_status =
           "successful";
 
@@ -655,8 +659,12 @@ const flutterwaveWebhook =
         transaction.payout_status =
           "pending";
 
-
         await transaction.save();
+
+        // Update payout cycle AFTER saving successful status
+        await updatePayoutCycle(
+          transaction
+        );
 
 
         // Notification should not make
@@ -783,6 +791,14 @@ const flutterwaveWebhook =
 
             paymentMethod:
               transaction.payment_method,
+
+            bookingRequestExpireAt:
+              data.bookingRequestExpireAt
+                ? new Date(data.bookingRequestExpireAt)
+                : calculateBookingRequestExpireAt(data),
+
+            expiryReminderSent:
+              Boolean(data.expiryReminderSent),
           };
 
 
@@ -860,15 +876,6 @@ const flutterwaveWebhook =
 
 
         // =================================================
-        // UPDATE PAYOUT CYCLE
-        // =================================================
-
-        await updatePayoutCycle(
-          transaction
-        );
-
-
-        // =================================================
         // MARK SUCCESSFUL
         // =================================================
 
@@ -881,8 +888,15 @@ const flutterwaveWebhook =
         transaction.payout_status =
           "pending";
 
-
         await transaction.save();
+
+        // =================================================
+        // UPDATE PAYOUT CYCLE
+        // =================================================
+
+        await updatePayoutCycle(
+          transaction
+        );
 
 
         // =================================================

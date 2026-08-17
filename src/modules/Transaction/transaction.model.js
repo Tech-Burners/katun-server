@@ -233,6 +233,52 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+
+
+    // =====================================================
+    // REFUND TRACKING
+    // =====================================================
+
+    refund_status: {
+      type: String,
+      enum: [
+        "none",
+        "processing",
+        "completed",
+        "failed",
+      ],
+      default: "none",
+      index: true,
+    },
+
+    refund_id: {
+      type: String,
+      trim: true,
+    },
+
+    refund_reference: {
+      type: String,
+      trim: true,
+    },
+
+    refund_amount: {
+      type: Number,
+      min: 0,
+    },
+
+    refund_reason: {
+      type: String,
+      trim: true,
+    },
+
+    refund_error: {
+      type: String,
+      trim: true,
+    },
+
+    refund_at: {
+      type: Date,
+    },
   },
 
   {
@@ -279,6 +325,16 @@ transactionSchema.index({
 transactionSchema.index({
   payoutCycle: 1,
   payout_status: 1,
+});
+
+// Useful for refund and booking lookups
+transactionSchema.index({
+  booking: 1,
+  payment_status: 1,
+});
+
+transactionSchema.index({
+  refund_status: 1,
 });
 
 

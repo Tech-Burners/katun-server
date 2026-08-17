@@ -13,6 +13,10 @@ const {
 
 const { bookingService } =
   require("../Booking/booking.service");
+const {
+  calculateBookingRequestExpireAt,
+  adjustPayoutCycleOnRefund,
+} = require("../Booking/bookingExpiry.service");
 
 const { default: status } =
   require("http-status");
@@ -136,6 +140,8 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
       );
 
 
+    const bookingRequestExpireAt = calculateBookingRequestExpireAt(req.body);
+
     // =====================================================
     // CASH PAYMENT
     // =====================================================
@@ -156,6 +162,8 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
         totalPrice,
         addons,
         paymentMethod,
+        bookingRequestExpireAt,
+        expiryReminderSent: false,
         status:
           isAutoApproved
             ? "approved"
@@ -323,6 +331,8 @@ console.log(userData.email );
         totalPrice,
         addons,
         paymentMethod,
+        bookingRequestExpireAt,
+        expiryReminderSent: false,
         status:
           isAutoApproved
             ? "approved"
@@ -499,6 +509,10 @@ console.log(userData.email );
           pin,
 
           paymentMethod,
+
+          bookingRequestExpireAt,
+
+          expiryReminderSent: false,
 
           status:
             isAutoApproved
@@ -2102,12 +2116,22 @@ const cancelBooking = catchAsync(async (req, res) => {
   // =====================================
   const originalTransactionId = booking.transaction?._id || booking.transaction;
   if (originalTransactionId) {
-    await Transaction.findByIdAndUpdate(originalTransactionId, {
-      payout_status: "refund",
-      payment_status: "refunded",
-      status: "refunded",
-      paymentType: "refund",
-    });
+    const updatedOriginalTx = await Transaction.findByIdAndUpdate(
+      originalTransactionId,
+      {
+        payout_status: "refund",
+        payment_status: "refunded",
+        status: "refunded",
+        paymentType: "refund",
+        refund_status: "completed",
+        refund_at: new Date(),
+        refund_reason: reason || "Manual cancellation",
+      },
+      { new: true }
+    );
+    if (updatedOriginalTx) {
+      await adjustPayoutCycleOnRefund(updatedOriginalTx);
+    }
   }
 
   // =====================================

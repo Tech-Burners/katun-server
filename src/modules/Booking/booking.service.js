@@ -16,6 +16,7 @@ const { addNotificationService } = require("../Notification/notification.service
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
 const { emailWithNodemailer } = require("../../helpers/email");
+const { calculateBookingRequestExpireAt } = require("./bookingExpiry.service");
 
 const bookingService = async (data) => {
 
@@ -39,6 +40,14 @@ const bookingService = async (data) => {
             new Date(data.date).getTime() +
             1 * 24 * 60 * 60 * 1000
         );
+    }
+
+    // Set approval deadline if not already set
+    if (!data.bookingRequestExpireAt) {
+        data.bookingRequestExpireAt = calculateBookingRequestExpireAt(data);
+    }
+    if (data.expiryReminderSent === undefined) {
+        data.expiryReminderSent = false;
     }
 
     data.pin = generate4DigitPin();
@@ -302,40 +311,77 @@ const bookingFeedbackService = async (data) => {
 
 
 const approveBookingService = async (id) => {
+    const now = new Date();
+    const booking = await bookingModel.findById(id);
+
+    if (!booking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+
+    if (booking.status !== "pending") {
+        throw new ApiError(status.BAD_REQUEST, `Booking is already ${booking.status}`);
+    }
+
+    // Requirement 10: Expired booking (service time has passed) cannot be approved even if cron has not run yet
+    const isExpired =
+        (booking.bookingRequestExpireAt && booking.bookingRequestExpireAt <= now) ||
+        (!booking.bookingRequestExpireAt && booking.date && new Date(booking.date) <= now);
+
+    if (isExpired) {
+        throw new ApiError(status.BAD_REQUEST, "This booking request service time has passed and cannot be approved");
+    }
+
     const result = await bookingModel.findOneAndUpdate(
-        { _id: id, status: "pending" },
+        {
+            _id: id,
+            status: "pending",
+            $or: [
+                { bookingRequestExpireAt: { $gt: now } },
+                {
+                    bookingRequestExpireAt: { $exists: false },
+                    date: { $gt: now }
+                },
+                {
+                    bookingRequestExpireAt: null,
+                    date: { $gt: now }
+                }
+            ]
+        },
         { status: "approved" },
         { new: true }
     );
+
     if (!result) {
-        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+        throw new ApiError(status.BAD_REQUEST, 'Unable to approve booking. Service time may have passed or booking was already updated.');
     }
-    if (result) {
-        const service = await serviceModel.findById(result.service);
-        console.log({ service })
-    }
+
+    const service = await serviceModel.findById(result.service);
+    const serviceName = service?.name || "service";
     const userData = await userModel.findById(result.user);
-    console.log({ userData })
+
     if (userData && userData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             result.user,
             'approval',
-            `your booking for ${service.name} has been approved`,
+            `your booking for ${serviceName} has been approved`,
             result._id,
             'booking'
-        )
+        );
     }
-    addNotificationService(
+
+    await addNotificationService(
         {
             sender: result.provider,
             targetUser: result.user,
-            title: `your booking for ${service.name} has been approved`,
-            message: `your booking for ${service.name} has been approved`,
+            title: `your booking for ${serviceName} has been approved`,
+            message: `your booking for ${serviceName} has been approved`,
             type: "booking",
+            bookingId: result._id,
         }
-    )
+    );
+
     return result;
-}
+};
 
 
 // const cancelBookingService = async (id) => {
@@ -371,41 +417,96 @@ const approveBookingService = async (id) => {
 // }
 
 const assignStuffService = async (id, stuff) => {
-    const result = await bookingModel.findByIdAndUpdate(id, { assignedTo: stuff, status: "approved" }, { new: true });
+    const now = new Date();
+    const booking = await bookingModel.findById(id);
+
+    if (!booking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+
+    if (booking.status === "cancelled") {
+        throw new ApiError(status.BAD_REQUEST, "Cannot assign staff to a cancelled booking");
+    }
+
+    if (booking.status === "completed") {
+        throw new ApiError(status.BAD_REQUEST, "Booking is already completed");
+    }
+
+    if (booking.status === "pending") {
+        const isExpired =
+            (booking.bookingRequestExpireAt && booking.bookingRequestExpireAt <= now) ||
+            (!booking.bookingRequestExpireAt && booking.date && new Date(booking.date) <= now);
+
+        if (isExpired) {
+            throw new ApiError(status.BAD_REQUEST, "This booking request service time has passed and cannot be approved or assigned");
+        }
+    }
+
+    const result = await bookingModel.findOneAndUpdate(
+        {
+            _id: id,
+            $or: [
+                { status: "approved" },
+                {
+                    status: "pending",
+                    $or: [
+                        { bookingRequestExpireAt: { $gt: now } },
+                        {
+                            bookingRequestExpireAt: { $exists: false },
+                            date: { $gt: now }
+                        },
+                        {
+                            bookingRequestExpireAt: null,
+                            date: { $gt: now }
+                        }
+                    ]
+                }
+            ]
+        },
+        { assignedTo: stuff, status: "approved" },
+        { new: true }
+    );
+
+    if (!result) {
+        throw new ApiError(status.BAD_REQUEST, 'Unable to assign staff. Booking service time may have passed.');
+    }
+
     let service;
     if (result.status === "approved") {
         service = await serviceModel.findById(result.service);
     }
+    const serviceName = service?.name || "service";
     const userData = await userModel.findById(result.user);
     if (userData && userData.enabledPushNotification) {
         await sendNotificationByFcmToken(
             result.user,
             'booking approval',
-            `your booking for ${service.name} has been approved`,
+            `your booking for ${serviceName} has been approved`,
             result._id,
             'booking'
-        )
+        );
     }
     await addNotificationService(
         {
             sender: result.provider,
             targetUser: result.user,
             title: `booking approval`,
-            message: `Your booking for ${service.name} has been approved`,
+            message: `Your booking for ${serviceName} has been approved`,
             type: "booking",
+            bookingId: result._id,
         }
-    )
+    );
     const userEmail = await userModel.findOne({ _id: result.user }).select('email');
-    // console.log(userEmail.email)
-    await emailWithNodemailer({
-        //   email: 'mdnasifurahman@gmail.com',
-        email: userEmail.email,
-        subject: "Booking Approved",
-        html: `Your booking for ${service.name} has been approved`,
-    });
+    if (userEmail?.email) {
+        await emailWithNodemailer({
+            email: userEmail.email,
+            subject: "Booking Approved",
+            html: `Your booking for ${serviceName} has been approved`,
+        }).catch((e) => console.error("Email error:", e.message));
+    }
 
     return result;
-}
+};
 
 const completeBookingService = async (id) => {
     const booking = await bookingModel.findById(id);
