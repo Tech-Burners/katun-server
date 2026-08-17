@@ -111,6 +111,10 @@ const bookingSchema = new mongoose.Schema(
     reason: String,
 
     pin: String,
+    pinVerified: {
+      type: Boolean,
+      default: false,
+    },
 
     checkin: Date,
 

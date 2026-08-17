@@ -20,7 +20,8 @@ const { bookingController,
     userActiveBookingController,
     userPastBookingController,
     allUpcomingBookingController,
-    allDueBookingController} = require("./booking.controller");
+    allDueBookingController,
+    verifyPinController} = require("./booking.controller");
 const router = express.Router();
 
 
@@ -42,6 +43,7 @@ router.get('/details-userend/:id', auth(['user']), bookingDetailsController);
 router.get('/details/:id', auth(['user']), bookingDetailsController);
 router.patch('/mark-completed/:id', auth(['partner']), markAsCompletedController);
 router.post('/feedback/:id', auth(['user', 'partner']), bookingFeedbackController);
+router.post("/verify-pin/:bookingId", verifyPinController);
 router.patch('/partner/approve/:id', auth(['partner']), approveBookingController);
 router.patch('/partner/cancel/:id', auth(['partner']), cancelBookingController);
 router.patch('/partner/complete/:id', auth(['partner']), completeBookingController);

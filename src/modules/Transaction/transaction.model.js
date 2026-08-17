@@ -37,25 +37,6 @@ const transactionSchema = new mongoose.Schema(
       lowercase: true,
     },
 
-
-    // =====================================================
-    // CREDIT OWNER
-    // =====================================================
-    //
-    // For normal user credit:
-    //
-    // credit_owner_type = "user"
-    // credit_owner_id   = User._id
-    //
-    // For HR/company credit:
-    //
-    // credit_owner_type = "company"
-    // credit_owner_id   = Employer._id
-    //
-    // This prevents the webhook from guessing who
-    // should receive the credit.
-    //
-
     credit_owner_type: {
       type: String,
       enum: [
@@ -176,33 +157,6 @@ const transactionSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
-
-
-    // =====================================================
-    // PAYMENT STATUS
-    // =====================================================
-    //
-    // pending:
-    // Payment initialized but not confirmed.
-    //
-    // processing:
-    // Webhook is currently processing this transaction.
-    //
-    // successful:
-    // Payment successfully processed.
-    //
-    // failed:
-    // Payment failed.
-    //
-    // refunded:
-    // Payment refunded.
-    //
-    // paid:
-    // Kept for backward compatibility.
-    //
-    // cancellation-fee:
-    // Kept for your existing business logic.
-    //
 
     payment_status: {
       type: String,
@@ -338,91 +292,3 @@ module.exports =
     transactionSchema
   );
 
-
-  
-
-// const mongoose = require("mongoose");
-
-// const transactionSchema = new mongoose.Schema(
-//   {
-//     tx_ref: { type: String, unique: true },
-
-//     transaction_id: String,
-
-//     user: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "User",
-//     },
-
-//     user_email: String,
-
-//     currency: String,
-
-//     bank_name: String,
-
-//     booking: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "Booking",
-//     },
-
-//     booking_data: Object,
-
-//     meta: Object,
-
-//     partner: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "User",
-//     },
-//     service: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "Service",
-//     },
-//     // amount: Number,
-//     gross_amount: Number,
-//     commission: Number,
-//     net_amount: Number,
-//     status: {
-//       type: String,
-//       enum: ["pending", "successful", "failed", "refunded"],
-//       default: "pending",
-//     },
-//     payment_status: {
-//       type: String,
-//       enum: ["pending", "successful", "failed", "refunded", "paid", "cancellation-fee"],
-//       default: "pending",
-//     },
-//     // reference: String,
-//     referenceId: mongoose.Schema.Types.ObjectId,
-//     description: String,
-//     payment_method: {
-//       type: String,
-//       enum: ["card", "wallet", "banktransfer", "cash"],
-//       default: "card",
-//     },
-//     payout_status: {
-//       type: String,
-//       enum: ["pending", "hold", "completed", "refund", "processing"],
-//       default: "hold",
-//     },
-
-//     paymentType: {
-//       type: String,
-//       enum: ["credit", "withdraw", "commission", "tip", "booking", "refund"]
-//     },
-
-//     payout_completed_at: Date,
-//     partner: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "User",
-//     },
-//     payoutCycle: {
-//       type: mongoose.Schema.Types.ObjectId,
-//       ref: "PayoutCycle",
-//       index: true,
-//     },
-
-//   },
-//   { timestamps: true }
-// );
-
-// module.exports = mongoose.model("Transaction", transactionSchema);

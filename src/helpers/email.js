@@ -77,7 +77,7 @@ const emailWithNodemailer = async (emailData) => {
   try {
     const mailOptions = {
       // from: process.env.SMTP_USERNAME,
-      from: `"Aura Vive" <${process.env.SMTP_USERNAME}>`, 
+      from: `"Auravive" <${process.env.SMTP_USERNAME}>`, 
       to: emailData.email,
       subject: emailData.subject,
       html: emailData.html,
@@ -96,7 +96,7 @@ const supportEmailWithNodemailer = async (emailData) => {
   try {
     const mailOptions = {
       // from: process.env.SMTP_USERNAME,
-      from: `"Aura Vive" <${process.env.SMTP_USERNAME}>`, 
+      from: `"Auravive" <${process.env.SMTP_USERNAME}>`, 
       to: "xyz@gmail.com",
       replyTo: emailData.email,
       subject: emailData.subject,

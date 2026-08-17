@@ -8,7 +8,6 @@ const { bookingService, pendingBookingService, upcomingBookingService, activeBoo
     allBookingService,
     completeBookingService,
     assignStuffService,
-    checkPinService,
     markAsCompletedService,
     serviceFeedbackService,
     modifyBookingService,
@@ -18,7 +17,8 @@ const { bookingService, pendingBookingService, upcomingBookingService, activeBoo
     userActiveBookingService,
     userPastBookingService,
     allUpcomingBookingService,
-    allDueBookingService} = require("./booking.service")
+    allDueBookingService,
+    checkPinService} = require("./booking.service")
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 const serviceModel = require("../Service/service.model");
@@ -29,6 +29,10 @@ const bookingController = catchAsync(async (req, res) => {
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking added successfully", data: result, }));
 })
 
+const verifyPinController = catchAsync(async (req, res) => {
+    const result = await checkPinService(req.params.bookingId, req.body.pin);
+    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "Pin verified successfully", data: result, }));
+})
 
 const modifyBookingController = catchAsync(async (req, res) => {
     const result = await modifyBookingService(req.params.bookingId, req.User._id, req.body);
@@ -364,5 +368,6 @@ module.exports = {
     userActiveBookingController,
     userPastBookingController,
     allUpcomingBookingController,
-    allDueBookingController
+    allDueBookingController,
+    verifyPinController
 }

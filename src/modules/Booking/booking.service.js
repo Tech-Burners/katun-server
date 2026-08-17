@@ -174,28 +174,35 @@ const modifyBookingService = async (bookingId, loginUser, data) => {
     return await bookingModel.findByIdAndUpdate(bookingId, data, { new: true });
 }
 
+const checkPinService = async (bookingId, pin) => {
+    const booking = await bookingModel.findById(bookingId);
+    if (booking.pin == pin) {
+        booking.pinVerified = true;
+        await booking.save();
+        return true
+    }
+    else {
+        throw new ApiError(status.BAD_REQUEST, 'Pin not matched');
+    }
+}
+
 
 const markAsCompletedService = async (id, data) => {
     const booking = await bookingModel.findById(id);
-    if (booking.pin == data.pin && booking.status == 'approved') {
+    if (booking.pinVerified==true && booking.status == 'approved') {
         if (booking.sessionLeft <= 0) {
             throw new ApiError(status.BAD_REQUEST, 'No sessions left in this booking');
         }
         booking.sessionLeft -= 1;
         booking.checkin = new Date();
-
-
-
-
-
-
         if (booking.sessionLeft == 0) {
             booking.status = 'completed';
         }
         booking.pin = generate4DigitPin();
+        booking.pinVerified = false;
         await booking.save();
         const receiverData = await userModel.findById(booking.user);
-        console.log({ receiverData });
+        // console.log({ receiverData });
         if (receiverData && receiverData.enabledPushNotification) {
             sendNotificationByFcmToken(
                 booking.user,
@@ -208,7 +215,7 @@ const markAsCompletedService = async (id, data) => {
         return true
     }
     else {
-        throw new ApiError(status.BAD_REQUEST, 'Pin not matched');
+        throw new ApiError(status.BAD_REQUEST, 'You can not mark as completed');
     }
 }
 
@@ -584,7 +591,9 @@ const bookingDetailsService = async (id, loginUserId) => {
 
         {
             $project: {
+
                 bookingId: '$_id',
+                pinVerified: 1,
                 customBookingId: "$bookingId",
                 serviceName: '$serviceData.name',
                 serviceId: '$serviceData._id',
@@ -757,6 +766,7 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
 
         {
             $project: {
+                pinVerified: 1,
                 bookingId: '$_id',
                 customBookingId: "$bookingId",
                 serviceName: '$serviceData.name',
@@ -2651,6 +2661,7 @@ module.exports = {
     userUpcomingBookingService,
     userPastBookingService,
     allUpcomingBookingService,
-    allDueBookingService
+    allDueBookingService,
+    checkPinService
     // cancelBookingService
 }
