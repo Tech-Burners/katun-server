@@ -21,6 +21,8 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: false },
   wallet: { type: Number, default: 0 }, //no need ig
   digitalWallet: { type: Number, default: 0, set: v => Math.round(v * 100) / 100 },
+  rechargedCredit: { type: Number, default: 0, set: v => Math.round(v * 100) / 100 },
+  allocatedCredit: { type: Number, default: 0, set: v => Math.round(v * 100) / 100 },
   totalRevenue: { type: Number, default: 0, set: v => Math.round(v * 100) / 100 },
   usages: { type: Number, default: 0 },
   location: {

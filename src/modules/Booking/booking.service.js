@@ -91,9 +91,21 @@ const bookingService = async (data) => {
 
         try {
 
+            const totalPrice = Number(data.totalPrice);
             user.digitalWallet = Number(
-                (user.digitalWallet - data.totalPrice).toFixed(2)
+                (user.digitalWallet - totalPrice).toFixed(2)
             );
+
+            if (user.allocatedCredit && user.allocatedCredit > 0) {
+                const fromAllocated = Math.min(user.allocatedCredit, totalPrice);
+                user.allocatedCredit = Number((user.allocatedCredit - fromAllocated).toFixed(2));
+                const remainingToDeduct = Number((totalPrice - fromAllocated).toFixed(2));
+                if (remainingToDeduct > 0 && user.rechargedCredit && user.rechargedCredit > 0) {
+                    user.rechargedCredit = Math.max(0, Number((user.rechargedCredit - remainingToDeduct).toFixed(2)));
+                }
+            } else if (user.rechargedCredit && user.rechargedCredit > 0) {
+                user.rechargedCredit = Math.max(0, Number((user.rechargedCredit - totalPrice).toFixed(2)));
+            }
 
             await user.save({ session });
 

@@ -588,6 +588,8 @@ const flutterwaveWebhook =
               $inc: {
                 digitalWallet:
                   transaction.gross_amount,
+                rechargedCredit:
+                  transaction.gross_amount,
               },
             }
           );

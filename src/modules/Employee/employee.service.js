@@ -608,8 +608,19 @@ const allocateCreditEmployeeService = async (employeeId, data) => {
 
         const userData = await userModel.findByIdAndUpdate(
             employee.user,
-            { $inc: { digitalWallet: data.amount } },
+            {
+                $inc: {
+                    digitalWallet: Number(data.amount),
+                    allocatedCredit: Number(data.amount)
+                }
+            },
             { new: true, session }
+        );
+
+        await employeeModel.findByIdAndUpdate(
+            employeeId,
+            { $inc: { credit: Number(data.amount) } },
+            { session }
         );
 
         if (!userData) {
@@ -703,6 +714,19 @@ console.log({ employeeIds, data });
             {
                 $inc: {
                     digitalWallet: amount,
+                    allocatedCredit: amount,
+                },
+            },
+            { session }
+        );
+
+        await employeeModel.updateMany(
+            {
+                _id: { $in: employeeIds },
+            },
+            {
+                $inc: {
+                    credit: amount,
                 },
             },
             { session }

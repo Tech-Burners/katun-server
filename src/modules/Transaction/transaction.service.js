@@ -2,6 +2,7 @@ const { default: mongoose } = require("mongoose");
 const transactionModel = require("./transaction.model");
 const { options } = require("./transaction.route");
 const userModel = require("../User/user.model");
+const employeeModel = require("../Employee/employee.model");
 const ApiError = require("../../helpers/ApiError");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
@@ -433,13 +434,52 @@ const withdrawCreditService = async (user, amount) => {
   session.startTransaction();
 
   try {
-    const userData = await userModel.findById(user).select('digitalWallet email payoutFrequency').session(session);
+    const userData = await userModel.findById(user)
+      .select('digitalWallet rechargedCredit allocatedCredit email payoutFrequency')
+      .session(session);
     if (!userData) {
       throw new ApiError(404, 'User not found');
     }
 
     if (amount > userData.digitalWallet) {
       throw new ApiError(412, 'Insufficient balance');
+    }
+
+    // Check if the user is an employee of a company
+    const isCompanyEmployee = await employeeModel.exists({
+      user,
+      company: { $exists: true, $ne: null }
+    }).session(session);
+
+    if (isCompanyEmployee) {
+      const maxWithdrawable = Math.min(
+        userData.rechargedCredit || 0,
+        userData.digitalWallet || 0
+      );
+
+      if (maxWithdrawable <= 0) {
+        throw new ApiError(
+          400,
+          'Employees cannot withdraw credits allocated by company. Only recharged credits can be withdrawn.'
+        );
+      }
+
+      if (amount > maxWithdrawable) {
+        throw new ApiError(
+          412,
+          `Insufficient withdrawable balance. You can only withdraw up to your recharged amount (${maxWithdrawable.toFixed(2)} NGN).`
+        );
+      }
+
+      userData.rechargedCredit = Math.max(
+        0,
+        Number(((userData.rechargedCredit || 0) - amount).toFixed(2))
+      );
+    } else if (userData.rechargedCredit) {
+      userData.rechargedCredit = Math.max(
+        0,
+        Number(((userData.rechargedCredit || 0) - amount).toFixed(2))
+      );
     }
 
     userData.digitalWallet = Number((userData.digitalWallet - amount).toFixed(2));
