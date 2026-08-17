@@ -18,7 +18,7 @@ const sendNotificationByFcmToken = async (
   bookingId,
   type
 ) => {
-  // console.log({ receiverId, textMessage });
+  // console.log("hi::",{ receiverId, textMessage, title, bookingId, type });
 
   const findUser = await userModel.findOne({ _id: receiverId });
   // console.log({ findUser });

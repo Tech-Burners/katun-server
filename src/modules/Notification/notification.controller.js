@@ -2,6 +2,7 @@ const { default: status } = require("http-status");
 const { addNotificationService, getNotificationService, updateNotificationService, sentNotificationByFcmService, readAllNotificationService } = require("./notification.service");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
+const notificationModel = require("./notification.model");
 
 
 const addNotification = catchAsync(async (req, res) => {
@@ -46,15 +47,18 @@ const readAllNotification = catchAsync(async (req, res) => {
 })
 
 const sentNotificationByFcmController = catchAsync(async (req, res) => {
-    
+
     const data = req.body;
-
+    // const targetUser = data.receiverId
     const result = await sentNotificationByFcmService(data);
+    // const result = await notificationModel.create(req.body)
 
-    return res.status(status.OK).json(response({ status: 'Success', statusCode: status.OK, type: 'notification', message: 'notification-read', data: result }));
+    return res.status(status.OK).json(response({ status: 'Success', statusCode: status.OK, type: 'notification', message: 'test notification send', data: result }));
 })
 
-module.exports = { addNotification,adminNotification,
-     readNotification ,myNotification, 
-     readAllNotification,
-     sentNotificationByFcmController}
+module.exports = {
+    addNotification, adminNotification,
+    readNotification, myNotification,
+    readAllNotification,
+    sentNotificationByFcmController
+}

@@ -6,11 +6,11 @@ const { readAllNotificationService } = require("./notification.service");
 const router = express.Router();
 
 
-router.get("/",  auth(['user', 'partner', 'admin', 'sub_admin']), myNotification);
-router.get("/notification-adminend",  auth(['admin', 'sub_admin']), adminNotification);
-router.patch("/read-all",  auth(['admin', 'partner', 'user', 'sub_admin']), readAllNotification);
-router.patch("/read/:id",  auth(['user', 'partner', 'admin', 'sub_admin']), readNotification);
-router.post("/sentByFCMToken",sentNotificationByFcmController)
+router.get("/", auth(['user', 'partner', 'admin', 'sub_admin']), myNotification);
+router.get("/notification-adminend", auth(['admin', 'sub_admin']), adminNotification);
+router.patch("/read-all", auth(['admin', 'partner', 'user', 'sub_admin']), readAllNotification);
+router.patch("/read/:id", auth(['user', 'partner', 'admin', 'sub_admin']), readNotification);
+router.post("/sentByFreceiverIdCMToken", sentNotificationByFcmController)
 
 
 module.exports = router;
