@@ -1,6 +1,7 @@
 const { default: mongoose } = require("mongoose");
 const serviceModel = require("../Service/service.model");
 const bookingModel = require("./booking.model");
+const staffModel = require("../Staffs/staffs.model");
 const { default: status } = require("http-status");
 const ApiError = require("../../helpers/ApiError");
 const generate4DigitPin = require("../../helpers/generatepin");
@@ -631,6 +632,21 @@ const assignStuffService = async (id, stuff) => {
 
         if (isExpired) {
             throw new ApiError(status.BAD_REQUEST, "This booking request service time has passed and cannot be approved or assigned");
+        }
+    }
+
+    if (stuff) {
+        const staffMember = await staffModel.findOne({
+            _id: stuff,
+            isDeleted: false,
+        });
+
+        if (!staffMember) {
+            throw new ApiError(status.NOT_FOUND, "Staff not found");
+        }
+
+        if (booking.provider && staffMember.partnerId && staffMember.partnerId.toString() !== booking.provider.toString()) {
+            throw new ApiError(status.BAD_REQUEST, "Assigned staff does not belong to this provider");
         }
     }
 
