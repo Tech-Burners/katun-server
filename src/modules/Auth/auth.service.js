@@ -300,51 +300,6 @@ const deleteAccountService = async (id) => {
 
 
 
-// const login = async (createdby, receiverType, inputPassword) => {
-//   let user;
-
-//   //  ROLE-BASED LOGIN RULE
-//   if (receiverType === "phone") {
-//     user = await userModel.findOne({ phoneNumber: createdby }).select("+password");
-
-//     if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
-
-//     //  only normal users can login with phone
-//     if (["admin", "hr", "partner"].includes(user.role)) {
-//       throw new ApiError(
-//         status.UNAUTHORIZED,
-//         "This role must login using email"
-//       );
-//     }
-//   }
-
-//   if (receiverType === "email") {
-//     user = await userModel.findOne({ email: createdby }).select("+password");
-
-//     if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
-
-//     //  normal users cannot login with email
-//     if (user.role === "user") {
-//       throw new ApiError(
-//         status.UNAUTHORIZED,
-//         "User must login using phone number"
-//       );
-//     }
-//   }
-
-//   if (!user) throw new ApiError(status.NOT_FOUND, "User not found");
-
-//   if (user.isDeleted) throw new ApiError(status.NOT_FOUND, "User not found");
-
-//   if (user.isBan) throw new ApiError(status.FORBIDDEN, "User is banned");
-
-//   const isMatch = await bcrypt.compare(inputPassword, user.password);
-
-//   if (!isMatch) throw new ApiError(status.UNAUTHORIZED, "Invalid password");
-
-//   return user;
-// };
-
 const login = async (identifier, receiverType, inputPassword) => {
   let user;
 
@@ -412,6 +367,69 @@ const login = async (identifier, receiverType, inputPassword) => {
   return user;
 };
 
+
+const changePasswordService = async (userId, oldPassword, newPassword) => {
+  if (!oldPassword || !newPassword) {
+    throw new ApiError(
+      status.BAD_REQUEST,
+      "Old password and new password are required"
+    );
+  }
+
+  if (newPassword.length < 8) {
+    throw new ApiError(
+      status.BAD_REQUEST,
+      "New password must be at least 8 characters"
+    );
+  }
+
+  if (oldPassword === newPassword) {
+    throw new ApiError(
+      status.BAD_REQUEST,
+      "New password must be different from old password"
+    );
+  }
+
+  const user = await userModel
+    .findById(userId)
+    .select("+password");
+
+  if (!user || user.isDeleted) {
+    throw new ApiError(
+      status.NOT_FOUND,
+      "User not found"
+    );
+  }
+
+  if (user.isBan) {
+    throw new ApiError(
+      status.FORBIDDEN,
+      "User is banned"
+    );
+  }
+
+  const isMatch = await bcrypt.compare(
+    oldPassword,
+    user.password
+  );
+
+  if (!isMatch) {
+    throw new ApiError(
+      status.UNAUTHORIZED,
+      "Old password is incorrect"
+    );
+  }
+
+  user.password = newPassword;
+
+  // Invalidate existing login tokens
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
+  user.isLoginToken = false;
+
+  await user.save();
+
+  return user;
+};
 
 const getUserByEmail = async (email) => {
   return await userModel.findOne({ email });
@@ -673,5 +691,6 @@ module.exports = {
   deleteAccountService,
   allPartnersService,
   socialLoginWithAppleService,
-  socialLoginWithGoogleService
+  socialLoginWithGoogleService,
+  changePasswordService
 };

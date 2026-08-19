@@ -71,15 +71,46 @@ const mongoose = require("mongoose");
 
 const addEmployeeService = async (data) => {
 
-    // Check duplicate phone number
+    if (!data.email) {
+        throw new ApiError(400, 'Email is required');
+    }
+
+    // Check duplicate email
+    const existingEmailUser = await userModel.findOne({
+        email: data.email.toLowerCase().trim(),
+        isDeleted: { $ne: true }
+    });
+
+    if (existingEmailUser) {
+        throw new ApiError(400, 'This email is already used!');
+    }
+
+    // Check duplicate phone number if provided
     if (data.number) {
-        const existingUser = await userModel.findOne({
+        const numberQuery = {
             number: data.number,
-            countryCode: data.countryCode,
-        });
+            isDeleted: { $ne: true }
+        };
+        if (data.countryCode) {
+            numberQuery.countryCode = data.countryCode;
+        }
+
+        const existingUser = await userModel.findOne(numberQuery);
 
         if (existingUser) {
             throw new ApiError(400, 'This number is already used!');
+        }
+    } else if (data.phone) {
+        const existingPhoneUser = await userModel.findOne({
+            $or: [
+                { number: data.phone },
+                { phone: data.phone }
+            ],
+            isDeleted: { $ne: true }
+        });
+
+        if (existingPhoneUser) {
+            throw new ApiError(400, 'This phone number is already used!');
         }
     }
 
@@ -90,17 +121,34 @@ const addEmployeeService = async (data) => {
         await session.startTransaction();
 
         // Create User
-        const user = await userModel.create([{
+        const userPayload = {
             fullName: data.name,
-            number: data.number,
-            countryCode: data.countryCode,
+            role: 'user',
             password: process.env.DEFAULT_PASSWORD,
-        }], { session });
+        };
+
+        if (data.email) {
+            userPayload.email = data.email.toLowerCase().trim();
+        }
+        if (data.number) {
+            userPayload.number = data.number;
+        }
+        if (data.countryCode) {
+            userPayload.countryCode = data.countryCode;
+        }
+
+        const user = await userModel.create([userPayload], { session });
 
         data.user = user[0]._id;
 
+        if (data.email) {
+            data.email = data.email.toLowerCase().trim();
+        }
+
         // Combine country code + number for Employee phone
-        data.phone = `${data.countryCode}${data.number}`;
+        if (data.countryCode && data.number) {
+            data.phone = `${data.countryCode}${data.number}`;
+        }
 
         // Create Employee
         const employee = await employeeModel.create([data], { session });
@@ -171,6 +219,9 @@ const getEmployeeService = async (id) => {
             $project: {
                 name: 1,
                 phone: 1,
+                email: { $ifNull: ["$email", "$user.email"] },
+                number: "$user.number",
+                countryCode: "$user.countryCode",
                 createdAt: 1,
                 userType: "$user.role",
                 isBan: "$user.isBan",
@@ -287,7 +338,14 @@ const getAllEmployeeService = async (option) => {
         // },
         ...(search ? [{
             $match: {
-                "user.fullName": { $regex: search, $options: "i" }
+                $or: [
+                    { "user.fullName": { $regex: search, $options: "i" } },
+                    { "user.email": { $regex: search, $options: "i" } },
+                    { "user.number": { $regex: search, $options: "i" } },
+                    { name: { $regex: search, $options: "i" } },
+                    { phone: { $regex: search, $options: "i" } },
+                    { email: { $regex: search, $options: "i" } }
+                ]
             }
         }] : []),
 
@@ -304,8 +362,10 @@ const getAllEmployeeService = async (option) => {
                             employeeName: "$user.fullName",
                             // wallet : "$user.wallet",
                             // usages: "$user.usages",
+                            email: { $ifNull: ["$email", "$user.email"] },
                             number: "$user.number",
                             countryCode: "$user.countryCode",
+                            phone: 1,
                             // departmentName: "$department.name",
                             // branchname: "$branch.name",
                             // totalUseage: "$usages",
@@ -438,7 +498,14 @@ const getCompanyAllEmployeeService = async (user, option) => {
         },
         ...(search ? [{
             $match: {
-                "user.fullName": { $regex: search, $options: "i" }
+                $or: [
+                    { "user.fullName": { $regex: search, $options: "i" } },
+                    { "user.email": { $regex: search, $options: "i" } },
+                    { "user.number": { $regex: search, $options: "i" } },
+                    { name: { $regex: search, $options: "i" } },
+                    { phone: { $regex: search, $options: "i" } },
+                    { email: { $regex: search, $options: "i" } }
+                ]
             }
         }] : []),
 
@@ -455,8 +522,10 @@ const getCompanyAllEmployeeService = async (user, option) => {
                             employeeName: "$user.fullName",
                             wallet: "$user.wallet",
                             usages: "$user.usages",
+                            email: { $ifNull: ["$email", "$user.email"] },
                             number: "$user.number",
                             countryCode: "$user.countryCode",
+                            phone: 1,
                             departmentName: "$department.name",
                             branchname: "$branch.name",
                             totalUseage: "$usages",
@@ -1063,16 +1132,47 @@ const editEmployeeService = async (id, data) => {
             throw new ApiError(404, "Employee not found");
         }
 
-        // Check duplicate phone number
-        if (data.number && data.countryCode) {
-            const existingUser = await userModel.findOne({
-                number: data.number,
-                countryCode: data.countryCode,
-                _id: { $ne: employee.user }
+        // Check duplicate email
+        if (data.email) {
+            const existingEmailUser = await userModel.findOne({
+                email: data.email.toLowerCase().trim(),
+                _id: { $ne: employee.user },
+                isDeleted: { $ne: true }
             });
+
+            if (existingEmailUser) {
+                throw new ApiError(400, "This email is already used!");
+            }
+        }
+
+        // Check duplicate phone number
+        if (data.number) {
+            const numberQuery = {
+                number: data.number,
+                _id: { $ne: employee.user },
+                isDeleted: { $ne: true }
+            };
+            if (data.countryCode) {
+                numberQuery.countryCode = data.countryCode;
+            }
+
+            const existingUser = await userModel.findOne(numberQuery);
 
             if (existingUser) {
                 throw new ApiError(400, "This number is already used!");
+            }
+        } else if (data.phone) {
+            const existingPhoneUser = await userModel.findOne({
+                $or: [
+                    { number: data.phone },
+                    { phone: data.phone }
+                ],
+                _id: { $ne: employee.user },
+                isDeleted: { $ne: true }
+            });
+
+            if (existingPhoneUser) {
+                throw new ApiError(400, "This phone number is already used!");
             }
         }
 
@@ -1080,8 +1180,9 @@ const editEmployeeService = async (id, data) => {
         const userUpdate = {};
 
         if (data.name) userUpdate.fullName = data.name;
-        if (data.number) userUpdate.number = data.number;
-        if (data.countryCode) userUpdate.countryCode = data.countryCode;
+        if (data.email !== undefined) userUpdate.email = data.email ? data.email.toLowerCase().trim() : data.email;
+        if (data.number !== undefined) userUpdate.number = data.number;
+        if (data.countryCode !== undefined) userUpdate.countryCode = data.countryCode;
 
         if (Object.keys(userUpdate).length > 0) {
             await userModel.findByIdAndUpdate(
@@ -1091,9 +1192,12 @@ const editEmployeeService = async (id, data) => {
             );
         }
 
-        // Update employee phone
+        // Update employee phone & email
         if (data.number && data.countryCode) {
             data.phone = `${data.countryCode}${data.number}`;
+        }
+        if (data.email) {
+            data.email = data.email.toLowerCase().trim();
         }
 
         // Update Employee

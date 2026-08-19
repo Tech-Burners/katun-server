@@ -1,6 +1,6 @@
 const crypto = require("crypto");
 const axios = require("axios");
-
+const { default: mongoose } = require("mongoose");
 const Transaction = require("./transaction.model");
 const catchAsync = require("../../helpers/catchAsync");
 const bookingModel = require("../Booking/booking.model");
@@ -53,6 +53,7 @@ const { getAllTransactions, getPendingPayoutService, getcompletePayoutService,
   getPlatformEarningTransactionsService, allPayoutOfAPartnerService,
   getAllRefundData, withdrawCreditService } = require("./transaction.service");
 const employerModel = require("../Employer/employer.model");
+// const { default: mongoose } = require("mongoose");
 
 
 

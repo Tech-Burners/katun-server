@@ -524,6 +524,7 @@ const aServiceDetailsService = async (id, userId = null) => {
         availability: "$availability.slot",
         categoryName: "$category.name",
         categoryId: "$category._id",
+        subCategoryId: "$subcategory._id",
         subCategoryName: "$subcategory.name",
         // subCategory: 1,
 

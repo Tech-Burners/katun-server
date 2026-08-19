@@ -7,12 +7,13 @@ const { login, getUserByEmail, addUser, updateUserById, profileByIdService, getU
   partnerProfileService,
   allUserService,
   deleteAccountService,
-  allPartnersService, 
+  allPartnersService,
   googleAuthService,
   createOrLoginUserWithApple,
   createUserWithApple,
   socialLoginWithAppleService,
-  socialLoginWithGoogleService} = require("./auth.service");
+  socialLoginWithGoogleService,
+  changePasswordService } = require("./auth.service");
 const { addToken, verifyToken, deleteToken } = require("../Token/token.service");
 const { default: status } = require("http-status");
 const ApiError = require("../../helpers/ApiError");
@@ -31,9 +32,11 @@ const socialLoginWithAppleController = catchAsync(async (req, res) => {
   const result = await socialLoginWithAppleService(req.body);
   const accessToken = await tokenGenerator(result);
 
-  return res.status(status.OK).json(response({ status: 'success',
-     statusCode: status.OK, message: "User created successfully", 
-    data: result, accessToken }));
+  return res.status(status.OK).json(response({
+    status: 'success',
+    statusCode: status.OK, message: "User created successfully",
+    data: result, accessToken
+  }));
 });
 
 
@@ -43,9 +46,11 @@ const socialLoginWithGoogleController = catchAsync(async (req, res) => {
   const result = await socialLoginWithGoogleService(req.body);
   const accessToken = await tokenGenerator(result);
 
-  return res.status(status.OK).json(response({ status: 'success',
-     statusCode: status.OK, message: "User created successfully", 
-    data: result, accessToken }));
+  return res.status(status.OK).json(response({
+    status: 'success',
+    statusCode: status.OK, message: "User created successfully",
+    data: result, accessToken
+  }));
 });
 
 
@@ -57,48 +62,48 @@ const socialLoginWithGoogleController = catchAsync(async (req, res) => {
 // Login
 const localAuth = catchAsync(async (req, res) => {
   const {
-  email,
-  number,
-  countryCode,
-  password,
-} = req.body;
+    email,
+    number,
+    countryCode,
+    password,
+  } = req.body;
 
-const hasEmail = !!email;
-const hasPhone = !!number || !!countryCode;
+  const hasEmail = !!email;
+  const hasPhone = !!number || !!countryCode;
 
-if ((hasEmail && hasPhone) || (!hasEmail && !hasPhone)) {
-  throw new ApiError(
-    status.BAD_REQUEST,
-    "Provide either email OR phone, not both"
-  );
-}
-
-let user;
-
-if (email) {
-  user = await login(
-    { email },
-    "email",
-    password
-  );
-  // console.log("user1", user);
-} else {
-  if (!number || !countryCode) {
+  if ((hasEmail && hasPhone) || (!hasEmail && !hasPhone)) {
     throw new ApiError(
       status.BAD_REQUEST,
-      "Country code and phone number are required"
+      "Provide either email OR phone, not both"
     );
   }
 
-  user = await login(
-    {
-      number,
-      countryCode,
-    },
-    "phone",
-    password
-  );
-}
+  let user;
+
+  if (email) {
+    user = await login(
+      { email },
+      "email",
+      password
+    );
+    // console.log("user1", user);
+  } else {
+    if (!number || !countryCode) {
+      throw new ApiError(
+        status.BAD_REQUEST,
+        "Country code and phone number are required"
+      );
+    }
+
+    user = await login(
+      {
+        number,
+        countryCode,
+      },
+      "phone",
+      password
+    );
+  }
 
   // console.log({ user });
   let admin;
@@ -201,52 +206,52 @@ const signUp = catchAsync(async (req, res) => {
 
   // } else {
 
-    if (!email) {
-      throw new ApiError(status.BAD_REQUEST, "Email is required!");
-    }
+  if (!email) {
+    throw new ApiError(status.BAD_REQUEST, "Email is required!");
+  }
 
-    const existingUser = await getUserByEmail(email);
+  const existingUser = await getUserByEmail(email);
 
-    if (existingUser) {
-      throw new ApiError(status.CONFLICT, "This email already used!");
-    }
+  if (existingUser) {
+    throw new ApiError(status.CONFLICT, "This email already used!");
+  }
 
-    sentTo = email;
-    receiverType = "email";
-    existingOTP = await checkOTPService(email, "email");
+  sentTo = email;
+  receiverType = "email";
+  existingOTP = await checkOTPService(email, "email");
   // }
 
   /* ---------- OTP ---------- */
-let message = "";
+  let message = "";
 
-if (existingOTP) {
-  message = "OTP already sent. Please wait for a few minutes.";
-} else {
-  const otpData = await sendOTP(
-    fullName,
-    sentTo,
-    receiverType,
-    "email-verification"
+  if (existingOTP) {
+    message = "OTP already sent. Please wait for a few minutes.";
+  } else {
+    const otpData = await sendOTP(
+      fullName,
+      sentTo,
+      receiverType,
+      "email-verification"
+    );
+
+    message = otpData.message;
+  }
+
+  const accessToken = jwt.sign(
+    { ...req.body },
+    process.env.JWT_ACCESS_TOKEN,
+    { expiresIn: "1h" }
   );
 
-  message = otpData.message;
-}
-
-const accessToken = jwt.sign(
-  { ...req.body },
-  process.env.JWT_ACCESS_TOKEN,
-  { expiresIn: "1h" }
-);
-
-return res.status(status.CREATED).json(
-  response({
-    status: "OK",
-    statusCode: status.CREATED,
-    type: "user",
-    message,
-    accessToken,
-  })
-);
+  return res.status(status.CREATED).json(
+    response({
+      status: "OK",
+      statusCode: status.CREATED,
+      type: "user",
+      message,
+      accessToken,
+    })
+  );
 });
 //   let message = "";
 
@@ -524,7 +529,7 @@ const otpVerification = catchAsync(async (req, res) => {
 
   const fullPhoneNumber =
     number && countryCode ? `${countryCode}${number}` : null;
-// console.log({ fullPhoneNumber });
+  // console.log({ fullPhoneNumber });
   let otpData;
 
   if (email) {
@@ -920,23 +925,21 @@ const deleteAccountController = catchAsync(async (req, res) => {
 
 
 const changePassword = catchAsync(async (req, res) => {
-  // console.log("changePassword controller:: ", req.User);
-  let receiverType = "email";
-  let createdBy = req.User.email;
-  if (req.User.role === "user") {
-    receiverType = "phone";
-    createdBy = { number: req.User.number, countryCode: req.User.countryCode };
-  }
   const { oldPassword, newPassword } = req.body;
-  const verifyUser = await login(createdBy, receiverType, oldPassword);
-  if (!verifyUser) {
-    return res.status(status.BAD_REQUEST).json(response({ status: "Error", statusCode: status.BAD_REQUEST, type: "user", message: 'old password is incorrect' }));
-  }
-  verifyUser.password = newPassword;
-  verifyUser.tokenVersion = verifyUser.tokenVersion + 1;
-  verifyUser.isLoginToken = false;
-  await verifyUser.save();
-  return res.status(status.OK).json(response({ status: "OK", statusCode: status.OK, type: "user", message: 'password changed' })
+
+  await changePasswordService(
+    req.User._id,
+    oldPassword,
+    newPassword
+  );
+
+  return res.status(status.OK).json(
+    response({
+      status: "OK",
+      statusCode: status.OK,
+      type: "user",
+      message: "Password changed successfully",
+    })
   );
 });
 
