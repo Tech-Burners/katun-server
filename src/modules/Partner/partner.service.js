@@ -393,15 +393,33 @@ const approvePartnerService = async (id, user) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        const result = await partnerModel.findByIdAndUpdate(id, { isVerified: true }, { new: true }, { session });
-        const userData = await userModel.findByIdAndUpdate(result.user, { isVerified: true }, { session });
+        const result = await partnerModel.findByIdAndUpdate(id, { isVerified: true }, { new: true, session });
+        if (!result) {
+            throw new Error("Partner not found");
+        }
+        const userData = await userModel.findByIdAndUpdate(result.user, { isVerified: true }, { new: true, session });
         await addAuditReport({
             action: "Approve",
-            summary: `Partner ${userData.fullName} Approved `,
+            summary: `Partner ${userData?.fullName || result.businessName || 'Partner'} Approved `,
             performedBy: user
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (userData?.email) {
+            await emailWithNodemailer({
+                email: userData.email,
+                subject: "Partner Application Approved",
+                html: `
+                    <h3>Congratulations! Your Partner Account is Approved</h3>
+                    <p>Hello ${userData.fullName || result.businessName || "Partner"},</p>
+                    <p>We are pleased to inform you that your partner application for <strong>${result.businessName || "Aura Vive"}</strong> has been approved.</p>
+                    <p>You can now log in to your dashboard, manage your services, and start accepting bookings.</p>
+                    <p>Thank you for partnering with us!</p>
+                `,
+            }).catch((e) => console.error("Partner approval email error:", e.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();
@@ -423,7 +441,7 @@ const bulkApprovePartnerService = async (partnerIds, adminId) => {
         _id: { $in: partnerIds },
         isDeleted: false,
       })
-      .populate("user", "fullName")
+      .populate("user", "fullName email")
       .session(session);
 
     if (!partners.length) {
@@ -444,7 +462,7 @@ const bulkApprovePartnerService = async (partnerIds, adminId) => {
     );
 
     // Approve linked users
-    const userIds = partners.map((partner) => partner.user._id);
+    const userIds = partners.map((partner) => partner.user?._id).filter(Boolean);
 
     const userResult = await userModel.updateMany(
       {
@@ -464,7 +482,7 @@ const bulkApprovePartnerService = async (partnerIds, adminId) => {
         addAuditReport(
           {
             action: "Approve",
-            summary: `Partner ${partner.user.fullName} Approved`,
+            summary: `Partner ${partner.user?.fullName || partner.businessName || 'Partner'} Approved`,
             performedBy: adminId,
           },
           { session }
@@ -473,6 +491,25 @@ const bulkApprovePartnerService = async (partnerIds, adminId) => {
     );
 
     await session.commitTransaction();
+
+    // Send approval emails after transaction commits
+    await Promise.all(
+      partners.map(async (partner) => {
+        if (partner.user?.email) {
+          await emailWithNodemailer({
+            email: partner.user.email,
+            subject: "Partner Application Approved",
+            html: `
+              <h3>Congratulations! Your Partner Account is Approved</h3>
+              <p>Hello ${partner.user.fullName || partner.businessName || "Partner"},</p>
+              <p>We are pleased to inform you that your partner application for <strong>${partner.businessName || "Aura Vive"}</strong> has been approved.</p>
+              <p>You can now log in to your dashboard, manage your services, and start accepting bookings.</p>
+              <p>Thank you for partnering with us!</p>
+            `,
+          }).catch((e) => console.error("Bulk partner approval email error:", e.message));
+        }
+      })
+    );
 
     return {
       matchedCount: userResult.matchedCount,
