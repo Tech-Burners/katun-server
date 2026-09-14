@@ -556,10 +556,12 @@ const checkServiceAvailabilityService = async (userId) => {
 
   const walletBalance = Number(user.digitalWallet || 0);
 
+  const roundedWallet = Number((Math.round(walletBalance * 1000) / 1000).toFixed(3));
+
   // If partner account is banned or deleted, they are not available
   if (user.isBan || user.isDeleted) {
     return {
-      walletBalance: Number((Math.round(walletBalance * 1000) / 1000).toFixed(3)),
+      walletBalance: roundedWallet,
       maxCommissionAmount: 0,
       hasAvailableBalance: false,
     };
@@ -577,9 +579,9 @@ const checkServiceAvailabilityService = async (userId) => {
 
   if (!services || services.length === 0) {
     return {
-      walletBalance: Number((Math.round(walletBalance * 1000) / 1000).toFixed(3)),
+      walletBalance: roundedWallet,
       maxCommissionAmount: 0,
-      hasAvailableBalance: false,
+      hasAvailableBalance: roundedWallet >= 0,
     };
   }
 
@@ -626,7 +628,6 @@ const checkServiceAvailabilityService = async (userId) => {
     }
   }
 
-  const roundedWallet = Number((Math.round(walletBalance * 1000) / 1000).toFixed(3));
   const roundedMaxCommission = Number((Math.round(maxCommissionAmount * 1000) / 1000).toFixed(3));
   const hasAvailableBalance = roundedWallet >= roundedMaxCommission;
 
