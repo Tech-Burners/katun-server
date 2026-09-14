@@ -1,5 +1,6 @@
 const { default: mongoose } = require("mongoose");
 const serviceModel = require("./service.model");
+const commissionModel = require("../Commission/commission.model");
 const { WhatsApp } = require("twilio/lib/twiml/VoiceResponse");
 const { sub, add } = require("date-fns");
 const { default: status } = require("http-status");
@@ -540,106 +541,100 @@ const aServiceDetailsService = async (id, userId = null) => {
 
 
 const checkServiceAvailabilityService = async (userId) => {
-  const result = await serviceModel.aggregate([
-    {
-      $match: {
-        user: new mongoose.Types.ObjectId(userId),
-        isDeleted: false,
-        isActive: true,
-      },
-    },
+  const user = await userModel
+    .findById(userId)
+    .select("digitalWallet isBan isDeleted isVerified")
+    .lean();
 
-    {
-      $lookup: {
-        from: "commissions",
-        localField: "category",
-        foreignField: "category",
-        as: "commission",
-      },
-    },
-
-    {
-      $unwind: {
-        path: "$commission",
-        preserveNullAndEmptyArrays: true,
-      },
-    },
-
-    {
-      $addFields: {
-        servicefeeNum: { $toDouble: "$servicefee" },
-
-        commissionRate: {
-          $ifNull: ["$commission.commission", 0],
-        },
-
-        commissionAmount: {
-          $multiply: [
-            { $toDouble: "$servicefee" },
-            {
-              $divide: [
-                { $ifNull: ["$commission.commission", 0] },
-                100,
-              ],
-            },
-          ],
-        },
-      },
-    },
-
-    {
-      $group: {
-        _id: "$user",
-        maxCommissionAmount: { $max: "$commissionAmount" },
-      },
-    },
-
-    {
-      $lookup: {
-        from: "users",
-        localField: "_id",
-        foreignField: "_id",
-        as: "user",
-      },
-    },
-
-    { $unwind: "$user" },
-
-    {
-      $addFields: {
-        walletBalance: {
-          $ifNull: ["$user.digitalWallet", 0],
-        },
-      },
-    },
-
-    {
-      $project: {
-        _id: 0,
-
-        walletBalance: { $round: ["$walletBalance", 3] },
-
-        maxCommissionAmount: {
-          $round: ["$maxCommissionAmount", 3],
-        },
-
-        hasAvailableBalance: {
-          $gte: [
-            { $ifNull: ["$user.digitalWallet", 0] },
-            { $ifNull: ["$maxCommissionAmount", 0] },
-          ],
-        },
-      },
-    },
-  ]);
-
-  return (
-    result[0] || {
+  if (!user) {
+    return {
       walletBalance: 0,
       maxCommissionAmount: 0,
       hasAvailableBalance: false,
+    };
+  }
+
+  const walletBalance = Number(user.digitalWallet || 0);
+
+  // If partner account is banned or deleted, they are not available
+  if (user.isBan || user.isDeleted) {
+    return {
+      walletBalance: Number((Math.round(walletBalance * 1000) / 1000).toFixed(3)),
+      maxCommissionAmount: 0,
+      hasAvailableBalance: false,
+    };
+  }
+
+  // Get active, non-deleted services for this partner
+  const services = await serviceModel
+    .find({
+      user: userId,
+      isDeleted: false,
+      isActive: true,
+    })
+    .select("category servicefee addons pass")
+    .lean();
+
+  if (!services || services.length === 0) {
+    return {
+      walletBalance: Number((Math.round(walletBalance * 1000) / 1000).toFixed(3)),
+      maxCommissionAmount: 0,
+      hasAvailableBalance: false,
+    };
+  }
+
+  // Fetch category commissions
+  const categoryIds = services.map((s) => s.category).filter(Boolean);
+  const commissions = await commissionModel
+    .find({ category: { $in: categoryIds } })
+    .lean();
+
+  const commissionMap = new Map();
+  for (const c of commissions) {
+    commissionMap.set(String(c.category), Number(c.commission) || 0);
+  }
+
+  let maxCommissionAmount = 0;
+
+  for (const service of services) {
+    const baseFee = Number(service.servicefee) || 0;
+
+    // Consider highest service pricing option (base fee, addons, passes)
+    let maxServicePrice = baseFee;
+    if (Array.isArray(service.addons) && service.addons.length > 0) {
+      const addonsTotal = service.addons.reduce(
+        (sum, a) => sum + (Number(a.price) || 0),
+        0
+      );
+      maxServicePrice = Math.max(maxServicePrice, baseFee + addonsTotal);
     }
-  );
+    if (service.pass && typeof service.pass.price === "number") {
+      maxServicePrice = Math.max(
+        maxServicePrice,
+        Number(service.pass.price) || 0
+      );
+    }
+
+    // Use configured category commission or fallback to 10%
+    const rate = commissionMap.has(String(service.category))
+      ? commissionMap.get(String(service.category))
+      : 10;
+
+    const commissionForService = (maxServicePrice * rate) / 100;
+    if (commissionForService > maxCommissionAmount) {
+      maxCommissionAmount = commissionForService;
+    }
+  }
+
+  const roundedWallet = Number((Math.round(walletBalance * 1000) / 1000).toFixed(3));
+  const roundedMaxCommission = Number((Math.round(maxCommissionAmount * 1000) / 1000).toFixed(3));
+  const hasAvailableBalance = roundedWallet >= roundedMaxCommission;
+
+  return {
+    walletBalance: roundedWallet,
+    maxCommissionAmount: roundedMaxCommission,
+    hasAvailableBalance,
+  };
 };
 
 
