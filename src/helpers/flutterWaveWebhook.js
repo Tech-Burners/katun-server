@@ -26,6 +26,14 @@ const {
 } = require("./sendNotificationByFcmToken");
 
 const {
+  addNotificationService,
+} = require("../modules/Notification/notification.service");
+
+const {
+  emailWithNodemailer,
+} = require("./email");
+
+const {
   calculateBookingRequestExpireAt,
   sendNewBookingNotifications,
 } = require("../modules/Booking/bookingExpiry.service");
@@ -606,6 +614,81 @@ const flutterwaveWebhook =
         await transaction.save();
 
 
+        // Notification & Push Notification for Credit Purchase
+        try {
+          let targetUser = null;
+          const isCompany = transaction.credit_owner_type === "company";
+
+          if (isCompany) {
+            if (transaction.user_email) {
+              targetUser = await userModel.findOne({ email: transaction.user_email });
+            }
+            if (!targetUser && transaction.credit_owner_id) {
+              const company = await employerModel.findById(transaction.credit_owner_id);
+              if (company && Array.isArray(company.user) && company.user.length > 0) {
+                targetUser = await userModel.findById(company.user[0]);
+              }
+            }
+          } else {
+            const targetUserId = transaction.credit_owner_id || transaction.user;
+            if (targetUserId) {
+              targetUser = await userModel.findById(targetUserId);
+            }
+          }
+
+          if (targetUser) {
+            const title = "Credit Purchase Successful";
+            const message = isCompany
+              ? `Your company credit recharge of ₦${transaction.gross_amount} was successful.`
+              : `Your credit purchase of ₦${transaction.gross_amount} was successful. Your wallet balance has been updated.`;
+
+            // 1. Push Notification
+            if (targetUser.enabledPushNotification !== false) {
+              await sendNotificationByFcmToken(
+                targetUser._id,
+                title,
+                message,
+                undefined,
+                "credit"
+              );
+            }
+
+            // 2. In-App Notification (Database)
+            const notif = await addNotificationService({
+              targetUser: targetUser._id,
+              title,
+              message,
+              type: "credit",
+            });
+
+            // 3. Socket Emit
+            if (global.io) {
+              global.io.emit(`get notification::${targetUser._id}`, {
+                status: 200,
+                message: title,
+                data: notif,
+              });
+              global.io.emit("get notification", {
+                status: 200,
+                message: "New notification available",
+                data: notif,
+              });
+            }
+
+            // 4. Email Notification
+            if (targetUser.email) {
+              await emailWithNodemailer({
+                email: targetUser.email,
+                subject: title,
+                html: `<p>Hello ${targetUser.fullName || "User"},</p><p>${message}</p><p><strong>Transaction Ref:</strong> ${transaction.tx_ref}</p><p><strong>Amount:</strong> ₦${transaction.gross_amount}</p>`,
+              }).catch((e) => console.error("Credit purchase email error:", e.message));
+            }
+          }
+        } catch (creditNotifError) {
+          console.error("Credit notification error:", creditNotifError.message);
+        }
+
+
         return res
           .status(200)
           .end();
@@ -670,34 +753,115 @@ const flutterwaveWebhook =
         );
 
 
-        // Notification should not make
-        // payment processing fail.
+        // Notification & Push Notification for Tip
         try {
-
           const sender =
             await userModel.findById(
               transaction.user
             );
 
-
-          if (
-            sender
-              ?.enabledPushNotification ===
-            true
-          ) {
-
-            await sendNotificationByFcmToken(
-
-              transaction.partner,
-
-              "New Tip Received",
-
-              `${sender.fullName || "A customer"} sent you a tip of ₦${transaction.net_amount}.`,
-
-              transaction.booking,
-
-              "tip"
+          const partnerUser =
+            await userModel.findById(
+              transaction.partner
             );
+
+          const tipAmount = transaction.net_amount || transaction.gross_amount;
+          const senderName = sender?.fullName || "A customer";
+          const partnerName = partnerUser?.fullName || "the provider";
+
+          // 1. Notify Partner (Receiver of Tip)
+          if (partnerUser) {
+            const partnerTitle = "Tip Received";
+            const partnerMessage = `${senderName} sent you a tip of ₦${tipAmount}.`;
+
+            // Push Notification to Partner
+            if (partnerUser.enabledPushNotification !== false) {
+              await sendNotificationByFcmToken(
+                partnerUser._id,
+                partnerTitle,
+                partnerMessage,
+                transaction.booking,
+                "tip"
+              );
+            }
+
+            // In-App Notification to Partner (Database)
+            const partnerNotif = await addNotificationService({
+              sender: transaction.user || undefined,
+              targetUser: partnerUser._id,
+              title: partnerTitle,
+              message: partnerMessage,
+              type: "tip",
+              bookingId: transaction.booking || undefined,
+            });
+
+            // Socket Emit to Partner
+            if (global.io) {
+              global.io.emit(`get notification::${partnerUser._id}`, {
+                status: 200,
+                message: partnerTitle,
+                data: partnerNotif,
+              });
+              global.io.emit("get notification", {
+                status: 200,
+                message: "New notification available",
+                data: partnerNotif,
+              });
+            }
+
+            // Email to Partner
+            if (partnerUser.email) {
+              await emailWithNodemailer({
+                email: partnerUser.email,
+                subject: partnerTitle,
+                html: `<p>Hello ${partnerName},</p><p>${partnerMessage}</p><p><strong>Amount:</strong> ₦${tipAmount}</p>`,
+              }).catch((e) => console.error("Partner tip email error:", e.message));
+            }
+          }
+
+          // 2. Notify Sender (Customer who gave Tip)
+          if (sender) {
+            const senderTitle = "Tip Sent Successfully";
+            const senderMessage = `Your tip of ₦${transaction.gross_amount} to ${partnerName} was successful.`;
+
+            // Push Notification to Sender
+            if (sender.enabledPushNotification !== false) {
+              await sendNotificationByFcmToken(
+                sender._id,
+                senderTitle,
+                senderMessage,
+                transaction.booking,
+                "tip"
+              );
+            }
+
+            // In-App Notification to Sender (Database)
+            const senderNotif = await addNotificationService({
+              sender: transaction.partner || undefined,
+              targetUser: sender._id,
+              title: senderTitle,
+              message: senderMessage,
+              type: "tip",
+              bookingId: transaction.booking || undefined,
+            });
+
+            // Socket Emit to Sender
+            if (global.io) {
+              global.io.emit(`get notification::${sender._id}`, {
+                status: 200,
+                message: senderTitle,
+                data: senderNotif,
+              });
+            }
+
+            // Email to Sender
+            if (sender.email) {
+              await emailWithNodemailer({
+                email: sender.email,
+                subject: senderTitle,
+                html: `<p>Hello ${sender.fullName || "Customer"},</p><p>${senderMessage}</p><p><strong>Amount:</strong> ₦${transaction.gross_amount}</p>`,
+              }).catch((e) => console.error("Sender tip email error:", e.message));
+            }
           }
 
         } catch (
