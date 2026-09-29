@@ -5,6 +5,7 @@ const { WhatsApp } = require("twilio/lib/twiml/VoiceResponse");
 const { sub, add } = require("date-fns");
 const { default: status } = require("http-status");
 const userModel = require("../User/user.model");
+const { getUnbookedServiceStages } = require("../Availability/availability.service");
 
 const addServiceService = async (data) => {
   return await serviceModel.create(data);
@@ -421,6 +422,31 @@ const aServiceDetailsService = async (id, userId = null) => {
         preserveNullAndEmptyArrays: true
       }
     },
+    {
+      $lookup: {
+        from: "bookings",
+        let: { serviceId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: {
+                $and: [
+                  { $eq: ["$service", "$$serviceId"] },
+                  { $ne: ["$status", "cancelled"] }
+                ]
+              }
+            }
+          },
+          {
+            $project: {
+              startTime: 1,
+              endTime: 1
+            }
+          }
+        ],
+        as: "serviceBookings"
+      }
+    },
 
     // category
     {
@@ -522,7 +548,75 @@ const aServiceDetailsService = async (id, userId = null) => {
         isCashAllowed: 1,
         address: "$provider.address",
 
-        availability: "$availability.slot",
+        availability: {
+          $map: {
+            input: { $ifNull: ["$availability.slot", []] },
+            as: "s",
+            in: {
+              _id: "$$s._id",
+              startTime: "$$s.startTime",
+              endTime: "$$s.endTime",
+              capacity: { $ifNull: ["$$s.capacity", 1] },
+              bookedCount: {
+                $size: {
+                  $filter: {
+                    input: "$serviceBookings",
+                    as: "b",
+                    cond: {
+                      $and: [
+                        { $eq: ["$$b.startTime", "$$s.startTime"] },
+                        { $eq: ["$$b.endTime", "$$s.endTime"] }
+                      ]
+                    }
+                  }
+                }
+              },
+              remainingCapacity: {
+                $max: [
+                  0,
+                  {
+                    $subtract: [
+                      { $ifNull: ["$$s.capacity", 1] },
+                      {
+                        $size: {
+                          $filter: {
+                            input: "$serviceBookings",
+                            as: "b",
+                            cond: {
+                              $and: [
+                                { $eq: ["$$b.startTime", "$$s.startTime"] },
+                                { $eq: ["$$b.endTime", "$$s.endTime"] }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              },
+              isBooked: {
+                $gte: [
+                  {
+                    $size: {
+                      $filter: {
+                        input: "$serviceBookings",
+                        as: "b",
+                        cond: {
+                          $and: [
+                            { $eq: ["$$b.startTime", "$$s.startTime"] },
+                            { $eq: ["$$b.endTime", "$$s.endTime"] }
+                          ]
+                        }
+                      }
+                    }
+                  },
+                  { $ifNull: ["$$s.capacity", 1] }
+                ]
+              }
+            }
+          }
+        },
         categoryName: "$category.name",
         categoryId: "$category._id",
         subCategoryId: "$subcategory._id",
@@ -536,6 +630,31 @@ const aServiceDetailsService = async (id, userId = null) => {
       }
     }
   ]);
+
+  if (!result || result.length === 0) {
+    return [];
+  }
+
+  const service = result[0];
+  const isOwnerOrAdmin = userId && (
+    String(userId) === String(service.providerId)
+  );
+
+  const slots = service.availability || [];
+  const hasSlots = slots.length > 0;
+  const allBooked = hasSlots && slots.every(s => s.isBooked);
+
+  // If all slots are booked and the viewer is not the service owner/admin, user will not see that service
+  if (allBooked && !isOwnerOrAdmin) {
+    return [];
+  }
+
+  // If viewer is regular user, only show available (unbooked) slots
+  if (!isOwnerOrAdmin && hasSlots) {
+    service.availability = slots.filter(s => !s.isBooked);
+  }
+
+  return [service];
 };
 
 
@@ -931,23 +1050,8 @@ const allServiceService = async (options) => {
     // console.log(`📍 Location filter applied (${radiusKm}km)`);
   }
 
-  // ---------- AVAILABILITY CHECK ----------
-  pipeline.push(
-    {
-      $lookup: {
-        from: "availabilities",
-        let: { serviceId: "$_id" },
-        pipeline: [
-          { $match: { $expr: { $eq: ["$service", "$$serviceId"] } } },
-          { $match: { "slot.0": { $exists: true } } }
-        ],
-        as: "availability",
-      },
-    },
-    {
-      $match: { $expr: { $gt: [{ $size: "$availability" }, 0] } }
-    }
-  );
+  // ---------- AVAILABILITY CHECK (exclude services where all slots are booked) ----------
+  pipeline.push(...getUnbookedServiceStages("$_id"));
 
   // ---------- PARTNER + CATEGORY + SUBCATEGORY ----------
   pipeline.push(
@@ -1061,33 +1165,8 @@ const popularService = async (userId, options) => {
 
   pipeline.push({ $match: matchStage });
 
-  // ---------- AVAILABILITY CHECK (only services with at least one slot) ----------
-  pipeline.push(
-    {
-      $lookup: {
-        from: "availabilities",
-        let: { serviceId: "$_id" },
-        pipeline: [
-          {
-            $match: {
-              $expr: { $eq: ["$service", "$$serviceId"] }
-            }
-          },
-          {
-            $match: {
-              "slot.0": { $exists: true }
-            }
-          }
-        ],
-        as: "availability"
-      }
-    },
-    {
-      $match: {
-        $expr: { $gt: [{ $size: "$availability" }, 0] }
-      }
-    }
-  );
+  // ---------- AVAILABILITY CHECK (exclude services where all slots are booked) ----------
+  pipeline.push(...getUnbookedServiceStages("$_id"));
 
   // ---------- USER LOOKUP ----------
   pipeline.push(
@@ -1283,23 +1362,8 @@ const nearestPopularService = async (options) => {
               : {}),
           },
         },
-        // availability check (only services with at least one slot)
-        {
-          $lookup: {
-            from: "availabilities",
-            let: { serviceId: "$_id" },
-            pipeline: [
-              { $match: { $expr: { $eq: ["$service", "$$serviceId"] } } },
-              { $match: { "slot.0": { $exists: true } } },
-            ],
-            as: "availability",
-          },
-        },
-        {
-          $match: {
-            $expr: { $gt: [{ $size: "$availability" }, 0] },
-          },
-        },
+        // availability check (only services with at least one unbooked slot)
+        ...getUnbookedServiceStages("$_id"),
         // pick this provider's most popular qualifying service
         { $sort: { sell: -1, avgRating: -1 } },
         { $limit: 1 },

@@ -21,6 +21,8 @@ const {
 
 const { default: status } =
   require("http-status");
+const { checkSlotAvailability } =
+  require("../Availability/availability.service");
 
 const response =
   require("../../helpers/response");
@@ -130,6 +132,9 @@ const bookController = catchAsync(
       });
     }
 
+    if (startTime && endTime) {
+      await checkSlotAvailability(service, startTime, endTime);
+    }
 
     const partnerDetails =
       await partnerModel.findOne({

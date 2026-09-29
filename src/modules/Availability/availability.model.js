@@ -5,10 +5,11 @@ const availabilitySchema = new mongoose.Schema({
     slot: [
         {
             startTime: { type: Date, required: true },
-            endTime: { type: Date, required: true }
+            endTime: { type: Date, required: true },
+            capacity: { type: Number, default: 1, min: 1 }
         }
     ],
-})
+}, { timestamps: true });
 
 
 module.exports = mongoose.model('Availability', availabilitySchema);

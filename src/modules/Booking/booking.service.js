@@ -21,6 +21,7 @@ const {
     calculateBookingRequestExpireAt,
     adjustPayoutCycleOnRefund,
 } = require("./bookingExpiry.service");
+const { checkSlotAvailability } = require("../Availability/availability.service");
 
 const bookingService = async (data) => {
 
@@ -28,6 +29,11 @@ const bookingService = async (data) => {
 
     if (!service) {
         throw new ApiError(status.NOT_FOUND, "Service not found");
+    }
+
+    // Check slot availability and capacity
+    if (data.startTime && data.endTime) {
+        await checkSlotAvailability(data.service, data.startTime, data.endTime);
     }
 
     if (!data.isOneTime) {
@@ -192,9 +198,12 @@ const bookingService = async (data) => {
 const modifyBookingService = async (bookingId, loginUser, data) => {
     // console.log({ bookingId, loginUser, data })
     const booking = await bookingModel.findById(bookingId);
-    if (loginUser != booking.user.toString() || booking.status != "approved") {
+    if (!booking || loginUser != booking.user.toString() || booking.status != "approved") {
         // console.log("Unauthorized modification attempt", { loginUser, bookingUser: booking.user.toString(), bookingStatus: booking.status })
         throw new ApiError(status.BAD_REQUEST, "You can't modify this booking");
+    }
+    if (data.startTime && data.endTime) {
+        await checkSlotAvailability(booking.service, data.startTime, data.endTime);
     }
     return await bookingModel.findByIdAndUpdate(bookingId, data, { new: true });
 }

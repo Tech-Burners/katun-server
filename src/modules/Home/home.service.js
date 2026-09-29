@@ -4,6 +4,7 @@ const serviceModel = require("../Service/service.model");
 const userModel = require("../User/user.model");
 const promoModel = require("../Promo/promo.model");
 const { sub } = require("date-fns/sub");
+const { getUnbookedServiceStages } = require("../Availability/availability.service");
 
 const pendingBookingService = async (user) => {
 
@@ -225,6 +226,7 @@ const nearestService = async (longitude, latitude) => {
         "service.isDeleted": false
       }
     },
+    ...getUnbookedServiceStages("$service._id"),
 
     {
       $lookup: {
@@ -545,6 +547,7 @@ const allNearestService = async (longitude, latitude, options) => {
     {
       $match: serviceMatch,
     },
+    ...getUnbookedServiceStages("$service._id"),
 
     // ---------- PROVIDER ----------
     {
