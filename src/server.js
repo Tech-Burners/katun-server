@@ -3,7 +3,7 @@ require("dotenv").config();
 const mongoose = require("mongoose");
 const logger = require("./helpers/logger");
 const { seedAdmin } = require("./seeder/seed");
-// Socket.io setup
+// Socket.io setup - updated
 const { createServer } = require("http");
 const {socketIO} = require("./socket/socketIO.js");
 const socket = require("socket.io");
@@ -92,4 +92,4 @@ async function graceful(err) {
 
 process.on("SIGINT", graceful);
 process.on("SIGTERM", graceful);
-process.on("uncaughtException", graceful);
+process.on("uncaughtException", graceful);

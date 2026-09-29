@@ -223,6 +223,7 @@ const userPastBookingController = catchAsync(async (req, res) => {
         limit: Number(req.query.limit) || 10
     }
     const result = await userPastBookingService(req.User._id, option);
+    console.log(`[PAST_BOOKING_USEREND] req.User._id=${req.User?._id}, email=${req.User?.email}, found=${result?.pagination?.totalResults}`);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "pasted booking", data: result, }));
 })
 

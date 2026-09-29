@@ -1141,11 +1141,15 @@ const userPendingBookingService = async (user, option) => {
         { paymentMethod: { $ne: "cash" }, paymentStatus: "paid" }
     ];
 
+    const userObjId = mongoose.Types.ObjectId.isValid(user)
+        ? new mongoose.Types.ObjectId(String(user))
+        : null;
+
     const [result, total] = await Promise.all([
         bookingModel.aggregate([
             {
                 $match: {
-                    user: new mongoose.Types.ObjectId(String(user)),
+                    user: userObjId ? { $in: [userObjId, String(user)] } : user,
                     status: "pending",
                     expireDate: { $gte: now },
                     $or: paymentMatch
@@ -1230,8 +1234,12 @@ const userUpcomingBookingService = async (user, option) => {
         }
     ];
 
+    const userObjId = mongoose.Types.ObjectId.isValid(user)
+        ? new mongoose.Types.ObjectId(String(user))
+        : null;
+
     const matchStage = {
-        user: new mongoose.Types.ObjectId(String(user)),
+        user: userObjId ? { $in: [userObjId, String(user)] } : user,
         status: "approved",
         sessionLeft: { $gt: 0 },
 
@@ -2543,8 +2551,12 @@ const userActiveBookingService = async (user, option) => {
         }
     ];
 
+    const userObjId = mongoose.Types.ObjectId.isValid(user)
+        ? new mongoose.Types.ObjectId(String(user))
+        : null;
+
     const matchStage = {
-        user: new mongoose.Types.ObjectId(String(user)),
+        user: userObjId ? { $in: [userObjId, String(user)] } : user,
         status: "approved",
         sessionLeft: { $gt: 0 },
 
@@ -2650,6 +2662,7 @@ const userActiveBookingService = async (user, option) => {
 
 
 const userPastBookingService = async (user, option) => {
+    console.log(user, "user");
 
     const { page, limit } = option;
 
@@ -2667,22 +2680,24 @@ const userPastBookingService = async (user, option) => {
         }
     ];
 
-    const matchStage = {
-        user: new mongoose.Types.ObjectId(String(user)),
+    const userObjId = mongoose.Types.ObjectId.isValid(user)
+        ? new mongoose.Types.ObjectId(String(user))
+        : null;
 
-        $and: [
+    const matchStage = {
+        user: userObjId ? { $in: [userObjId, String(user)] } : user,
+
+        $or: [
             {
-                $or: [
-                    {
-                        status: "completed"
-                    },
-                    {
-                        status: "approved",
-                        expireDate: { $lt: now }
-                    }
-                ]
+                status: "cancelled"
             },
             {
+                status: "completed",
+                $or: paymentMatch
+            },
+            {
+                status: "approved",
+                expireDate: { $lt: now },
                 $or: paymentMatch
             }
         ]
@@ -2743,6 +2758,22 @@ const userPastBookingService = async (user, option) => {
             },
 
             {
+                $lookup: {
+                    from: "users",
+                    localField: "provider",
+                    foreignField: "_id",
+                    as: "providerData"
+                }
+            },
+
+            {
+                $unwind: {
+                    path: "$providerData",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+
+            {
                 $project: {
                     customBookingId: "$bookingId",
                     image: 1,
@@ -2751,19 +2782,21 @@ const userPastBookingService = async (user, option) => {
                     serviceName: "$serviceData.name",
                     serviceId: "$serviceData._id",
 
-                    providerName: "$userData.fullName",
+                    providerName: { $ifNull: ["$userData.fullName", "$providerData.fullName", ""] },
 
                     sessionLeft: 1,
 
                     date: 1,
                     status: 1,
+                    reason: 1,
 
                     startTime: 1,
                     endTime: 1,
 
                     expireDate: 1,
 
-                    createdAt: 1
+                    createdAt: 1,
+                    updatedAt: 1
                 }
             }
         ]),
