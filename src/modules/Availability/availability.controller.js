@@ -19,7 +19,7 @@ const deleteAvailabilityController = catchAsync(async (req, res) => {
 })
 
 const availabilityForAServiceController = catchAsync(async (req, res) => {
-    const onlyAvailable = req.query.onlyAvailable === "true";
+    const onlyAvailable = req.query.onlyAvailable === "false" || req.query.all === "true" ? false : true;
     const result = await availabilityForAServiceService(req.params.id, onlyAvailable);
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, message: "Availability fetched successfully", data: result, }));
 })

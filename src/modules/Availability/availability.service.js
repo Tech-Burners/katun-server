@@ -2,6 +2,7 @@ const availabilityModel = require("./availability.model");
 const bookingModel = require("../Booking/booking.model");
 const ApiError = require("../../helpers/ApiError");
 const { default: status } = require("http-status");
+const mongoose = require("mongoose");
 
 const normalizeSlot = (s) => ({
     startTime: new Date(s.startTime),
@@ -60,14 +61,18 @@ const deleteAvailabilityService = async (id) => {
     return result;
 };
 
-const availabilityForAServiceService = async (id, onlyAvailable = false) => {
-    const availability = await availabilityModel.findOne({ service: id }).lean();
+const availabilityForAServiceService = async (id, onlyAvailable = true) => {
+    let availability = await availabilityModel.findOne({ service: id }).lean();
+    if (!availability && mongoose.Types.ObjectId.isValid(id)) {
+        availability = await availabilityModel.findById(id).lean();
+    }
     if (!availability) {
         return null;
     }
 
+    const serviceId = availability.service || id;
     const bookings = await bookingModel.find({
-        service: id,
+        service: serviceId,
         status: { $ne: "cancelled" }
     }).select("startTime endTime status").lean();
 
@@ -81,18 +86,48 @@ const availabilityForAServiceService = async (id, onlyAvailable = false) => {
         const bookedCount = bookings.filter(b => {
             const bStart = new Date(b.startTime);
             const bEnd = new Date(b.endTime);
+
+            // 1. Exact timestamp match
             const exactMatch = bStart.getTime() === slotStartTime && bEnd.getTime() === slotEndTime;
-            const timeMatch = (
-                bStart.getUTCHours() === sStart.getUTCHours() &&
-                bStart.getUTCMinutes() === sStart.getUTCMinutes() &&
-                bEnd.getUTCHours() === sEnd.getUTCHours() &&
-                bEnd.getUTCMinutes() === sEnd.getUTCMinutes()
+            if (exactMatch) return true;
+
+            // 2. ISO match ignoring milliseconds
+            if (bStart.toISOString().slice(0, 19) === sStart.toISOString().slice(0, 19) &&
+                bEnd.toISOString().slice(0, 19) === sEnd.toISOString().slice(0, 19)) {
+                return true;
+            }
+
+            const sameDay = (
+                (bStart.getUTCFullYear() === sStart.getUTCFullYear() &&
+                 bStart.getUTCMonth() === sStart.getUTCMonth() &&
+                 bStart.getUTCDate() === sStart.getUTCDate()) ||
+                (bStart.getFullYear() === sStart.getFullYear() &&
+                 bStart.getMonth() === sStart.getMonth() &&
+                 bStart.getDate() === sStart.getDate())
             );
-            return exactMatch || timeMatch;
+
+            const sameTime = (
+                (bStart.getUTCHours() === sStart.getUTCHours() &&
+                 bStart.getUTCMinutes() === sStart.getUTCMinutes() &&
+                 bEnd.getUTCHours() === sEnd.getUTCHours() &&
+                 bEnd.getUTCMinutes() === sEnd.getUTCMinutes()) ||
+                (bStart.getHours() === sStart.getHours() &&
+                 bStart.getMinutes() === sStart.getMinutes() &&
+                 bEnd.getHours() === sEnd.getHours() &&
+                 bEnd.getMinutes() === sEnd.getMinutes())
+            );
+
+            // If slot has a specific calendar date (>= 2000), require both same day and same time
+            if (sStart.getUTCFullYear() >= 2000) {
+                return sameDay && sameTime;
+            }
+
+            // Recurring daily time-of-day slot
+            return sameTime;
         }).length;
 
         const remainingCapacity = Math.max(0, capacity - bookedCount);
-        const isBooked = bookedCount >= capacity;
+        const isBooked = bookedCount >= capacity || remainingCapacity <= 0;
 
         return {
             ...s,
@@ -104,7 +139,7 @@ const availabilityForAServiceService = async (id, onlyAvailable = false) => {
     });
 
     if (onlyAvailable) {
-        enrichedSlots = enrichedSlots.filter(s => !s.isBooked);
+        enrichedSlots = enrichedSlots.filter(s => !s.isBooked && s.remainingCapacity > 0);
     }
 
     return {
