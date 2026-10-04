@@ -714,6 +714,7 @@ const aPartnerDetailsService = async (id, userId = null) => {
                 image: "$userData.image",
 
                 aboutUs: "$partnerData.aboutUs",
+                amenities: { $ifNull: ["$partnerData.amenities", "$amenities", []] },
 
                 services: 1,
 
@@ -1167,6 +1168,7 @@ const detailsForAdminService = async (userId) => {
                 bankStatement: 1,
                 location: 1,
                 address: 1,
+                amenities: { $ifNull: ["$amenities", []] },
                 createdAt: 1,
             }
         }

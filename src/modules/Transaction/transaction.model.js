@@ -248,7 +248,6 @@ const transactionSchema = new mongoose.Schema(
         "failed",
       ],
       default: "none",
-      index: true,
     },
 
     refund_id: {

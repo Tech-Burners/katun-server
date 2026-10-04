@@ -556,8 +556,8 @@ const partnerProfileService = async (userId) => {
       $project: {
         businessName: '$partnerData.businessName',
         aboutUs: '$partnerData.aboutUs',
+        amenities: { $ifNull: ['$partnerData.amenities', []] },
         // location: '$partnerData.location',
-        // amenities: '$partnerData.amenities',
         // whatsappNumber: 1,
         number: 1,
         countryCode: 1,

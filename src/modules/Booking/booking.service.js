@@ -848,20 +848,40 @@ const bookingDetailsService = async (id, loginUserId) => {
         },
         { $unwind: { path: "$partnerData", preserveNullAndEmptyArrays: true } },
 
-        // {
-        //     $lookup: {
-        //         from: 'partners',
-        //         localField: 'serviceData.user',
-        //         foreignField: 'user',
-        //         as: 'partnerData'
-        //     }
-        // },
-        // {
-        //     $unwind: {
-        //         path: '$partnerData',
-        //         preserveNullAndEmptyArrays: true
-        //     }
-        // },
+        {
+            $lookup: {
+                from: "partners",
+                let: {
+                    serviceUserId: "$serviceData.user",
+                    providerId: "$provider"
+                },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                    {
+                                        $and: [
+                                            { $ne: ["$$serviceUserId", null] },
+                                            { $eq: ["$user", "$$serviceUserId"] }
+                                        ]
+                                    },
+                                    {
+                                        $and: [
+                                            { $ne: ["$$providerId", null] },
+                                            { $eq: ["$user", "$$providerId"] }
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    },
+                    { $limit: 1 }
+                ],
+                as: "partnerProfileData"
+            }
+        },
+        { $unwind: { path: "$partnerProfileData", preserveNullAndEmptyArrays: true } },
 
         {
             $lookup: {
@@ -945,6 +965,7 @@ const bookingDetailsService = async (id, loginUserId) => {
                 status: 1,
                 isOneTime: 1,
                 createdAt: 1,
+                amenities: { $ifNull: ["$partnerProfileData.amenities", []] },
                 myFeedback: 1,
                 oppositeFeedback: 1
             }
@@ -956,7 +977,6 @@ const bookingDetailsService = async (id, loginUserId) => {
 
 
 const bookingDetailsAdminEndService = async (id, loginUserId) => {
-
     const objectBookingId = new mongoose.Types.ObjectId(String(id));
     const objectUserId = new mongoose.Types.ObjectId(String(loginUserId));
 
@@ -1001,11 +1021,29 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
         {
             $lookup: {
                 from: 'partners',
-                let: { serviceUserId: '$serviceData.user' },
+                let: {
+                    serviceUserId: '$serviceData.user',
+                    providerId: '$provider'
+                },
                 pipeline: [
                     {
                         $match: {
-                            $expr: { $eq: ['$user', '$$serviceUserId'] }
+                            $expr: {
+                                $or: [
+                                    {
+                                        $and: [
+                                            { $ne: ['$$serviceUserId', null] },
+                                            { $eq: ['$user', '$$serviceUserId'] }
+                                        ]
+                                    },
+                                    {
+                                        $and: [
+                                            { $ne: ['$$providerId', null] },
+                                            { $eq: ['$user', '$$providerId'] }
+                                        ]
+                                    }
+                                ]
+                            }
                         }
                     },
                     { $limit: 1 }
@@ -1121,6 +1159,7 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 isOneTime: 1,
                 pass: 1,
                 createdAt: 1,
+                amenities: { $ifNull: ['$partnerData.amenities', []] },
 
                 myFeedback: 1,
                 oppositeFeedback: 1
