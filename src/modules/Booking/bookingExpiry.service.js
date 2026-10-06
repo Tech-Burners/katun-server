@@ -11,29 +11,67 @@ const { addNotificationService } = require("../Notification/notification.service
 const { emailWithNodemailer } = require("../../helpers/email");
 
 /**
- * Calculate bookingRequestExpireAt directly from booking date.
- * 1. If explicit bookingRequestExpireAt is provided, use it.
- * 2. If date is provided, use date directly as the booking expiry / approval deadline.
- * 3. Fall back to (now + 48 hours) if no date is given.
+ * Safely extract the appointment start datetime from booking data.
+ * Handles full ISO strings, Date objects, and recurring daily slots (year < 2000).
+ */
+const getAppointmentStartTime = (data = {}) => {
+  if (data.startTime) {
+    const sDate = new Date(data.startTime);
+    if (!isNaN(sDate.getTime())) {
+      // If sDate already contains a valid calendar year (>= 2000), use it directly
+      if (sDate.getFullYear() >= 2000) {
+        return sDate;
+      }
+      // If sDate is a time-only slot (e.g. 1970-01-01), combine with data.date
+      if (data.date) {
+        const dDate = new Date(data.date);
+        if (!isNaN(dDate.getTime())) {
+          const combined = new Date(dDate);
+          combined.setHours(sDate.getHours(), sDate.getMinutes(), sDate.getSeconds(), sDate.getMilliseconds());
+          return combined;
+        }
+      }
+      return sDate;
+    }
+  }
+
+  if (data.date) {
+    const dDate = new Date(data.date);
+    if (!isNaN(dDate.getTime())) {
+      return dDate;
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Calculate bookingRequestExpireAt (the provider approval deadline).
+ * 1. If explicit valid future bookingRequestExpireAt is provided, use it.
+ * 2. If appointment start time is in the future:
+ *    The provider has until the appointment start time (or max 48 hours, whichever is sooner) to approve.
+ * 3. Fall back to (now + 48 hours) if appointment start time is missing or not in future.
  */
 const calculateBookingRequestExpireAt = (data = {}) => {
+  const now = Date.now();
+
   if (data.bookingRequestExpireAt) {
     const exp = new Date(data.bookingRequestExpireAt);
-    if (!isNaN(exp.getTime())) {
+    if (!isNaN(exp.getTime()) && exp.getTime() > now) {
       return exp;
     }
   }
 
-  // Use booking date directly
-  if (data.date) {
-    const dateVal = new Date(data.date);
-    if (!isNaN(dateVal.getTime())) {
-      return dateVal;
-    }
+  const appointmentStart = getAppointmentStartTime(data);
+
+  if (appointmentStart && appointmentStart.getTime() > now) {
+    const maxDeadline = now + 48 * 60 * 60 * 1000;
+    const deadlineTime = Math.min(appointmentStart.getTime(), maxDeadline);
+    return new Date(deadlineTime);
   }
 
   // Default fallback: 48 hours from now
-  return new Date(Date.now() + 48 * 60 * 60 * 1000);
+  return new Date(now + 48 * 60 * 60 * 1000);
 };
 
 /**
@@ -435,10 +473,20 @@ const processExpiredBooking = async (bookingIdOrDoc) => {
         { bookingRequestExpireAt: { $lte: now } },
         {
           bookingRequestExpireAt: { $exists: false },
+          startTime: { $lte: now },
+        },
+        {
+          bookingRequestExpireAt: null,
+          startTime: { $lte: now },
+        },
+        {
+          bookingRequestExpireAt: { $exists: false },
+          startTime: { $exists: false },
           date: { $lte: now },
         },
         {
           bookingRequestExpireAt: null,
+          startTime: null,
           date: { $lte: now },
         },
       ],
@@ -564,6 +612,21 @@ const sendProviderExpiryReminders = async () => {
       },
       {
         bookingRequestExpireAt: { $exists: false },
+        startTime: {
+          $gt: now,
+          $lte: reminderThreshold,
+        },
+      },
+      {
+        bookingRequestExpireAt: null,
+        startTime: {
+          $gt: now,
+          $lte: reminderThreshold,
+        },
+      },
+      {
+        bookingRequestExpireAt: { $exists: false },
+        startTime: { $exists: false },
         date: {
           $gt: now,
           $lte: reminderThreshold,
@@ -571,6 +634,7 @@ const sendProviderExpiryReminders = async () => {
       },
       {
         bookingRequestExpireAt: null,
+        startTime: null,
         date: {
           $gt: now,
           $lte: reminderThreshold,
@@ -696,10 +760,20 @@ const processAllExpiredBookings = async () => {
         { bookingRequestExpireAt: { $lte: now } },
         {
           bookingRequestExpireAt: { $exists: false },
+          startTime: { $lte: now },
+        },
+        {
+          bookingRequestExpireAt: null,
+          startTime: { $lte: now },
+        },
+        {
+          bookingRequestExpireAt: { $exists: false },
+          startTime: { $exists: false },
           date: { $lte: now },
         },
         {
           bookingRequestExpireAt: null,
+          startTime: null,
           date: { $lte: now },
         },
       ],
@@ -827,6 +901,7 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
 };
 
 module.exports = {
+  getAppointmentStartTime,
   calculateBookingRequestExpireAt,
   adjustPayoutCycleOnRefund,
   executeFlutterwaveRefund,

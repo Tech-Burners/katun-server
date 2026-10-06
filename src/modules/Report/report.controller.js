@@ -2,7 +2,6 @@ const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 const { default: status } = require("http-status");
 const { getAllReportService, addReportService, readUnreadReportService, reportDetailsService, reportStatusUpdateService, reportCountService } = require("./report.service");
-const { search } = require("./report.route");
 const { addAuditReport } = require("../Audit/audit.service");
 
 

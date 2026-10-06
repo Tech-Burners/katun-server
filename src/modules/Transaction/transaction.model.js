@@ -10,7 +10,6 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      index: true,
       trim: true,
     },
 
@@ -289,13 +288,6 @@ const transactionSchema = new mongoose.Schema(
 // =====================================================
 // INDEXES
 // =====================================================
-
-// tx_ref already has unique: true,
-// but keeping this explicit is fine.
-transactionSchema.index(
-  { tx_ref: 1 },
-  { unique: true }
-);
 
 
 // Useful for webhook lookup

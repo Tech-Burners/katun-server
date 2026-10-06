@@ -36,6 +36,7 @@ const {
 const {
   calculateBookingRequestExpireAt,
   sendNewBookingNotifications,
+  getAppointmentStartTime,
 } = require("../modules/Booking/bookingExpiry.service");
 
 
@@ -969,6 +970,9 @@ const flutterwaveWebhook =
           };
 
 
+          const appointmentBase = getAppointmentStartTime(data) || (data.date ? new Date(data.date) : new Date());
+          const baseTime = !isNaN(appointmentBase.getTime()) ? appointmentBase.getTime() : Date.now();
+
           if (
             data.isOneTime
           ) {
@@ -979,11 +983,7 @@ const flutterwaveWebhook =
 
             bookingPayload.expireDate =
               new Date(
-
-                new Date(
-                  data.date
-                ).getTime() +
-
+                baseTime +
                 86400000
               );
 
@@ -995,11 +995,7 @@ const flutterwaveWebhook =
 
             bookingPayload.expireDate =
               new Date(
-
-                new Date(
-                  data.date
-                ).getTime() +
-
+                baseTime +
                 validity *
                 86400000
               );

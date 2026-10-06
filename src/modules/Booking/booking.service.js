@@ -20,6 +20,7 @@ const { emailWithNodemailer } = require("../../helpers/email");
 const {
     calculateBookingRequestExpireAt,
     adjustPayoutCycleOnRefund,
+    getAppointmentStartTime,
 } = require("./bookingExpiry.service");
 const { checkSlotAvailability } = require("../Availability/availability.service");
 
@@ -36,18 +37,21 @@ const bookingService = async (data) => {
         await checkSlotAvailability(data.service, data.startTime, data.endTime);
     }
 
+    const appointmentBase = getAppointmentStartTime(data) || (data.date ? new Date(data.date) : new Date());
+    const baseTime = !isNaN(appointmentBase.getTime()) ? appointmentBase.getTime() : Date.now();
+
     if (!data.isOneTime) {
-        data.sessionLeft = service.pass.noOfSessions;
+        data.sessionLeft = service.pass?.noOfSessions;
         data.expireDate = new Date(
-            new Date(data.date).getTime() +
-            service.pass.validity * 24 * 60 * 60 * 1000
+            baseTime +
+            (service.pass?.validity || 30) * 24 * 60 * 60 * 1000
         );
     }
 
     if (data.isOneTime) {
         data.sessionLeft = 1;
         data.expireDate = new Date(
-            new Date(data.date).getTime() +
+            baseTime +
             1 * 24 * 60 * 60 * 1000
         );
     }
@@ -463,9 +467,8 @@ const approveBookingService = async (id) => {
     }
 
     // Requirement 10: Expired booking (service time has passed) cannot be approved even if cron has not run yet
-    const isExpired =
-        (booking.bookingRequestExpireAt && booking.bookingRequestExpireAt <= now) ||
-        (!booking.bookingRequestExpireAt && booking.date && new Date(booking.date) <= now);
+    const appointmentTime = booking.bookingRequestExpireAt || booking.startTime || booking.date;
+    const isExpired = appointmentTime && new Date(appointmentTime) <= now;
 
     if (isExpired) {
         throw new ApiError(status.BAD_REQUEST, "This booking request service time has passed and cannot be approved");
@@ -479,10 +482,20 @@ const approveBookingService = async (id) => {
                 { bookingRequestExpireAt: { $gt: now } },
                 {
                     bookingRequestExpireAt: { $exists: false },
+                    startTime: { $gt: now }
+                },
+                {
+                    bookingRequestExpireAt: null,
+                    startTime: { $gt: now }
+                },
+                {
+                    bookingRequestExpireAt: { $exists: false },
+                    startTime: { $exists: false },
                     date: { $gt: now }
                 },
                 {
                     bookingRequestExpireAt: null,
+                    startTime: null,
                     date: { $gt: now }
                 }
             ]
@@ -647,9 +660,8 @@ const assignStuffService = async (id, stuff) => {
     }
 
     if (booking.status === "pending") {
-        const isExpired =
-            (booking.bookingRequestExpireAt && booking.bookingRequestExpireAt <= now) ||
-            (!booking.bookingRequestExpireAt && booking.date && new Date(booking.date) <= now);
+        const appointmentTime = booking.bookingRequestExpireAt || booking.startTime || booking.date;
+        const isExpired = appointmentTime && new Date(appointmentTime) <= now;
 
         if (isExpired) {
             throw new ApiError(status.BAD_REQUEST, "This booking request service time has passed and cannot be approved or assigned");
@@ -682,10 +694,20 @@ const assignStuffService = async (id, stuff) => {
                         { bookingRequestExpireAt: { $gt: now } },
                         {
                             bookingRequestExpireAt: { $exists: false },
+                            startTime: { $gt: now }
+                        },
+                        {
+                            bookingRequestExpireAt: null,
+                            startTime: { $gt: now }
+                        },
+                        {
+                            bookingRequestExpireAt: { $exists: false },
+                            startTime: { $exists: false },
                             date: { $gt: now }
                         },
                         {
                             bookingRequestExpireAt: null,
+                            startTime: null,
                             date: { $gt: now }
                         }
                     ]
@@ -1277,18 +1299,26 @@ const userUpcomingBookingService = async (user, option) => {
         ? new mongoose.Types.ObjectId(String(user))
         : null;
 
+    const futureBookingCondition = {
+        $or: [
+            { startTime: { $gt: now } },
+            { startTime: { $exists: false }, date: { $gt: now } },
+            { startTime: null, date: { $gt: now } }
+        ]
+    };
+
     const matchStage = {
         user: userObjId ? { $in: [userObjId, String(user)] } : user,
         status: "approved",
         sessionLeft: { $gt: 0 },
 
-        // Future booking only
-        date: { $gt: now },
-
         // Not expired
         expireDate: { $gte: now },
 
-        $or: paymentMatch
+        $and: [
+            futureBookingCondition,
+            { $or: paymentMatch }
+        ]
     };
 
     const [result, total] = await Promise.all([
@@ -1382,7 +1412,11 @@ const allUpcomingBookingService = async (user, option) => {
         status: "approved",
 
         // Booking has not started yet
-        date: { $gt: now },
+        $or: [
+            { startTime: { $gt: now } },
+            { startTime: { $exists: false }, date: { $gt: now } },
+            { startTime: null, date: { $gt: now } }
+        ],
 
         // Booking must not already be expired
         expireDate: { $gt: now }
@@ -1761,7 +1795,11 @@ const allActiveBookingService = async (user, option) => {
         status: "approved",
 
         // Booking has actually started
-        date: { $lte: now },
+        $or: [
+            { startTime: { $lte: now } },
+            { startTime: { $exists: false }, date: { $lte: now } },
+            { startTime: null, date: { $lte: now } }
+        ],
 
         // Booking is still active
         expireDate: { $gt: now }
@@ -2594,18 +2632,26 @@ const userActiveBookingService = async (user, option) => {
         ? new mongoose.Types.ObjectId(String(user))
         : null;
 
+    const startedBookingCondition = {
+        $or: [
+            { startTime: { $lte: now } },
+            { startTime: { $exists: false }, date: { $lte: now } },
+            { startTime: null, date: { $lte: now } }
+        ]
+    };
+
     const matchStage = {
         user: userObjId ? { $in: [userObjId, String(user)] } : user,
         status: "approved",
         sessionLeft: { $gt: 0 },
 
-        // Booking has started
-        date: { $lte: now },
-
         // Booking has not expired
         expireDate: { $gte: now },
 
-        $or: paymentMatch
+        $and: [
+            startedBookingCondition,
+            { $or: paymentMatch }
+        ]
     };
 
     const [result, total] = await Promise.all([

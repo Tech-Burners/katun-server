@@ -1,6 +1,5 @@
 const { default: mongoose } = require("mongoose");
 const transactionModel = require("./transaction.model");
-const { options } = require("./transaction.route");
 const userModel = require("../User/user.model");
 const employeeModel = require("../Employee/employee.model");
 const ApiError = require("../../helpers/ApiError");
