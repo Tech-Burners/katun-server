@@ -18,20 +18,36 @@ const keyPath = path.join(
 
 console.log("Firebase key path:", keyPath);
 
-const serviceAccount = JSON.parse(
-  fs.readFileSync(keyPath, "utf8")
-);
+let serviceAccount = null;
 
-let firebaseApp;
-
-if (getApps().length === 0) {
-  firebaseApp = initializeApp({
-    credential: cert(serviceAccount),
-  });
-} else {
-  firebaseApp = getApps()[0];
+if (fs.existsSync(keyPath)) {
+  try {
+    serviceAccount = JSON.parse(fs.readFileSync(keyPath, "utf8"));
+  } catch (err) {
+    console.error("❌ Failed to parse googleFirebaseAdmin.json:", err.message);
+  }
+} else if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (err) {
+    console.error("❌ Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", err.message);
+  }
 }
 
-const firebaseAuth = getAuth(firebaseApp);
+let firebaseApp = null;
+let firebaseAuth = null;
+
+if (serviceAccount) {
+  if (getApps().length === 0) {
+    firebaseApp = initializeApp({
+      credential: cert(serviceAccount),
+    });
+  } else {
+    firebaseApp = getApps()[0];
+  }
+  firebaseAuth = getAuth(firebaseApp);
+} else {
+  console.warn("⚠️ Warning: googleFirebaseAdmin.json not found! Please place googleFirebaseAdmin.json in project root or set FIREBASE_SERVICE_ACCOUNT in .env");
+}
 
 module.exports = firebaseAuth;
