@@ -17,6 +17,7 @@ const { addNotificationService } = require("../Notification/notification.service
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
 const { emailWithNodemailer } = require("../../helpers/email");
+const { sendOtpVerifiedEmail } = require("../../helpers/emailNotification");
 const {
     calculateBookingRequestExpireAt,
     adjustPayoutCycleOnRefund,
@@ -235,10 +236,11 @@ const checkPinService = async (bookingId, pin) => {
             userModel.findById(booking.provider),
         ]);
 
-        const userTitle = "PIN Verified";
-        const userMessage = `Your PIN for ${serviceName} has been verified successfully.`;
-        const partnerTitle = "Customer PIN Verified";
-        const partnerMessage = `Customer PIN for ${serviceName} (Booking ID: ${booking.bookingId || booking._id}) has been verified successfully.`;
+        const providerName = partnerUserDoc?.fullName || "AuraVive Partner";
+        const userTitle = "OTP Verified";
+        const userMessage = `Your OTP for ${serviceName} has been verified successfully. Your service session has now started.`;
+        const partnerTitle = "Customer OTP Verified";
+        const partnerMessage = `Customer OTP for ${serviceName} (Booking ID: ${booking.bookingId || booking._id}) has been verified successfully. You may now begin the service.`;
 
         // 1. Notify User (Customer)
         if (userDoc) {
@@ -262,11 +264,14 @@ const checkPinService = async (bookingId, pin) => {
             });
 
             if (userDoc.email) {
-                await emailWithNodemailer({
+                await sendOtpVerifiedEmail({
                     email: userDoc.email,
-                    subject: userTitle,
-                    html: `<p>Hello ${userDoc.fullName || "Valued Customer"},</p><p>${userMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p>`,
-                }).catch((e) => console.error("User PIN verification email error:", e.message));
+                    fullName: userDoc.fullName,
+                    serviceName,
+                    providerName,
+                    bookingId: booking.bookingId || booking._id,
+                    date: new Date(),
+                }).catch((e) => console.error("User OTP verification email error:", e.message));
             }
         }
 
@@ -296,7 +301,7 @@ const checkPinService = async (bookingId, pin) => {
                     email: partnerUserDoc.email,
                     subject: partnerTitle,
                     html: `<p>Hello ${partnerUserDoc.fullName || "Partner"},</p><p>${partnerMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p>`,
-                }).catch((e) => console.error("Partner PIN verification email error:", e.message));
+                }).catch((e) => console.error("Partner OTP verification email error:", e.message));
             }
         }
 
@@ -308,8 +313,21 @@ const checkPinService = async (bookingId, pin) => {
 };
 
 
-const markAsCompletedService = async (id, data) => {
+const markAsCompletedService = async (id, data = {}) => {
     const booking = await bookingModel.findById(id);
+    if (!booking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+
+    // Verify PIN if provided in the body
+    if (data?.pin) {
+        if (booking.pin == data.pin) {
+            booking.pinVerified = true;
+        } else {
+            throw new ApiError(status.BAD_REQUEST, 'Pin not matched');
+        }
+    }
+
     if (booking.pinVerified == true && booking.status == 'approved') {
         if (booking.sessionLeft <= 0) {
             throw new ApiError(status.BAD_REQUEST, 'No sessions left in this booking');
@@ -331,9 +349,14 @@ const markAsCompletedService = async (id, data) => {
             }
         } catch (_) {}
 
-        const receiverData = await userModel.findById(booking.user);
-        const title = "Service Completed";
-        const message = `Your service for ${serviceName} has been marked as completed.`;
+        const [receiverData, partnerUserDoc] = await Promise.all([
+            userModel.findById(booking.user),
+            userModel.findById(booking.provider),
+        ]);
+
+        const providerName = partnerUserDoc?.fullName || "AuraVive Partner";
+        const title = "OTP Verified";
+        const message = `Your OTP for ${serviceName} has been verified successfully. Your service session has now started.`;
 
         // 1. Push Notification
         if (receiverData && receiverData.enabledPushNotification !== false) {
@@ -356,13 +379,16 @@ const markAsCompletedService = async (id, data) => {
             bookingId: booking._id,
         });
 
-        // 3. Email Notification
+        // 3. Email Notification (OTP Verified / Service Started)
         if (receiverData?.email) {
-            await emailWithNodemailer({
+            await sendOtpVerifiedEmail({
                 email: receiverData.email,
-                subject: title,
-                html: `<p>Hello ${receiverData.fullName || "Valued Customer"},</p><p>Your service for <strong>${serviceName}</strong> has been marked as completed.</p>`,
-            }).catch((e) => console.error("Completion email error:", e.message));
+                fullName: receiverData.fullName,
+                serviceName,
+                providerName,
+                bookingId: booking.bookingId || booking._id,
+                date: booking.checkin || new Date(),
+            }).catch((e) => console.error("OTP verification email error:", e.message));
         }
 
         return true;

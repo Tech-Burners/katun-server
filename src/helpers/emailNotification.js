@@ -550,7 +550,115 @@ const sendTransactionEmail = async ({
   }
 };
 
+/**
+ * 9. OTP / Verification Code Verified Email (Check-in / Service Started)
+ */
+const sendOtpVerifiedEmail = async ({
+  email,
+  fullName,
+  serviceName = "Service",
+  providerName = "AuraVive Partner",
+  bookingId,
+  date = new Date(),
+  ctaUrl = DEFAULT_LOGIN_URL,
+}) => {
+  if (!email) return;
+
+  const displayName = fullName || "Valued Customer";
+  const dateObj = date instanceof Date ? date : new Date(date);
+  const formattedDate = !isNaN(dateObj.getTime())
+    ? dateObj.toLocaleString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : new Date().toLocaleDateString();
+
+  const content = `
+    <p style="margin: 0 0 16px;">Hello <strong>${displayName}</strong>,</p>
+    <p style="margin: 0 0 20px;">Your verification code (OTP) for <strong>${serviceName}</strong> has been verified successfully by your service provider <strong>${providerName}</strong>.</p>
+
+    <!-- Status Card -->
+    <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0 24px;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.6px;">Verification Status</div>
+      <div style="font-size: 22px; font-weight: 800; color: #15803d; margin: 6px 0 4px;">
+        OTP Verified &amp; Check-in Confirmed
+      </div>
+      <div style="font-size: 13px; color: #16a34a; font-weight: 600;">
+        ● Service Session Started
+      </div>
+    </div>
+
+    <!-- Booking Details Table -->
+    <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 24px;">
+      <table width="100%" cellpadding="11" cellspacing="0" style="border-collapse: collapse; font-size: 13.5px;">
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #fafafa;">
+          <td colspan="2" style="font-weight: 700; color: #334155; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">Session Details</td>
+        </tr>
+        ${
+          bookingId
+            ? `<tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="color: #64748b; width: 40%;">Booking ID:</td>
+                <td style="font-weight: 600; color: #0f172a;">${bookingId}</td>
+              </tr>`
+            : ""
+        }
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; width: 40%;">Service Name:</td>
+          <td style="font-weight: 600; color: #0f172a;">${serviceName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b;">Service Provider:</td>
+          <td style="font-weight: 600; color: #0f172a;">${providerName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b;">Check-in Time:</td>
+          <td style="font-weight: 600; color: #0f172a;">${formattedDate}</td>
+        </tr>
+        <tr>
+          <td style="color: #64748b;">Service Status:</td>
+          <td style="font-weight: 700; color: #15803d;">In Progress (Service Started)</td>
+        </tr>
+      </table>
+    </div>
+
+    <div style="background-color: #f8fafc; border-left: 4px solid #1F6F78; padding: 14px 16px; border-radius: 4px; margin-bottom: 24px; font-size: 13px; color: #475569;">
+      <strong>Note:</strong> Your service session is now underway. Once your session concludes, your provider will mark it as fully completed.
+    </div>
+
+    <!-- CTA Button -->
+    <div style="text-align: center; margin: 28px 0 20px;">
+      <a href="${ctaUrl}" style="background-color: #1F6F78; color: #ffffff; padding: 12px 28px; text-decoration: none; font-size: 14px; font-weight: 600; border-radius: 6px; display: inline-block;">
+        View Booking in Dashboard
+      </a>
+    </div>
+  `;
+
+  const html = renderBaseTemplate({
+    title: "OTP Verified - Service Started",
+    badgeText: "OTP Verified",
+    badgeColor: "#15803d",
+    badgeBg: "#dcfce7",
+    content,
+    ctaUrl,
+    ctaText: "View Booking in Dashboard",
+  });
+
+  try {
+    await emailWithNodemailer({
+      email,
+      subject: `OTP Verified - Service Started: ${serviceName} | ${APP_NAME}`,
+      html,
+    });
+  } catch (error) {
+    console.error(`Failed to send OTP Verified email to ${email}:`, error.message);
+  }
+};
+
 module.exports = {
+  sendOtpVerifiedEmail,
   sendUserWelcomeEmail,
   sendPartnerRegistrationEmail,
   sendPartnerApprovedEmail,

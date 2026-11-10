@@ -31,7 +31,7 @@ const bookingController = catchAsync(async (req, res) => {
 
 const verifyPinController = catchAsync(async (req, res) => {
     const result = await checkPinService(req.params.bookingId, req.body.pin);
-    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "Pin verified successfully", data: result, }));
+    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "OTP verified successfully, service started", data: result, }));
 })
 
 const modifyBookingController = catchAsync(async (req, res) => {
@@ -286,7 +286,7 @@ const bookingFeedbackController = catchAsync(async (req, res) => {
 
 const markAsCompletedController = catchAsync(async (req, res) => {
     const result = await markAsCompletedService(req.params.id, req.body);
-    return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Pin matched", data: result, }));
+    return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Booking", message: "OTP verified successfully, service started", data: result, }));
 })
 
 
