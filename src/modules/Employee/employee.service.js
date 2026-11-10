@@ -7,6 +7,11 @@ const employerModel = require("../Employer/employer.model");
 const userModel = require("../User/user.model");
 const employeeModel = require("./employee.model");
 const mongoose = require("mongoose");
+const {
+    sendStaffCredentialsEmail,
+    sendAccountSuspendedEmail,
+    sendAccountActivatedEmail,
+} = require("../../helpers/emailNotification");
 
 // const addEmployeeService = async (data) => {
 
@@ -170,6 +175,15 @@ const addEmployeeService = async (data) => {
         await employer.save({ session });
 
         await session.commitTransaction();
+
+        if (data.email) {
+            sendStaffCredentialsEmail({
+                email: data.email,
+                fullName: data.name,
+                role: "Employee",
+                temporaryPassword: process.env.DEFAULT_PASSWORD || "hello123",
+            }).catch((err) => console.error("Employee credentials email error:", err.message));
+        }
 
         return employee[0];
 
@@ -942,6 +956,15 @@ const suspendEmployeeService = async (id, user) => {
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (result?.email) {
+            sendAccountSuspendedEmail({
+                email: result.email,
+                fullName: result.name,
+                role: "Employee",
+            }).catch((err) => console.error("Employee suspended email error:", err.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();
@@ -966,6 +989,15 @@ const activeEmployeeService = async (id, user) => {
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (result?.email) {
+            sendAccountActivatedEmail({
+                email: result.email,
+                fullName: result.name,
+                role: "Employee",
+            }).catch((err) => console.error("Employee activated email error:", err.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();

@@ -217,7 +217,7 @@ const createOrLoginUserWithApple = async (payload) => {
 
   // 2. CASE: email already exists (important fix)
   if (appleUser.email) {
-    const existingUser = await User.findOne({ email: appleUser.email });
+    const existingUser = await getUserByEmail(appleUser.email);
 
     if (existingUser) {
       throw new ApiError(
@@ -324,7 +324,11 @@ const login = async (identifier, receiverType, inputPassword) => {
 
   if (receiverType === "email") {
     user = await userModel
-      .findOne({ email: identifier.email })
+      .findOne({
+        email: {
+          $regex: new RegExp(`^${String(identifier.email || "").trim().replace(/[.*+?^${}()|[\\]\\]/g, "\\\\$&")}$`, "i"),
+        },
+      })
       .select("+password");
     // console.log("user2", user);
 
@@ -432,7 +436,11 @@ const changePasswordService = async (userId, oldPassword, newPassword) => {
 };
 
 const getUserByEmail = async (email) => {
-  return await userModel.findOne({ email });
+  if (!email) return null;
+  const escaped = String(email).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return await userModel.findOne({
+    email: { $regex: new RegExp(`^${escaped}$`, "i") },
+  });
 }
 
 const getUserByPhoneNumber = async (number, countryCode) => {

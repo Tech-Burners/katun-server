@@ -670,13 +670,14 @@ const promoService = async () => {
   return await promoModel.aggregate([
     {
       $match: {
-        status  : "active"
+        status: "active",
+        createdBy: { $in: ["admin", "sub_admin"] }
       }
     },
     {
       $project: {
         _id: 0,
-        code : 1,
+        code: 1,
         name: 1,
         description: 1,
         discount: 1,
@@ -686,7 +687,7 @@ const promoService = async () => {
         image: 1
       }
     }
-  ])
-}
+  ]);
+};
 
 module.exports = { pendingBookingService, nearestService, promoService, allNearestService}

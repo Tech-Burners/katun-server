@@ -6,6 +6,11 @@ const userModel = require("../User/user.model");
 const { userDeleteByIdService } = require("../User/user.service");
 const adminModel = require("./admin.model");
 const mongoose = require("mongoose");
+const {
+    sendStaffCredentialsEmail,
+    sendAccountSuspendedEmail,
+    sendAccountActivatedEmail,
+} = require("../../helpers/emailNotification");
 
 
 const addAdminService = async (data) => {
@@ -53,6 +58,15 @@ const addAdminService = async (data) => {
         await adminModel.create([data], { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (data.email) {
+            sendStaffCredentialsEmail({
+                email: data.email,
+                fullName: data.fullName,
+                role: data.role || "Admin",
+                temporaryPassword: process.env.DEFAULT_PASSWORD || "hello123",
+            }).catch((err) => console.error("Admin credentials email error:", err.message));
+        }
 
         return user;
 
@@ -231,6 +245,15 @@ const suspendAdminService = async (id) => {
     }
     user.isBan = true;
     await user.save();
+
+    if (user.email) {
+        sendAccountSuspendedEmail({
+            email: user.email,
+            fullName: user.fullName,
+            role: user.role || "Admin",
+        }).catch((err) => console.error("Admin suspended email error:", err.message));
+    }
+
     return user;
 };
 
@@ -242,6 +265,15 @@ const activateAdminService = async (id) => {
     }
     user.isBan = false;
     await user.save();
+
+    if (user.email) {
+        sendAccountActivatedEmail({
+            email: user.email,
+            fullName: user.fullName,
+            role: user.role || "Admin",
+        }).catch((err) => console.error("Admin activated email error:", err.message));
+    }
+
     return user;
 };
 

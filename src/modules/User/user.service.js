@@ -1,12 +1,25 @@
 const { default: mongoose } = require("mongoose");
 const userModel = require("./user.model");
+const {
+    sendAccountSuspendedEmail,
+    sendAccountActivatedEmail,
+} = require("../../helpers/emailNotification");
 
-const suspendUserService=async(id)=>{
-    return await userModel.findOneAndUpdate({ _id: id }, { isBan: true }, { new: true });
-}
+const suspendUserService = async (id) => {
+    const user = await userModel.findOneAndUpdate({ _id: id }, { isBan: true }, { new: true });
+    if (user?.email) {
+        sendAccountSuspendedEmail({
+            email: user.email,
+            fullName: user.fullName,
+            role: user.role || "User",
+        }).catch((err) => console.error("User suspended email error:", err.message));
+    }
+    return user;
+};
 
 const bulkSuspendUserService = async (userIds) => {
-  return await userModel.updateMany(
+  const users = await userModel.find({ _id: { $in: userIds } }).select("email fullName role");
+  const result = await userModel.updateMany(
     {
       _id: { $in: userIds }
     },
@@ -16,11 +29,29 @@ const bulkSuspendUserService = async (userIds) => {
       },
     }
   );
+  users.forEach((u) => {
+    if (u.email) {
+      sendAccountSuspendedEmail({
+        email: u.email,
+        fullName: u.fullName,
+        role: u.role || "User",
+      }).catch((err) => console.error("User bulk suspended email error:", err.message));
+    }
+  });
+  return result;
 };
 
-const activeUserService=async(id)=>{
-    return await userModel.findOneAndUpdate({ _id: id }, { isBan: false }, { new: true });
-}
+const activeUserService = async (id) => {
+    const user = await userModel.findOneAndUpdate({ _id: id }, { isBan: false }, { new: true });
+    if (user?.email) {
+        sendAccountActivatedEmail({
+            email: user.email,
+            fullName: user.fullName,
+            role: user.role || "User",
+        }).catch((err) => console.error("User activated email error:", err.message));
+    }
+    return user;
+};
 
 
 const getPushNotificationService = async (id) => {
@@ -35,7 +66,8 @@ const togglePushNotificationService = async (id) => {
 }
 
 const bulkActiveUserService = async (userIds) => {
-  return await userModel.updateMany(
+  const users = await userModel.find({ _id: { $in: userIds } }).select("email fullName role");
+  const result = await userModel.updateMany(
     {
       _id: { $in: userIds }
     },
@@ -45,6 +77,16 @@ const bulkActiveUserService = async (userIds) => {
       },
     }
   );
+  users.forEach((u) => {
+    if (u.email) {
+      sendAccountActivatedEmail({
+        email: u.email,
+        fullName: u.fullName,
+        role: u.role || "User",
+      }).catch((err) => console.error("User bulk activated email error:", err.message));
+    }
+  });
+  return result;
 };
 
 const giveFlagService=async(id)=>{

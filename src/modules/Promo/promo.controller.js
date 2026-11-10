@@ -7,7 +7,7 @@ const response = require("../../helpers/response");
 const addPromoController = catchAsync(async (req, res) => {
     if(req.file) req.body.image = `/uploads/promo/${req.file.filename}`;
     req.body.user = req.User._id;
-    req.body.createdBy = req.User.role;
+    req.body.createdBy = ['admin', 'sub_admin'].includes(req.User.role) ? 'admin' : req.User.role;
     const newPromo = await addPromoService(req.body);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Promo", message: "Promo added successfully", data: newPromo, }));
 })

@@ -5,6 +5,7 @@ const employeeModel = require("../Employee/employee.model");
 const ApiError = require("../../helpers/ApiError");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
+const { sendTransactionEmail } = require("../../helpers/emailNotification");
 
 
 
@@ -521,6 +522,23 @@ const withdrawCreditService = async (user, amount) => {
 
     await session.commitTransaction();
     session.endSession();
+
+    // Send transaction receipt email
+    if (userData?.email) {
+      sendTransactionEmail({
+        email: userData.email,
+        fullName: userData.fullName,
+        transactionType: "Wallet Withdrawal",
+        amount: amount,
+        currency: "NGN",
+        paymentMethod: "wallet",
+        paymentStatus: "processing",
+        txRef: tx_ref,
+        transactionId: transaction._id ? transaction._id.toString() : undefined,
+        date: transaction.createdAt || new Date(),
+        description: `Your withdrawal request of ₦${amount} has been initiated and is currently being processed.`,
+      }).catch((e) => console.error("Withdrawal transaction email error:", e.message));
+    }
 
     return transaction;
   } catch (error) {

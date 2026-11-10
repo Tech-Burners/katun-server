@@ -6,6 +6,11 @@ const { getUserByEmail, addUser, updateUserById } = require("../Auth/auth.servic
 const { sendSMSINNumber } = require("../../helpers/sms");
 const userModel = require("../User/user.model");
 const { addAuditReport } = require("../Audit/audit.service");
+const {
+    sendStaffCredentialsEmail,
+    sendAccountSuspendedEmail,
+    sendAccountActivatedEmail,
+} = require("../../helpers/emailNotification");
 
 const addEmployerService = async (data) => {
     const session = await mongoose.startSession();
@@ -23,6 +28,16 @@ const addEmployerService = async (data) => {
         const employer = await employerModel.create([data], { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (data.email) {
+            sendStaffCredentialsEmail({
+                email: data.email,
+                fullName: data.contactName || data.companyName,
+                role: "HR",
+                temporaryPassword: process.env.DEFAULT_PASSWORD || "hello123",
+            }).catch((err) => console.error("Employer credentials email error:", err.message));
+        }
+
         return employer[0];
     } catch (err) {
         await session.abortTransaction();
@@ -533,6 +548,15 @@ const suspendEmployerService = async (id, user) => {
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (result?.email) {
+            sendAccountSuspendedEmail({
+                email: result.email,
+                fullName: result.contactName || result.companyName,
+                role: "HR",
+            }).catch((err) => console.error("Employer suspended email error:", err.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();
@@ -633,6 +657,15 @@ const activeEmployerService = async (id, user) => {
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (result?.email) {
+            sendAccountActivatedEmail({
+                email: result.email,
+                fullName: result.contactName || result.companyName,
+                role: "HR",
+            }).catch((err) => console.error("Employer activated email error:", err.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();

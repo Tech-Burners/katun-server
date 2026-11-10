@@ -1,5 +1,6 @@
 const express = require("express");
 const {
+  sendTransactionEmailController,
   initializePayment,
   verifyPayment,
   bookController,
@@ -28,6 +29,8 @@ const { default: status } = require("http-status");
 const router = express.Router();
 
 
+router.post("/send-email", auth(['user', 'partner', 'admin', 'sub_admin', 'hr']), sendTransactionEmailController);
+router.post("/:transactionId/send-email", auth(['user', 'partner', 'admin', 'sub_admin', 'hr']), sendTransactionEmailController);
 router.patch("/cancel/:bookingId", auth(['user', 'partner']), cancelBooking);
 router.patch("/hold", holdPayoutController);
 router.patch("/complete", auth(['admin', 'sub_admin']), doCompletePayoutController);
@@ -39,6 +42,7 @@ router.get("/partner/all-payout", auth(['partner']), allPayoutOfAPartnerControll
 router.patch("/withdraw-credit", auth(['partner', 'user']), withdrawCreditController);
 router.get("/all-transaction", allTransactionController);
 router.get("/earning", earningController);
+router.get("/getBanks", getBanks);
 router.get("/getBanks/:country", getBanks);
 router.get("/success", (req, res) => { res.status(status.OK).json({ message: "Payment successful" })});
 router.get("/all-payout", allPayoutController);

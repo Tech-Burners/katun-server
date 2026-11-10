@@ -1,4 +1,6 @@
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const axios = require("axios");
 const { default: mongoose } = require("mongoose");
 const Transaction = require("./transaction.model");
@@ -1195,18 +1197,96 @@ const verifyPayment = catchAsync(
 
 
 
-const getBanks = catchAsync(async (req, res) => {
-  // const { country} = req.query; // default Nigeria
-  // console.log(`https://api.flutterwave.com/v3/banks/${country}`)
-  const response = await axios.get(
-    `https://api.flutterwave.com/v3/banks/NG`,
-    {
-      headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
-    }
-  );
+// In-memory cache for bank lists: countryCode -> { timestamp, data }
+const bankCache = new Map();
+const BANK_CACHE_TTL_MS = 1000 * 60 * 60 * 12; // 12 hours
 
-  ;
-  res.json(response.data); // returns { status, message, data: [{ id, code, name }] }
+// Preload local seed file for Nigeria (NG) if available for instant responses
+try {
+  const seedFile = path.join(__dirname, "../../helpers/banks_NG.json");
+  if (fs.existsSync(seedFile)) {
+    const seedData = JSON.parse(fs.readFileSync(seedFile, "utf8"));
+    if (Array.isArray(seedData) && seedData.length > 0) {
+      bankCache.set("NG", {
+        timestamp: Date.now(),
+        data: seedData,
+      });
+    }
+  }
+} catch (err) {
+  // Silent fallback
+}
+
+const getBanks = catchAsync(async (req, res) => {
+  const country = (req.params.country || req.query.country || "NG").trim().toUpperCase();
+  const search = (req.query.search || req.query.name || req.query.q || "").trim().toLowerCase();
+  const sortOrder = (req.query.order || req.query.sort || "asc").trim().toLowerCase();
+  const forceRefresh = String(req.query.refresh).toLowerCase() === "true";
+
+  let rawBanks = [];
+  const cached = bankCache.get(country);
+
+  if (!forceRefresh && cached && Date.now() - cached.timestamp < BANK_CACHE_TTL_MS) {
+    rawBanks = cached.data;
+  } else {
+    try {
+      const response = await axios.get(
+        `https://api.flutterwave.com/v3/banks/${country}`,
+        {
+          headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` },
+          timeout: 25000,
+        }
+      );
+
+      if (Array.isArray(response.data?.data)) {
+        rawBanks = response.data.data.map((b) => ({
+          ...b,
+          name: typeof b.name === "string" ? b.name.trim() : b.name,
+        }));
+        bankCache.set(country, {
+          timestamp: Date.now(),
+          data: rawBanks,
+        });
+      }
+    } catch (err) {
+      // Fallback to cached data if network request fails
+      if (cached && cached.data) {
+        rawBanks = cached.data;
+      } else {
+        console.error("Flutterwave getBanks error:", err.response?.data || err.message);
+        return res.status(502).json({
+          status: "error",
+          message: "Failed to fetch banks from payment provider. Please try again.",
+          data: [],
+        });
+      }
+    }
+  }
+
+  // Filter by search term if provided (matches bank name or bank code)
+  let result = [...rawBanks];
+  if (search) {
+    result = result.filter((bank) => {
+      const bankName = (bank.name || "").toLowerCase();
+      const bankCode = String(bank.code || "").toLowerCase();
+      return bankName.includes(search) || bankCode.includes(search);
+    });
+  }
+
+  // Sort alphabetically by bank name (A-Z by default, or Z-A if order=desc)
+  result.sort((a, b) => {
+    const nameA = (a.name || "").trim();
+    const nameB = (b.name || "").trim();
+    return sortOrder === "desc"
+      ? nameB.localeCompare(nameA, undefined, { sensitivity: "base" })
+      : nameA.localeCompare(nameB, undefined, { sensitivity: "base" });
+  });
+
+  return res.json({
+    status: "success",
+    message: "Banks fetched successfully",
+    data: result,
+  });
 });
 
 
@@ -2243,11 +2323,27 @@ const cancelBooking = catchAsync(async (req, res) => {
     });
 
     if (receiverData?.email) {
-      await emailWithNodemailer({
-        email: receiverData.email,
-        subject: title,
-        html: `<p>Hello ${receiverData.fullName || "Valued Customer"},</p><p>${message}</p>`,
-      }).catch((e) => console.error("Cancellation email error:", e.message));
+      if (refundedAmount > 0) {
+        await sendTransactionEmail({
+          email: receiverData.email,
+          fullName: receiverData.fullName,
+          transactionType: "Booking Refund",
+          amount: refundedAmount,
+          currency: "NGN",
+          paymentMethod: booking.paymentMethod || "wallet",
+          paymentStatus: "refunded",
+          bookingId: booking.bookingId || booking._id,
+          txRef: `refund_${booking.bookingId || booking._id}`,
+          date: new Date(),
+          description: `Your booking was cancelled by the provider. A refund of ₦${refundedAmount} has been processed to your account.`,
+        }).catch((e) => console.error("Cancellation refund email error:", e.message));
+      } else {
+        await emailWithNodemailer({
+          email: receiverData.email,
+          subject: title,
+          html: `<p>Hello ${receiverData.fullName || "Valued Customer"},</p><p>${message}</p>`,
+        }).catch((e) => console.error("Cancellation email error:", e.message));
+      }
     }
   } else if (cancelledBy === "user") {
     const providerData = await userModel.findById(booking.provider);
@@ -2280,6 +2376,25 @@ const cancelBooking = catchAsync(async (req, res) => {
         html: `<p>Hello ${providerData.fullName || "Partner"},</p><p>${message}</p>`,
       }).catch((e) => console.error("Cancellation email error:", e.message));
     }
+
+    if (refundedAmount > 0) {
+      const customerData = await userModel.findById(booking.user);
+      if (customerData?.email) {
+        await sendTransactionEmail({
+          email: customerData.email,
+          fullName: customerData.fullName,
+          transactionType: "Booking Refund",
+          amount: refundedAmount,
+          currency: "NGN",
+          paymentMethod: booking.paymentMethod || "wallet",
+          paymentStatus: "refunded",
+          bookingId: booking.bookingId || booking._id,
+          txRef: `refund_${booking.bookingId || booking._id}`,
+          date: new Date(),
+          description: `Your booking was cancelled. A refund of ₦${refundedAmount} has been processed to your account.`,
+        }).catch((e) => console.error("User cancellation refund email error:", e.message));
+      }
+    }
   }
 
   // =====================================
@@ -2295,7 +2410,139 @@ const cancelBooking = catchAsync(async (req, res) => {
 
 
 
+/**
+ * Send / Resend Transaction Details Email Receipt
+ */
+const sendTransactionEmailController = catchAsync(async (req, res) => {
+  const identifier = req.params.transactionId || req.body.transactionId || req.body.tx_ref;
+
+  if (!identifier) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "Error",
+        statusCode: status.BAD_REQUEST,
+        message: "Transaction ID or tx_ref is required",
+      })
+    );
+  }
+
+  let transaction = null;
+  if (mongoose.Types.ObjectId.isValid(identifier)) {
+    transaction = await Transaction.findById(identifier).populate("user partner service booking");
+  }
+  if (!transaction) {
+    transaction = await Transaction.findOne({
+      $or: [{ tx_ref: identifier }, { transaction_id: identifier }],
+    }).populate("user partner service booking");
+  }
+
+  if (!transaction) {
+    return res.status(status.NOT_FOUND).json(
+      response({
+        status: "Error",
+        statusCode: status.NOT_FOUND,
+        message: "Transaction not found",
+      })
+    );
+  }
+
+  // Authorization check (admins can access any; users/partners can only access their own)
+  const userRole = req.User?.role;
+  const currentUserId = req.User?._id?.toString();
+  if (currentUserId && !["admin", "sub_admin"].includes(userRole)) {
+    const txUserId = transaction.user?._id ? transaction.user._id.toString() : transaction.user?.toString();
+    const txPartnerId = transaction.partner?._id ? transaction.partner._id.toString() : transaction.partner?.toString();
+    if (txUserId !== currentUserId && txPartnerId !== currentUserId) {
+      return res.status(status.FORBIDDEN).json(
+        response({
+          status: "Error",
+          statusCode: status.FORBIDDEN,
+          message: "You are not authorized to view or send receipts for this transaction",
+        })
+      );
+    }
+  }
+
+  const recipientEmail =
+    req.body.email ||
+    transaction.user_email ||
+    transaction.user?.email ||
+    transaction.partner?.email;
+
+  if (!recipientEmail) {
+    return res.status(status.BAD_REQUEST).json(
+      response({
+        status: "Error",
+        statusCode: status.BAD_REQUEST,
+        message: "No recipient email found for this transaction. Please provide one in the request body.",
+      })
+    );
+  }
+
+  const recipientName =
+    req.body.fullName ||
+    transaction.user?.fullName ||
+    transaction.partner?.fullName ||
+    "Valued Customer";
+
+  let txType = "Booking Payment";
+  if (transaction.paymentType === "credit") txType = "Wallet Credit Purchase";
+  else if (transaction.paymentType === "withdraw") txType = "Wallet Withdrawal";
+  else if (transaction.paymentType === "tip") txType = "Tip Payment";
+  else if (transaction.paymentType === "refund") txType = "Booking Refund";
+
+  const serviceName =
+    transaction.service?.name ||
+    transaction.service?.title ||
+    transaction.booking_data?.serviceName ||
+    undefined;
+
+  const providerName =
+    transaction.partner?.fullName ||
+    transaction.booking_data?.partnerName ||
+    undefined;
+
+  const bookingId =
+    transaction.booking?.bookingId ||
+    transaction.booking?._id ||
+    transaction.booking_data?.bookingId ||
+    undefined;
+
+  await sendTransactionEmail({
+    email: recipientEmail,
+    fullName: recipientName,
+    transactionType: txType,
+    amount: transaction.gross_amount || transaction.net_amount || 0,
+    currency: transaction.currency || "NGN",
+    paymentMethod: transaction.payment_method || "card",
+    paymentStatus: transaction.payment_status || transaction.status || "successful",
+    txRef: transaction.tx_ref,
+    transactionId: transaction.transaction_id || transaction._id?.toString(),
+    date: transaction.createdAt || new Date(),
+    serviceName,
+    providerName,
+    bookingId,
+    description: req.body.description || transaction.description,
+  });
+
+  return res.status(status.OK).json(
+    response({
+      status: "OK",
+      statusCode: status.OK,
+      message: "Transaction receipt email sent successfully",
+      data: {
+        transactionId: transaction._id,
+        tx_ref: transaction.tx_ref,
+        email: recipientEmail,
+        amount: transaction.gross_amount || transaction.net_amount,
+        paymentType: transaction.paymentType,
+      },
+    })
+  );
+});
+
 module.exports = {
+  sendTransactionEmailController,
   initializePayment,
   verifyPayment,
   bookController,

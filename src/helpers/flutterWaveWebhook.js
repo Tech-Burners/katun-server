@@ -676,12 +676,20 @@ const flutterwaveWebhook =
               });
             }
 
-            // 4. Email Notification
+            // 4. Email Notification (Transaction Receipt)
             if (targetUser.email) {
-              await emailWithNodemailer({
+              await sendTransactionEmail({
                 email: targetUser.email,
-                subject: title,
-                html: `<p>Hello ${targetUser.fullName || "User"},</p><p>${message}</p><p><strong>Transaction Ref:</strong> ${transaction.tx_ref}</p><p><strong>Amount:</strong> ₦${transaction.gross_amount}</p>`,
+                fullName: targetUser.fullName,
+                transactionType: "Wallet Credit Purchase",
+                amount: transaction.gross_amount,
+                currency: transaction.currency || "NGN",
+                paymentMethod: transaction.payment_method || "card",
+                paymentStatus: "successful",
+                txRef: transaction.tx_ref,
+                transactionId: transaction.transaction_id,
+                date: transaction.createdAt || new Date(),
+                description: `Your wallet credit purchase of ₦${transaction.gross_amount} was successful. ${transaction.gross_amount} credits added to your wallet balance.`,
               }).catch((e) => console.error("Credit purchase email error:", e.message));
             }
           }
@@ -810,12 +818,21 @@ const flutterwaveWebhook =
               });
             }
 
-            // Email to Partner
+            // Email to Partner (Transaction Receipt)
             if (partnerUser.email) {
-              await emailWithNodemailer({
+              await sendTransactionEmail({
                 email: partnerUser.email,
-                subject: partnerTitle,
-                html: `<p>Hello ${partnerName},</p><p>${partnerMessage}</p><p><strong>Amount:</strong> ₦${tipAmount}</p>`,
+                fullName: partnerName,
+                transactionType: "Tip Received",
+                amount: tipAmount,
+                currency: transaction.currency || "NGN",
+                paymentMethod: "wallet",
+                paymentStatus: "successful",
+                txRef: transaction.tx_ref,
+                transactionId: transaction.transaction_id,
+                bookingId: transaction.booking || undefined,
+                date: transaction.createdAt || new Date(),
+                description: `You have received a tip of ₦${tipAmount} from a client. The funds have been credited to your wallet balance.`,
               }).catch((e) => console.error("Partner tip email error:", e.message));
             }
           }
@@ -855,12 +872,22 @@ const flutterwaveWebhook =
               });
             }
 
-            // Email to Sender
+            // Email to Sender (Transaction Receipt)
             if (sender.email) {
-              await emailWithNodemailer({
+              await sendTransactionEmail({
                 email: sender.email,
-                subject: senderTitle,
-                html: `<p>Hello ${sender.fullName || "Customer"},</p><p>${senderMessage}</p><p><strong>Amount:</strong> ₦${transaction.gross_amount}</p>`,
+                fullName: sender.fullName,
+                transactionType: "Tip Payment",
+                amount: transaction.gross_amount,
+                currency: transaction.currency || "NGN",
+                paymentMethod: transaction.payment_method || "card",
+                paymentStatus: "successful",
+                txRef: transaction.tx_ref,
+                transactionId: transaction.transaction_id,
+                providerName: partnerName,
+                bookingId: transaction.booking || undefined,
+                date: transaction.createdAt || new Date(),
+                description: `Your tip of ₦${transaction.gross_amount} to ${partnerName} has been processed successfully.`,
               }).catch((e) => console.error("Sender tip email error:", e.message));
             }
           }

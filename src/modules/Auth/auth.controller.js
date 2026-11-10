@@ -17,6 +17,10 @@ const { login, getUserByEmail, addUser, updateUserById, profileByIdService, getU
 const { addToken, verifyToken, deleteToken } = require("../Token/token.service");
 const { default: status } = require("http-status");
 const ApiError = require("../../helpers/ApiError");
+const {
+    sendUserWelcomeEmail,
+    sendPartnerRegistrationEmail,
+} = require("../../helpers/emailNotification");
 const unlinkImage = require('../../helpers/fileExists');
 const { myDocumentsService, updateDocumentsService } = require("../Partner/partner.service");
 const { getAdminByUserId } = require("../Admin/admin.service");
@@ -556,6 +560,13 @@ const otpVerification = catchAsync(async (req, res) => {
 
     const accessToken = await tokenGenerator(registeredUser);
 
+    if (registeredUser?.email) {
+      sendUserWelcomeEmail({
+        email: registeredUser.email,
+        fullName: registeredUser.fullName,
+      }).catch((err) => console.error("User welcome email error:", err.message));
+    }
+
     return res.status(status.CREATED).json(
       response({
         status: "OK",
@@ -722,6 +733,14 @@ const createPartnerController = catchAsync(async (req, res) => {
   const registeredUser = await addUser(userData);
 
   const accessToken = await tokenGenerator(registeredUser);
+
+  if (registeredUser?.email) {
+    sendPartnerRegistrationEmail({
+      email: registeredUser.email,
+      fullName: registeredUser.fullName,
+      businessName: userData.businessName,
+    }).catch((err) => console.error("Partner registration email error:", err.message));
+  }
 
   return res.status(status.CREATED).json(
     response({

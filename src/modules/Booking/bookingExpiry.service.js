@@ -9,6 +9,7 @@ const payoutCycleModel = require("../Payout/payoutCycle.model");
 const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
 const { addNotificationService } = require("../Notification/notification.service");
 const { emailWithNodemailer } = require("../../helpers/email");
+const { sendTransactionEmail } = require("../../helpers/emailNotification");
 
 /**
  * Safely extract the appointment start datetime from booking data.
@@ -398,11 +399,20 @@ const notifyCustomerRefundSuccess = async (booking, amount, serviceName = "servi
     });
 
     if (userDoc?.email) {
-      await emailWithNodemailer({
+      await sendTransactionEmail({
         email: userDoc.email,
-        subject: title,
-        html: `<p>Hello ${userDoc.fullName || "Customer"},</p><p>${message}</p>`,
-      }).catch((e) => console.error("Email error:", e.message));
+        fullName: userDoc.fullName,
+        bookingId: booking.bookingId || booking._id,
+        txRef: booking.transaction_id || `refund_${booking.bookingId || booking._id}`,
+        serviceName,
+        transactionType: "Booking Refund",
+        amount: amount || booking.totalPrice || 0,
+        currency: "NGN",
+        paymentMethod: booking.paymentMethod || "wallet",
+        paymentStatus: "refunded",
+        date: new Date(),
+        description: message,
+      }).catch((e) => console.error("Refund email error:", e.message));
     }
   } catch (err) {
     console.error("❌ Error notifying customer of refund:", err.message);
@@ -886,12 +896,24 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
         bookingId: booking._id,
       });
 
-      // C. Email Notification
+      // C. Email Notification (Transaction Receipt)
       if (userDoc.email) {
-        await emailWithNodemailer({
+        await sendTransactionEmail({
           email: userDoc.email,
-          subject: userTitle,
-          html: `<p>Hello ${userDoc.fullName || "Valued Customer"},</p><p>${userMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p><p><strong>Total:</strong> ₦${booking.totalPrice || 0}</p>`,
+          fullName: userDoc.fullName,
+          bookingId: booking.bookingId || booking._id,
+          txRef: booking.transaction_id || `BK_${booking.bookingId || booking._id}`,
+          serviceName,
+          providerName: partnerUserDoc?.fullName || partnerDoc?.businessName || "AuraVive Partner",
+          transactionType: "Service Booking",
+          amount: booking.totalPrice || booking.servicePrice || 0,
+          currency: "NGN",
+          paymentMethod: booking.paymentMethod || "card",
+          paymentStatus: booking.paymentMethod === "cash" ? "pending (cash)" : "successful",
+          date: booking.createdAt || new Date(),
+          description: isAutoApproved
+            ? "Your booking has been approved and confirmed."
+            : "Your booking is placed and waiting for provider approval.",
         }).catch((e) => console.error("User new booking email error:", e.message));
       }
     }

@@ -4,6 +4,12 @@ const partnerModel = require("./partner.model");
 const bookingModel = require("../Booking/booking.model");
 const transactionModel = require("../Transaction/transaction.model");
 const { emailWithNodemailer } = require("../../helpers/email");
+const {
+    sendPartnerApprovedEmail,
+    sendPartnerRejectedEmail,
+    sendAccountSuspendedEmail,
+    sendAccountActivatedEmail,
+} = require("../../helpers/emailNotification");
 const ApiError = require("../../helpers/ApiError");
 const { default: status } = require("http-status");
 const { addAuditReport } = require("../Audit/audit.service");
@@ -40,6 +46,15 @@ const suspendPartnerService = async (id, user) => {
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (userData?.email) {
+            sendAccountSuspendedEmail({
+                email: userData.email,
+                fullName: userData.fullName || result.businessName,
+                role: "Partner",
+            }).catch((err) => console.error("Partner suspended email error:", err.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();
@@ -305,6 +320,15 @@ const activePartnerService = async (id, user) => {
         }, { session });
         await session.commitTransaction();
         session.endSession();
+
+        if (userData?.email) {
+            sendAccountActivatedEmail({
+                email: userData.email,
+                fullName: userData.fullName || result.businessName,
+                role: "Partner",
+            }).catch((err) => console.error("Partner activated email error:", err.message));
+        }
+
         return result;
     } catch (err) {
         await session.abortTransaction();
@@ -407,16 +431,10 @@ const approvePartnerService = async (id, user) => {
         session.endSession();
 
         if (userData?.email) {
-            await emailWithNodemailer({
+            sendPartnerApprovedEmail({
                 email: userData.email,
-                subject: "Partner Application Approved",
-                html: `
-                    <h3>Congratulations! Your Partner Account is Approved</h3>
-                    <p>Hello ${userData.fullName || result.businessName || "Partner"},</p>
-                    <p>We are pleased to inform you that your partner application for <strong>${result.businessName || "Aura Vive"}</strong> has been approved.</p>
-                    <p>You can now log in to your dashboard, manage your services, and start accepting bookings.</p>
-                    <p>Thank you for partnering with us!</p>
-                `,
+                fullName: userData.fullName,
+                businessName: result.businessName,
             }).catch((e) => console.error("Partner approval email error:", e.message));
         }
 
@@ -496,16 +514,10 @@ const bulkApprovePartnerService = async (partnerIds, adminId) => {
     await Promise.all(
       partners.map(async (partner) => {
         if (partner.user?.email) {
-          await emailWithNodemailer({
+          await sendPartnerApprovedEmail({
             email: partner.user.email,
-            subject: "Partner Application Approved",
-            html: `
-              <h3>Congratulations! Your Partner Account is Approved</h3>
-              <p>Hello ${partner.user.fullName || partner.businessName || "Partner"},</p>
-              <p>We are pleased to inform you that your partner application for <strong>${partner.businessName || "Aura Vive"}</strong> has been approved.</p>
-              <p>You can now log in to your dashboard, manage your services, and start accepting bookings.</p>
-              <p>Thank you for partnering with us!</p>
-            `,
+            fullName: partner.user.fullName,
+            businessName: partner.businessName,
           }).catch((e) => console.error("Bulk partner approval email error:", e.message));
         }
       })
@@ -970,16 +982,12 @@ const rejectProviderService = async (id, data) => {
         session.endSession();
 
         if (user?.email) {
-            await emailWithNodemailer({
+            await sendPartnerRejectedEmail({
                 email: user.email,
-                subject: "Partner Application Rejected",
-                html: `
-                    <h3>Application Rejected</h3>
-                    <p>We regret to inform you that your partner application has been rejected.</p>
-                    <p><strong>Reason:</strong> ${data.reason}</p>
-                    <p>Please contact our support team for more information.</p>
-                `,
-            });
+                fullName: user.fullName,
+                businessName: partner.businessName,
+                reason: data.reason,
+            }).catch((e) => console.error("Partner rejection email error:", e.message));
         }
 
         await addAuditReport({
@@ -1039,16 +1047,12 @@ const bulkRejectProviderService = async (partnerIds, data) => {
     await Promise.all(
       partners.map(async (partner) => {
         if (partner.user?.email) {
-          await emailWithNodemailer({
+          await sendPartnerRejectedEmail({
             email: partner.user.email,
-            subject: "Partner Application Rejected",
-            html: `
-              <h3>Application Rejected</h3>
-              <p>We regret to inform you that your partner application has been rejected.</p>
-              <p><strong>Reason:</strong> ${data.reason}</p>
-              <p>Please contact our support team for more information.</p>
-            `,
-          });
+            fullName: partner.user.fullName,
+            businessName: partner.businessName,
+            reason: data.reason,
+          }).catch((e) => console.error("Bulk partner rejection email error:", e.message));
         }
       })
     );
