@@ -221,6 +221,7 @@ const checkPinService = async (bookingId, pin) => {
 
     if (booking.pin == pin) {
         booking.pinVerified = true;
+        booking.checkin = booking.checkin || new Date();
         await booking.save();
 
         let serviceName = "service";
