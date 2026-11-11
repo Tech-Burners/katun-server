@@ -199,6 +199,15 @@ bookingSchema.index(
 );
 
 bookingSchema.index({
+  provider: 1,
+});
+
+bookingSchema.index({
+  provider: 1,
+  status: 1,
+});
+
+bookingSchema.index({
   status: 1,
   bookingRequestExpireAt: 1,
 });

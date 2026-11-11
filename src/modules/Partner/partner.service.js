@@ -919,6 +919,178 @@ const allPartnerService = async (options) => {
                 data: [
                     { $skip: skip },
                     { $limit: limit },
+
+                    // 1. Lookup services of this partner
+                    {
+                        $lookup: {
+                            from: "services",
+                            localField: "user",
+                            foreignField: "user",
+                            as: "partnerServices",
+                        },
+                    },
+
+                    // 2. Lookup bookings of this partner (by provider user id, partner id, or service id)
+                    {
+                        $lookup: {
+                            from: "bookings",
+                            let: {
+                                partnerUserId: "$user",
+                                partnerId: "$_id",
+                                serviceIds: { $ifNull: ["$partnerServices._id", []] },
+                            },
+                            pipeline: [
+                                {
+                                    $match: {
+                                        $expr: {
+                                            $or: [
+                                                { $eq: ["$provider", "$$partnerUserId"] },
+                                                { $eq: ["$provider", "$$partnerId"] },
+                                                { $in: ["$service", "$$serviceIds"] },
+                                            ],
+                                        },
+                                    },
+                                },
+                                {
+                                    $project: {
+                                        _id: 1,
+                                        status: 1,
+                                        paymentStatus: 1,
+                                        totalPrice: 1,
+                                    },
+                                },
+                            ],
+                            as: "partnerBookings",
+                        },
+                    },
+
+                    // 3. Lookup successful/paid transactions of this partner
+                    {
+                        $lookup: {
+                            from: "transactions",
+                            let: {
+                                partnerUserId: "$user",
+                                partnerId: "$_id",
+                                serviceIds: { $ifNull: ["$partnerServices._id", []] },
+                            },
+                            pipeline: [
+                                {
+                                    $match: {
+                                        $expr: {
+                                            $and: [
+                                                {
+                                                    $or: [
+                                                        { $eq: ["$partner", "$$partnerUserId"] },
+                                                        { $eq: ["$partner", "$$partnerId"] },
+                                                        { $in: ["$service", "$$serviceIds"] },
+                                                    ],
+                                                },
+                                                {
+                                                    $or: [
+                                                        { $in: ["$payment_status", ["successful", "paid"]] },
+                                                        { $in: ["$status", ["successful", "paid"]] },
+                                                    ],
+                                                },
+                                            ],
+                                        },
+                                    },
+                                },
+                                {
+                                    $project: {
+                                        _id: 1,
+                                        gross_amount: 1,
+                                        net_amount: 1,
+                                    },
+                                },
+                            ],
+                            as: "partnerTransactions",
+                        },
+                    },
+
+                    // 4. Compute accurate bookings and revenue
+                    {
+                        $addFields: {
+                            calculatedTotalBookings: {
+                                $max: [
+                                    { $size: "$partnerBookings" },
+                                    { $ifNull: ["$totalBookings", 0] },
+                                ],
+                            },
+                            calculatedCompleteBookings: {
+                                $max: [
+                                    {
+                                        $size: {
+                                            $filter: {
+                                                input: "$partnerBookings",
+                                                as: "b",
+                                                cond: { $eq: ["$$b.status", "completed"] },
+                                            },
+                                        },
+                                    },
+                                    { $ifNull: ["$completeBookings", 0] },
+                                ],
+                            },
+                            calculatedRevenue: {
+                                $round: [
+                                    {
+                                        $max: [
+                                            // Revenue from completed or paid bookings (excluding cancelled)
+                                            {
+                                                $sum: {
+                                                    $map: {
+                                                        input: {
+                                                            $filter: {
+                                                                input: "$partnerBookings",
+                                                                as: "b",
+                                                                cond: {
+                                                                    $and: [
+                                                                        { $ne: ["$$b.status", "cancelled"] },
+                                                                        {
+                                                                            $or: [
+                                                                                { $eq: ["$$b.status", "completed"] },
+                                                                                { $eq: ["$$b.paymentStatus", "paid"] },
+                                                                            ],
+                                                                        },
+                                                                    ],
+                                                                },
+                                                            },
+                                                        },
+                                                        as: "validBooking",
+                                                        in: { $ifNull: ["$$validBooking.totalPrice", 0] },
+                                                    },
+                                                },
+                                            },
+                                            // Revenue from successful transactions (gross amount)
+                                            {
+                                                $sum: {
+                                                    $map: {
+                                                        input: "$partnerTransactions",
+                                                        as: "tx",
+                                                        in: { $ifNull: ["$$tx.gross_amount", 0] },
+                                                    },
+                                                },
+                                            },
+                                            // Revenue from successful transactions (net amount)
+                                            {
+                                                $sum: {
+                                                    $map: {
+                                                        input: "$partnerTransactions",
+                                                        as: "tx",
+                                                        in: { $ifNull: ["$$tx.net_amount", 0] },
+                                                    },
+                                                },
+                                            },
+                                            // Any existing static revenue on user
+                                            { $ifNull: ["$userData.totalRevenue", 0] },
+                                        ],
+                                    },
+                                    2,
+                                ],
+                            },
+                        },
+                    },
+
+                    // 5. Final Projection
                     {
                         $project: {
                             _id: 1,
@@ -933,9 +1105,9 @@ const allPartnerService = async (options) => {
                             address: 1,
                             rating: 1,
                             isBanned: "$userData.isBan",
-                            totalRevenue: "$userData.totalRevenue",
-                            totalBookings: 1,
-                            completeBookings: 1,
+                            totalRevenue: "$calculatedRevenue",
+                            totalBookings: "$calculatedTotalBookings",
+                            completeBookings: "$calculatedCompleteBookings",
                             createdAt: 1,
                         },
                     },
@@ -1118,11 +1290,177 @@ const detailsForAdminService = async (userId) => {
             },
         },
 
+        // 1. Lookup services of this partner
+        {
+            $lookup: {
+                from: "services",
+                localField: "user",
+                foreignField: "user",
+                as: "partnerServices",
+            },
+        },
+
+        // 2. Lookup bookings of this partner
+        {
+            $lookup: {
+                from: "bookings",
+                let: {
+                    partnerUserId: "$user",
+                    partnerId: "$_id",
+                    serviceIds: { $ifNull: ["$partnerServices._id", []] },
+                },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $or: [
+                                    { $eq: ["$provider", "$$partnerUserId"] },
+                                    { $eq: ["$provider", "$$partnerId"] },
+                                    { $in: ["$service", "$$serviceIds"] },
+                                ],
+                            },
+                        },
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            status: 1,
+                            paymentStatus: 1,
+                            totalPrice: 1,
+                        },
+                    },
+                ],
+                as: "partnerBookings",
+            },
+        },
+
+        // 3. Lookup transactions of this partner
+        {
+            $lookup: {
+                from: "transactions",
+                let: {
+                    partnerUserId: "$user",
+                    partnerId: "$_id",
+                    serviceIds: { $ifNull: ["$partnerServices._id", []] },
+                },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    {
+                                        $or: [
+                                            { $eq: ["$partner", "$$partnerUserId"] },
+                                            { $eq: ["$partner", "$$partnerId"] },
+                                            { $in: ["$service", "$$serviceIds"] },
+                                        ],
+                                    },
+                                    {
+                                        $or: [
+                                            { $in: ["$payment_status", ["successful", "paid"]] },
+                                            { $in: ["$status", ["successful", "paid"]] },
+                                        ],
+                                    },
+                                ],
+                            },
+                        },
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            gross_amount: 1,
+                            net_amount: 1,
+                        },
+                    },
+                ],
+                as: "partnerTransactions",
+            },
+        },
+
+        // 4. Compute accurate bookings, revenue, and completion rate
+        {
+            $addFields: {
+                calculatedTotalBookings: {
+                    $max: [
+                        { $size: "$partnerBookings" },
+                        { $ifNull: ["$totalBookings", 0] },
+                    ],
+                },
+                calculatedCompleteBookings: {
+                    $max: [
+                        {
+                            $size: {
+                                $filter: {
+                                    input: "$partnerBookings",
+                                    as: "b",
+                                    cond: { $eq: ["$$b.status", "completed"] },
+                                },
+                            },
+                        },
+                        { $ifNull: ["$completeBookings", 0] },
+                    ],
+                },
+                calculatedRevenue: {
+                    $round: [
+                        {
+                            $max: [
+                                {
+                                    $sum: {
+                                        $map: {
+                                            input: {
+                                                $filter: {
+                                                    input: "$partnerBookings",
+                                                    as: "b",
+                                                    cond: {
+                                                        $and: [
+                                                            { $ne: ["$$b.status", "cancelled"] },
+                                                            {
+                                                                $or: [
+                                                                    { $eq: ["$$b.status", "completed"] },
+                                                                    { $eq: ["$$b.paymentStatus", "paid"] },
+                                                                ],
+                                                            },
+                                                        ],
+                                                    },
+                                                },
+                                            },
+                                            as: "validBooking",
+                                            in: { $ifNull: ["$$validBooking.totalPrice", 0] },
+                                        },
+                                    },
+                                },
+                                {
+                                    $sum: {
+                                        $map: {
+                                            input: "$partnerTransactions",
+                                            as: "tx",
+                                            in: { $ifNull: ["$$tx.gross_amount", 0] },
+                                        },
+                                    },
+                                },
+                                {
+                                    $sum: {
+                                        $map: {
+                                            input: "$partnerTransactions",
+                                            as: "tx",
+                                            in: { $ifNull: ["$$tx.net_amount", 0] },
+                                        },
+                                    },
+                                },
+                                { $ifNull: ["$userData.totalRevenue", 0] },
+                            ],
+                        },
+                        2,
+                    ],
+                },
+            },
+        },
+
         {
             $addFields: {
                 completionRate: {
                     $cond: [
-                        { $eq: ["$totalBookings", 0] },
+                        { $eq: ["$calculatedTotalBookings", 0] },
                         0,
                         {
                             $round: [
@@ -1130,19 +1468,19 @@ const detailsForAdminService = async (userId) => {
                                     $multiply: [
                                         {
                                             $divide: [
-                                                "$completeBookings",
-                                                "$totalBookings"
-                                            ]
+                                                "$calculatedCompleteBookings",
+                                                "$calculatedTotalBookings",
+                                            ],
                                         },
-                                        100
-                                    ]
+                                        100,
+                                    ],
                                 },
-                                2
-                            ]
-                        }
-                    ]
-                }
-            }
+                                2,
+                            ],
+                        },
+                    ],
+                },
+            },
         },
 
         {
@@ -1161,11 +1499,11 @@ const detailsForAdminService = async (userId) => {
                 businessCertification: 1,
                 identityProof: 1,
                 rating: 1,
-                totalBookings: 1,
-                completeBookings: 1,
+                totalBookings: "$calculatedTotalBookings",
+                completeBookings: "$calculatedCompleteBookings",
                 completionRate: 1,
                 isBan: 1,
-                totalRevenue: "$userData.totalRevenue",
+                totalRevenue: "$calculatedRevenue",
                 reportCount: "$userData.reportCount",
                 flagCount: "$userData.flagCount",
                 certificate: 1,
@@ -1174,7 +1512,7 @@ const detailsForAdminService = async (userId) => {
                 address: 1,
                 amenities: { $ifNull: ["$amenities", []] },
                 createdAt: 1,
-            }
+            },
         }
     ]);
 };
