@@ -9,6 +9,7 @@ const { pendingPartnerForApproval, detailsForAdminController, allPartnerControll
     bulkGiveFlagController,
     bulkGiveNoteController,
     bulkRejectProviderController} = require('./partner.controller');
+const { getCouponsByPartnerController } = require('../Promo/promo.controller');
 const { auth } = require('../../middlewares/auth');
 const router = express.Router();
 
@@ -16,6 +17,8 @@ const router = express.Router();
 
 router.get('/admin/details/:id', detailsForAdminController);
 router.get('/details/:id', auth(['user'], { optional: true }), aPartnerDetailsController);
+router.get('/:partnerId/coupons', auth(['user', 'partner', 'admin', 'sub_admin'], { optional: true }), getCouponsByPartnerController);
+router.get('/:partnerId/promos', auth(['user', 'partner', 'admin', 'sub_admin'], { optional: true }), getCouponsByPartnerController);
 router.get('/pending-forApproval', pendingPartnerForApproval);
 router.get('/all', allPartnerController);
 router.get('/dashboard', auth(['partner']), partnerDashboardController);

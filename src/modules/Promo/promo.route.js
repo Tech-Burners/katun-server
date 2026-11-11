@@ -1,5 +1,13 @@
 const express = require("express");
-const { addPromoController, getPromoController, editPromoController, deletePromoController, getPartnerPromoController, getAdminPromoController } = require("./promo.controller");
+const {
+    addPromoController,
+    getPromoController,
+    editPromoController,
+    deletePromoController,
+    getPartnerPromoController,
+    getAdminPromoController,
+    getCouponsByPartnerController,
+} = require("./promo.controller");
 const { auth } = require("../../middlewares/auth");
 const router = express.Router();
 
@@ -11,7 +19,9 @@ const ensureUploadFolderExists = require('../../helpers/fileExists');
 const parseData = require('../../middlewares/parseData');
 ensureUploadFolderExists(UPLOADS_FOLDER);
 
-router.get("/partner/all",auth(['partner']), getPartnerPromoController);
+router.get("/partner/all", auth(['partner']), getPartnerPromoController);
+router.get("/partner/:partnerId", auth(['user', 'partner', 'admin', 'sub_admin'], { optional: true }), getCouponsByPartnerController);
+router.get("/coupons/:partnerId", auth(['user', 'partner', 'admin', 'sub_admin'], { optional: true }), getCouponsByPartnerController);
 router.get("/admin/all", getAdminPromoController);
 router.post("/add", uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['partner', 'admin', 'sub_admin']), parseData(), addPromoController);
 router.put('/edit/:id', uploadUsers.single('image'), convertHeicToPng(UPLOADS_FOLDER), auth(['partner', 'admin', 'sub_admin']), parseData(), editPromoController);

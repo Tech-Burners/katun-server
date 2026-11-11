@@ -1,5 +1,13 @@
 const { default: status } = require("http-status");
-const { addPromoService, editPromoService, deletePromoService, getPromoService, getPartnerPromoService, getAdminPromoService } = require("./promo.service");
+const {
+    addPromoService,
+    editPromoService,
+    deletePromoService,
+    getPromoService,
+    getPartnerPromoService,
+    getAdminPromoService,
+    getCouponsByPartnerService,
+} = require("./promo.service");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 
@@ -41,5 +49,30 @@ const getAdminPromoController = catchAsync(async (req, res) => {
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Promo", message: "Promo fetched successfully", data: result, }));
 })
 
+const getCouponsByPartnerController = catchAsync(async (req, res) => {
+    const option = {
+        page: Number(req.query.page) || 1,
+        limit: Number(req.query.limit) || 10,
+        status: req.query.status,
+        search: req.query.search,
+    };
+    const result = await getCouponsByPartnerService(req.params.partnerId, option);
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Promo",
+            message: "Partner coupons fetched successfully",
+            data: result,
+        })
+    );
+});
 
-module.exports = { addPromoController, editPromoController, deletePromoController , getPartnerPromoController, getAdminPromoController}
+module.exports = {
+    addPromoController,
+    editPromoController,
+    deletePromoController,
+    getPartnerPromoController,
+    getAdminPromoController,
+    getCouponsByPartnerController,
+};
