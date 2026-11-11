@@ -96,34 +96,43 @@ const popularServiceController = catchAsync(async (req, res) => {
 
 const nearestPopularServiceController = catchAsync(async (req, res) => {
   const { lat, lng } = req.query;
- 
-  if (lat === undefined || lng === undefined) {
-    return res.status(status.BAD_REQUEST).json(
-      response({
-        status: "error",
-        statusCode: status.BAD_REQUEST,
-        type: "Service",
-        message: "lat and lng are required to fetch nearby services",
-      })
-    );
-  }
- 
+
+  const hasLocation =
+    lat !== undefined &&
+    lat !== null &&
+    lat !== "" &&
+    lat !== "null" &&
+    lat !== "undefined" &&
+    lng !== undefined &&
+    lng !== null &&
+    lng !== "" &&
+    lng !== "null" &&
+    lng !== "undefined" &&
+    !isNaN(Number(lat)) &&
+    !isNaN(Number(lng));
+
   const option = {
     page: Number(req.query.page) || 1,
     limit: Number(req.query.limit) || 10,
-    lat,
-    lng,
+    lat: hasLocation ? Number(lat) : null,
+    lng: hasLocation ? Number(lng) : null,
     search: req.query.search || "",
+    radius: req.query.radius ? Number(req.query.radius) : undefined,
+    maxDistance: req.query.maxDistance ? Number(req.query.maxDistance) : undefined,
+    category: req.query.category,
+    userId: req.User?._id || null,
   };
- 
+
   const result = await nearestPopularService(option);
- 
+
   return res.status(status.OK).json(
     response({
       status: "success",
       statusCode: status.OK,
       type: "Service",
-      message: "Nearest popular service fetched successfully",
+      message: hasLocation
+        ? "Nearest popular service fetched successfully"
+        : "Popular service fetched successfully",
       data: result,
     })
   );

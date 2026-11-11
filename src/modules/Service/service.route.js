@@ -20,7 +20,7 @@ router.patch("/active/:id", activeServiceController);
 router.get("/admin/all", auth(['admin', 'sub_admin']), getAllServiceController);
 router.get("/partner/all", auth(['partner']), getPartnerAllServiceController);
 router.get("/popular", auth(["user"], { optional: true }), popularServiceController);
-router.get("/popular/nearest", nearestPopularServiceController);
+router.get("/popular/nearest", auth(["user", "partner", "admin", "sub_admin"], { optional: true }), nearestPopularServiceController);
 router.get("/all", auth(["user"], { optional: true }), allServiceController);
 router.get('/details/:id', auth(['partner','user', 'admin', 'sub_admin'], { optional: true }), aServiceDetailsController);
 

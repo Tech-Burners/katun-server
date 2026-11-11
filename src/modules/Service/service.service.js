@@ -1299,111 +1299,226 @@ const popularService = async (userId, options) => {
 const DEFAULT_RADIUS_KM = 200; //200KM
  
 const nearestPopularService = async (options) => {
-  const { page = 1, limit = 10, lat, lng, search, radius, userId = null } = options;
- 
-  if (lat === undefined || lat === null || lng === undefined || lng === null) {
-    const err = new Error("lat and lng are required to fetch nearby services");
-    err.statusCode = 400;
-    throw err;
-  }
- 
+  const {
+    page = 1,
+    limit = 10,
+    lat,
+    lng,
+    search,
+    radius,
+    maxDistance,
+    category,
+    userId = null,
+  } = options;
+
+  const hasLocation =
+    lat !== undefined &&
+    lat !== null &&
+    lat !== "" &&
+    lat !== "null" &&
+    lat !== "undefined" &&
+    lng !== undefined &&
+    lng !== null &&
+    lng !== "" &&
+    lng !== "null" &&
+    lng !== "undefined" &&
+    !isNaN(Number(lat)) &&
+    !isNaN(Number(lng));
+
   const skip = (page - 1) * limit;
-  const coordinates = [Number(lng), Number(lat)];
-  const radiusKm = radius !== undefined && radius !== null && radius !== ""
-    ? Number(radius)
-    : DEFAULT_RADIUS_KM;
- 
   const pipeline = [];
- 
-  // ---------- STEP 1: NEAREST PARTNERS FIRST (uses 2dsphere index) ----------
-  // $geoNear MUST be the first stage in the pipeline.
-  pipeline.push({
-    $geoNear: {
-      near: { type: "Point", coordinates },
-      distanceField: "distance", // meters, since spherical: true
-      spherical: true,
-      maxDistance: radiusKm * 1000, // km -> meters
-      query: {
+
+  if (hasLocation) {
+    const coordinates = [Number(lng), Number(lat)];
+    const radiusKm =
+      radius !== undefined && radius !== null && radius !== ""
+        ? Number(radius)
+        : (maxDistance ? Number(maxDistance) / 1000 : DEFAULT_RADIUS_KM);
+
+    // ---------- STEP 1: NEAREST PARTNERS FIRST (uses 2dsphere index) ----------
+    // $geoNear MUST be the first stage in the pipeline.
+    pipeline.push({
+      $geoNear: {
+        near: { type: "Point", coordinates },
+        distanceField: "distance", // meters, since spherical: true
+        spherical: true,
+        maxDistance: radiusKm * 1000, // km -> meters
+        query: {
+          role: "partner",
+          isDeleted: false,
+          isBan: false,
+          // guest users have no userId, so this simply never excludes anyone
+          ...(userId ? { _id: { $ne: new mongoose.Types.ObjectId(userId) } } : {}),
+        },
+      },
+    });
+
+    // ---------- STEP 2: PARTNER PROFILE LOOKUP ----------
+    pipeline.push(
+      {
+        $lookup: {
+          from: "partners",
+          localField: "_id",
+          foreignField: "user",
+          as: "partner",
+        },
+      },
+      { $unwind: "$partner" } // only keep users that actually have a partner profile
+    );
+
+    // ---------- STEP 3: PULL EACH PROVIDER'S SINGLE BEST QUALIFYING SERVICE ----------
+    pipeline.push({
+      $lookup: {
+        from: "services",
+        let: { userId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$user", "$$userId"] },
+              isDeleted: false,
+              isActive: true,
+              ...(search && search.trim() !== ""
+                ? { name: { $regex: search, $options: "i" } }
+                : {}),
+              ...(category
+                ? { category: new mongoose.Types.ObjectId(String(category)) }
+                : {}),
+            },
+          },
+          // availability check (only services with at least one unbooked slot)
+          ...getUnbookedServiceStages("$_id"),
+          // pick this provider's most popular qualifying service
+          { $sort: { sell: -1, avgRating: -1 } },
+          { $limit: 1 },
+        ],
+        as: "topService",
+      },
+    });
+
+    // keep only providers that actually have a qualifying service
+    pipeline.push(
+      { $match: { "topService.0": { $exists: true } } },
+      { $unwind: "$topService" }
+    );
+
+    // ---------- STEP 4: NEAREST FIRST ----------
+    // $geoNear already sorts by distance ascending, but the $lookup/$unwind
+    // stages above don't guarantee stable ordering, so we sort explicitly.
+    pipeline.push({ $sort: { distance: 1 } });
+
+    // ---------- STEP 5: RESPONSE SHAPE ----------
+    pipeline.push({
+      $project: {
+        _id: "$topService._id",
+        name: "$topService.name",
+        image: "$topService.image",
+        servicefee: "$topService.servicefee",
+        avgRating: "$topService.avgRating",
+        ratingCount: "$topService.ratingCount",
+        sell: "$topService.sell",
+
+        partnerId: "$_id",
+        partnerName: "$partner.businessName",
+        isVerified: { $ifNull: ["$partner.isVerified", false] },
+        isCertified: { $ifNull: ["$partner.isCertified", false] },
+
+        // meters -> km, rounded to 2 decimals
+        distance: { $round: [{ $divide: ["$distance", 1000] }, 2] },
+      },
+    });
+  } else {
+    // =========================================================================
+    // NO LOCATION DATA: SHOW RESULT BASED ON JUST RATING
+    // =========================================================================
+
+    // ---------- STEP 1: MATCH ACTIVE PARTNERS ----------
+    pipeline.push({
+      $match: {
         role: "partner",
         isDeleted: false,
         isBan: false,
-        // guest users have no userId, so this simply never excludes anyone
         ...(userId ? { _id: { $ne: new mongoose.Types.ObjectId(userId) } } : {}),
       },
-    },
-  });
- 
-  // ---------- STEP 2: PARTNER PROFILE LOOKUP ----------
-  pipeline.push(
-    {
-      $lookup: {
-        from: "partners",
-        localField: "_id",
-        foreignField: "user",
-        as: "partner",
-      },
-    },
-    { $unwind: "$partner" } // only keep users that actually have a partner profile
-  );
- 
-  // ---------- STEP 3: PULL EACH PROVIDER'S SINGLE BEST QUALIFYING SERVICE ----------
-  pipeline.push({
-    $lookup: {
-      from: "services",
-      let: { userId: "$_id" },
-      pipeline: [
-        {
-          $match: {
-            $expr: { $eq: ["$user", "$$userId"] },
-            isDeleted: false,
-            isActive: true,
-            ...(search && search.trim() !== ""
-              ? { name: { $regex: search, $options: "i" } }
-              : {}),
-          },
+    });
+
+    // ---------- STEP 2: PARTNER PROFILE LOOKUP ----------
+    pipeline.push(
+      {
+        $lookup: {
+          from: "partners",
+          localField: "_id",
+          foreignField: "user",
+          as: "partner",
         },
-        // availability check (only services with at least one unbooked slot)
-        ...getUnbookedServiceStages("$_id"),
-        // pick this provider's most popular qualifying service
-        { $sort: { sell: -1, avgRating: -1 } },
-        { $limit: 1 },
-      ],
-      as: "topService",
-    },
-  });
- 
-  // keep only providers that actually have a qualifying service
-  pipeline.push(
-    { $match: { "topService.0": { $exists: true } } },
-    { $unwind: "$topService" }
-  );
- 
-  // ---------- STEP 4: NEAREST FIRST ----------
-  // $geoNear already sorts by distance ascending, but the $lookup/$unwind
-  // stages above don't guarantee stable ordering, so we sort explicitly.
-  pipeline.push({ $sort: { distance: 1 } });
- 
-  // ---------- STEP 5: RESPONSE SHAPE ----------
-  pipeline.push({
-    $project: {
-      _id: "$topService._id",
-      name: "$topService.name",
-      image: "$topService.image",
-      servicefee: "$topService.servicefee",
-      avgRating: "$topService.avgRating",
-      ratingCount: "$topService.ratingCount",
-      sell: "$topService.sell",
- 
-      partnerId: "$_id",
-      partnerName: "$partner.businessName",
-      isVerified: { $ifNull: ["$partner.isVerified", false] },
-      isCertified: { $ifNull: ["$partner.isCertified", false] },
- 
-      // meters -> km, rounded to 2 decimals
-      distance: { $round: [{ $divide: ["$distance", 1000] }, 2] },
-    },
-  });
- 
+      },
+      { $unwind: "$partner" }
+    );
+
+    // ---------- STEP 3: PULL EACH PROVIDER'S HIGHEST RATED QUALIFYING SERVICE ----------
+    pipeline.push({
+      $lookup: {
+        from: "services",
+        let: { userId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$user", "$$userId"] },
+              isDeleted: false,
+              isActive: true,
+              ...(search && search.trim() !== ""
+                ? { name: { $regex: search, $options: "i" } }
+                : {}),
+              ...(category
+                ? { category: new mongoose.Types.ObjectId(String(category)) }
+                : {}),
+            },
+          },
+          // availability check (only services with at least one unbooked slot)
+          ...getUnbookedServiceStages("$_id"),
+          // pick this provider's highest rated qualifying service
+          { $sort: { avgRating: -1, ratingCount: -1, sell: -1 } },
+          { $limit: 1 },
+        ],
+        as: "topService",
+      },
+    });
+
+    // keep only providers that actually have a qualifying service
+    pipeline.push(
+      { $match: { "topService.0": { $exists: true } } },
+      { $unwind: "$topService" }
+    );
+
+    // ---------- STEP 4: SORT BY RATING ----------
+    pipeline.push({
+      $sort: {
+        "topService.avgRating": -1,
+        "topService.ratingCount": -1,
+        "topService.sell": -1,
+      },
+    });
+
+    // ---------- STEP 5: RESPONSE SHAPE ----------
+    pipeline.push({
+      $project: {
+        _id: "$topService._id",
+        name: "$topService.name",
+        image: "$topService.image",
+        servicefee: "$topService.servicefee",
+        avgRating: "$topService.avgRating",
+        ratingCount: "$topService.ratingCount",
+        sell: "$topService.sell",
+
+        partnerId: "$_id",
+        partnerName: "$partner.businessName",
+        isVerified: { $ifNull: ["$partner.isVerified", false] },
+        isCertified: { $ifNull: ["$partner.isCertified", false] },
+
+        distance: { $ifNull: ["$distance", null] },
+      },
+    });
+  }
+
   // ---------- STEP 6: PAGINATION ----------
   pipeline.push({
     $facet: {
@@ -1411,12 +1526,12 @@ const nearestPopularService = async (options) => {
       totalCount: [{ $count: "count" }],
     },
   });
- 
+
   const result = await userModel.aggregate(pipeline);
- 
+
   const services = result[0]?.result || [];
   const totalResults = result[0]?.totalCount[0]?.count || 0;
- 
+
   return {
     result: services,
     pagination: {
