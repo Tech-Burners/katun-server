@@ -24,6 +24,7 @@ const {
   getBanks,
 } = require("./transaction.controller");
 const { auth } = require("../../middlewares/auth");
+const { flutterwaveCallback } = require("../../helpers/flutterWaveWebhook");
 const { default: status } = require("http-status");
 
 const router = express.Router();
@@ -44,7 +45,7 @@ router.get("/all-transaction", allTransactionController);
 router.get("/earning", earningController);
 router.get("/getBanks", getBanks);
 router.get("/getBanks/:country", getBanks);
-router.get("/success", (req, res) => { res.status(status.OK).json({ message: "Payment successful" })});
+router.get("/success", flutterwaveCallback);
 router.get("/all-payout", allPayoutController);
 router.get("/refund", refundController);
 // router.get("/pending-payout", partnerMonthlySummaryController);

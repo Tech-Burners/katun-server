@@ -25,8 +25,9 @@ const app = express();
 app.use(express.json()); // JSON
 app.use(bodyParser.urlencoded({ extended: true })); // form submissions
 
-const flutterwaveWebhook = require("./helpers/flutterWaveWebhook");
+const { flutterwaveWebhook, flutterwaveCallback } = require("./helpers/flutterWaveWebhook");
 app.post("/api/v1/webhook/flutterwave", flutterwaveWebhook);
+app.get("/api/v1/webhook/flutterwave", flutterwaveCallback);
 
 // Security Headers
 app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
