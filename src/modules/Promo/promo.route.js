@@ -7,6 +7,7 @@ const {
     getPartnerPromoController,
     getAdminPromoController,
     getCouponsByPartnerController,
+    verifyCouponController,
 } = require("./promo.controller");
 const { auth } = require("../../middlewares/auth");
 const router = express.Router();
@@ -19,6 +20,10 @@ const ensureUploadFolderExists = require('../../helpers/fileExists');
 const parseData = require('../../middlewares/parseData');
 ensureUploadFolderExists(UPLOADS_FOLDER);
 
+router.post("/verify", auth(['user', 'partner', 'admin', 'sub_admin', 'hr'], { optional: true }), verifyCouponController);
+router.post("/validate", auth(['user', 'partner', 'admin', 'sub_admin', 'hr'], { optional: true }), verifyCouponController);
+router.post("/apply", auth(['user', 'partner', 'admin', 'sub_admin', 'hr'], { optional: true }), verifyCouponController);
+router.get("/verify", auth(['user', 'partner', 'admin', 'sub_admin', 'hr'], { optional: true }), verifyCouponController);
 router.get("/partner/all", auth(['partner']), getPartnerPromoController);
 router.get("/partner/:partnerId", auth(['user', 'partner', 'admin', 'sub_admin'], { optional: true }), getCouponsByPartnerController);
 router.get("/coupons/:partnerId", auth(['user', 'partner', 'admin', 'sub_admin'], { optional: true }), getCouponsByPartnerController);

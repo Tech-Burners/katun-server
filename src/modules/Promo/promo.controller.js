@@ -7,6 +7,7 @@ const {
     getPartnerPromoService,
     getAdminPromoService,
     getCouponsByPartnerService,
+    verifyCouponService,
 } = require("./promo.service");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
@@ -68,6 +69,42 @@ const getCouponsByPartnerController = catchAsync(async (req, res) => {
     );
 });
 
+const verifyCouponController = catchAsync(async (req, res) => {
+    const code = req.body?.code || req.body?.coupon || req.body?.couponCode || req.query?.code;
+    const partnerId =
+        req.body?.partner ||
+        req.body?.partnerId ||
+        req.body?.provider ||
+        req.query?.partnerId ||
+        req.query?.partner;
+    const amount =
+        req.body?.amount !== undefined
+            ? req.body?.amount
+            : req.body?.totalPrice !== undefined
+            ? req.body?.totalPrice
+            : req.body?.servicePrice !== undefined
+            ? req.body?.servicePrice
+            : req.query?.amount;
+
+    const result = await verifyCouponService({
+        code,
+        partnerId,
+        amount,
+        userId: req.User?._id,
+        userRole: req.User?.role,
+    });
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Promo",
+            message: "Coupon verified successfully",
+            data: result,
+        })
+    );
+});
+
 module.exports = {
     addPromoController,
     editPromoController,
@@ -75,4 +112,5 @@ module.exports = {
     getPartnerPromoController,
     getAdminPromoController,
     getCouponsByPartnerController,
+    verifyCouponController,
 };
