@@ -210,7 +210,7 @@ const getCouponsByPartnerService = async (partnerId, options = {}) => {
     };
 };
 
-const verifyCouponService = async ({ code, partnerId, amount, userId, userRole }) => {
+const verifyCouponService = async ({ code, partnerId, amount }) => {
     if (!code || typeof code !== "string" || code.trim() === "") {
         throw new ApiError(status.BAD_REQUEST, "Coupon code is required");
     }
@@ -226,28 +226,17 @@ const verifyCouponService = async ({ code, partnerId, amount, userId, userRole }
         throw new ApiError(status.NOT_FOUND, "Invalid coupon code");
     }
 
-    // 2. Status validation
+    // 2. Status validation (Active / Inactive)
     if (promo.status && promo.status !== "active") {
         throw new ApiError(status.BAD_REQUEST, `This coupon is currently ${promo.status}`);
     }
 
-    const now = new Date();
-
-    // 3. Validity period check
-    if (promo.validForm && new Date(promo.validForm) > now) {
-        const formattedStart = new Date(promo.validForm).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-        });
-        throw new ApiError(status.BAD_REQUEST, `This coupon is not active yet. Valid from ${formattedStart}`);
-    }
-
-    if (promo.validTo && new Date(promo.validTo) < now) {
+    // 3. Expiration Date check (validTo)
+    if (promo.validTo && new Date(promo.validTo) < new Date()) {
         throw new ApiError(status.BAD_REQUEST, "This coupon has expired");
     }
 
-    // 4. Minimum spend check
+    // 4. Minimum spend check (if amount is passed)
     const numericAmount = amount !== undefined && amount !== null && amount !== "" ? Number(amount) : null;
     const minspend = Number(promo.minspend) || 0;
 
@@ -260,26 +249,7 @@ const verifyCouponService = async ({ code, partnerId, amount, userId, userRole }
         }
     }
 
-    // 5. Eligibility check
-    if (promo.eligiblity === "new-users" && userId) {
-        const bookingModel = require("../Booking/booking.model");
-        const existingBookingsCount = await bookingModel.countDocuments({
-            user: userId,
-            paymentStatus: { $in: ["paid", "successful"] },
-        });
-        if (existingBookingsCount > 0) {
-            throw new ApiError(status.BAD_REQUEST, "This coupon is only valid for new users on their first booking");
-        }
-    } else if (promo.eligiblity === "employees" && userId) {
-        const userModel = require("../User/user.model");
-        const currentUser = await userModel.findById(userId).select("role employer isEmployee");
-        const isEmployee = currentUser && (currentUser.role === "employee" || currentUser.isEmployee || currentUser.employer);
-        if (!isEmployee) {
-            throw new ApiError(status.BAD_REQUEST, "This coupon is only valid for corporate employees");
-        }
-    }
-
-    // 6. Creator Role & Partner Validation
+    // 5. Creator Role & Partner Validation
     // Admin promos: valid for all partners
     // Partner promos: only valid for the specific partner who created it
     let partnerInfo = null;
@@ -334,30 +304,9 @@ const verifyCouponService = async ({ code, partnerId, amount, userId, userRole }
         }
     }
 
-    // 7. Calculate Discount Amount
-    const promoDiscount = Number(promo.discount) || 0;
-    let discountAmount = 0;
+    // 6. Discount Amount
+    const discountAmount = Number(promo.discount || 0);
 
-    const discountType = promo.discountType || (promoDiscount <= 100 && promo.discountType === "percentage" ? "percentage" : "fixed");
-
-    if (discountType === "percentage" || discountType === "percent") {
-        if (numericAmount !== null && numericAmount > 0) {
-            discountAmount = (numericAmount * promoDiscount) / 100;
-            if (promo.maxDiscount && discountAmount > Number(promo.maxDiscount)) {
-                discountAmount = Number(promo.maxDiscount);
-            }
-        } else {
-            discountAmount = promoDiscount;
-        }
-    } else {
-        discountAmount = promoDiscount;
-    }
-
-    if (numericAmount !== null && numericAmount > 0) {
-        discountAmount = Math.min(numericAmount, discountAmount);
-    }
-
-    discountAmount = Number(discountAmount.toFixed(2));
     const finalAmount =
         numericAmount !== null && numericAmount > 0
             ? Number(Math.max(0, numericAmount - discountAmount).toFixed(2))
@@ -368,11 +317,7 @@ const verifyCouponService = async ({ code, partnerId, amount, userId, userRole }
         code: promo.code,
         name: promo.name || promo.code,
         description: promo.description || "",
-        discount: promo.discount,
-        discountType,
         discountAmount,
-        originalAmount: numericAmount,
-        finalAmount,
         minspend: promo.minspend || 0,
         createdBy: promo.createdBy,
         partner: partnerInfo
@@ -381,6 +326,7 @@ const verifyCouponService = async ({ code, partnerId, amount, userId, userRole }
                   businessName: partnerInfo.businessName,
               }
             : null,
+        ...(numericAmount !== null && numericAmount > 0 ? { originalAmount: numericAmount, finalAmount } : {}),
         promoId: promo._id,
     };
 };

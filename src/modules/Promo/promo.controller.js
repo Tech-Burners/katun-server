@@ -17,6 +17,18 @@ const addPromoController = catchAsync(async (req, res) => {
     if(req.file) req.body.image = `/uploads/promo/${req.file.filename}`;
     req.body.user = req.User._id;
     req.body.createdBy = ['admin', 'sub_admin'].includes(req.User.role) ? 'admin' : req.User.role;
+
+    // Normalize field names from Partner Mobile App
+    if (!req.body.name && req.body.title) req.body.name = req.body.title;
+    if (req.body.discountValue !== undefined && req.body.discount === undefined) req.body.discount = req.body.discountValue;
+    if (req.body.minimumSpend !== undefined && req.body.minspend === undefined) req.body.minspend = req.body.minimumSpend;
+    if (!req.body.validTo && req.body.expirationDate) req.body.validTo = req.body.expirationDate;
+
+    // Auto-generate promo code if not provided
+    if (!req.body.code) {
+        req.body.code = `PROMO${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+
     const newPromo = await addPromoService(req.body);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Promo", message: "Promo added successfully", data: newPromo, }));
 })
@@ -90,8 +102,6 @@ const verifyCouponController = catchAsync(async (req, res) => {
         code,
         partnerId,
         amount,
-        userId: req.User?._id,
-        userRole: req.User?.role,
     });
 
     return res.status(status.OK).json(
