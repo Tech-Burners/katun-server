@@ -627,13 +627,6 @@ const sendOtpVerifiedEmail = async ({
     <div style="background-color: #f8fafc; border-left: 4px solid #1F6F78; padding: 14px 16px; border-radius: 4px; margin-bottom: 24px; font-size: 13px; color: #475569;">
       <strong>Note:</strong> Your service session is now underway. Once your session concludes, your provider will mark it as fully completed.
     </div>
-
-    <!-- CTA Button -->
-    <div style="text-align: center; margin: 28px 0 20px;">
-      <a href="${ctaUrl}" style="background-color: #1F6F78; color: #ffffff; padding: 12px 28px; text-decoration: none; font-size: 14px; font-weight: 600; border-radius: 6px; display: inline-block;">
-        View Booking in Dashboard
-      </a>
-    </div>
   `;
 
   const html = renderBaseTemplate({
@@ -642,8 +635,7 @@ const sendOtpVerifiedEmail = async ({
     badgeColor: "#15803d",
     badgeBg: "#dcfce7",
     content,
-    ctaUrl,
-    ctaText: "View Booking in Dashboard",
+    ctaUrl: null,
   });
 
   try {
@@ -777,9 +769,6 @@ const sendUserBookingConfirmationEmail = async ({
   const badgeText = isApproved ? "Booking Confirmed" : "Booking Placed";
   const badgeColor = isApproved ? "#059669" : "#D97706";
   const badgeBg = isApproved ? "#D1FAE5" : "#FEF3C7";
-  const statusIndicator = isApproved
-    ? `<span style="color: #10B981; font-weight: 700;">● Confirmed &amp; Approved</span>`
-    : `<span style="color: #F59E0B; font-weight: 700;">● Pending Partner Approval</span>`;
 
   // Payment method & status formatting
   const displayPaymentMethod = getDisplayPaymentMethod(paymentMethod);
@@ -809,21 +798,6 @@ const sendUserBookingConfirmationEmail = async ({
     `;
   }
 
-  // Check-in PIN HTML Card
-  const pinCardHtml = pin
-    ? `
-    <div style="background-color: #f0fdf4; border: 1.5px dashed #16a34a; border-radius: 10px; padding: 22px 18px; text-align: center; margin: 24px 0;">
-      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.8px;">Your Check-in Code (OTP)</div>
-      <div style="font-size: 32px; font-weight: 800; color: #15803d; letter-spacing: 6px; margin: 8px 0 6px;">
-        ${pin}
-      </div>
-      <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
-        Please present this 4-digit code to your service provider upon arrival to verify attendance and start your session.
-      </p>
-    </div>
-  `
-    : "";
-
   // Payment Note
   let paymentNote = "";
   if (String(paymentMethod).toLowerCase() === "cash") {
@@ -850,18 +824,13 @@ const sendUserBookingConfirmationEmail = async ({
       }
     </p>
 
-    <!-- Total Amount & Status Card -->
+    <!-- Total Amount Card -->
     <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 22px 20px; text-align: center; margin: 20px 0 24px;">
       <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.6px;">Total Booking Amount</div>
-      <div style="font-size: 32px; font-weight: 800; color: #0f172a; margin: 6px 0 4px;">
+      <div style="font-size: 32px; font-weight: 800; color: #0f172a; margin: 6px 0 0;">
         ${currencySymbol}${formattedTotal}
       </div>
-      <div style="font-size: 13px;">
-        ${statusIndicator}
-      </div>
     </div>
-
-    ${pinCardHtml}
 
     <!-- Booking Overview Table -->
     <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 22px;">
@@ -930,11 +899,6 @@ const sendUserBookingConfirmationEmail = async ({
     </div>
 
     ${paymentNote}
-
-    <p style="font-size: 12.5px; color: #64748b; line-height: 1.5; margin: 18px 0 0;">
-      If you need to reschedule or have questions regarding this booking, please contact our support desk at 
-      <a href="mailto:${SUPPORT_EMAIL}" style="color: ${BRAND_COLOR}; font-weight: 500; text-decoration: none;">${SUPPORT_EMAIL}</a>.
-    </p>
   `;
 
   const html = renderBaseTemplate({
@@ -943,8 +907,7 @@ const sendUserBookingConfirmationEmail = async ({
     badgeColor,
     badgeBg,
     content,
-    ctaUrl,
-    ctaText: "View Booking in Dashboard",
+    ctaUrl: null,
   });
 
   try {
@@ -1188,8 +1151,7 @@ const sendPartnerNewBookingEmail = async ({
     badgeColor,
     badgeBg,
     content,
-    ctaUrl,
-    ctaText: "Open Partner Dashboard",
+    ctaUrl: null,
   });
 
   try {
