@@ -9,7 +9,11 @@ const payoutCycleModel = require("../Payout/payoutCycle.model");
 const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationByFcmToken");
 const { addNotificationService } = require("../Notification/notification.service");
 const { emailWithNodemailer } = require("../../helpers/email");
-const { sendTransactionEmail } = require("../../helpers/emailNotification");
+const {
+  sendTransactionEmail,
+  sendUserBookingConfirmationEmail,
+  sendPartnerNewBookingEmail,
+} = require("../../helpers/emailNotification");
 
 /**
  * Safely extract the appointment start datetime from booking data.
@@ -808,23 +812,39 @@ const processAllExpiredBookings = async () => {
 const sendNewBookingNotifications = async (bookingDocOrId) => {
   try {
     const booking = typeof bookingDocOrId === 'object' && bookingDocOrId._id
-      ? bookingDocOrId
+      ? await bookingModel.findById(bookingDocOrId._id)
       : await bookingModel.findById(bookingDocOrId);
 
     if (!booking) return;
 
+    // Prevent duplicate emails & notifications for the same booking
+    if (booking.bookingEmailSent) {
+      console.log(`Booking notifications already sent for ${booking._id}, skipping duplicate.`);
+      return;
+    }
+    await bookingModel.updateOne({ _id: booking._id }, { $set: { bookingEmailSent: true } });
+
     let serviceName = "service";
+    let serviceDoc = null;
     try {
-      const serviceDoc = await serviceModel.findById(booking.service);
+      serviceDoc = await serviceModel.findById(booking.service);
       if (serviceDoc?.name) serviceName = serviceDoc.name;
     } catch (_) {}
 
-    const [userDoc, partnerUserDoc] = await Promise.all([
+    const providerUserId = booking.provider || serviceDoc?.user;
+
+    const [userDoc, partnerUserDoc, partnerDoc] = await Promise.all([
       userModel.findById(booking.user),
-      userModel.findById(booking.provider),
+      providerUserId ? userModel.findById(providerUserId) : null,
+      providerUserId ? partnerModel.findOne({ user: providerUserId }) : null,
     ]);
 
     const isAutoApproved = booking.status === "approved";
+    const providerName = partnerDoc?.businessName || partnerUserDoc?.fullName || "AuraVive Partner";
+    const providerAddress = partnerDoc?.address || partnerUserDoc?.address || "AuraVive Partner Location";
+    const customerName = userDoc?.fullName || "Valued Customer";
+    const customerPhone = `${userDoc?.countryCode || ""} ${userDoc?.number || userDoc?.phoneNumber || ""}`.trim();
+    const customerEmail = userDoc?.email;
 
     // -------------------------------------------------------------
     // 1. NOTIFICATIONS FOR THE PROVIDER (PARTNER)
@@ -838,7 +858,7 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
       // A. Push Notification
       if (partnerUserDoc.enabledPushNotification !== false) {
         await sendNotificationByFcmToken(
-          booking.provider,
+          providerUserId,
           partnerTitle,
           partnerMessage,
           booking._id,
@@ -849,19 +869,38 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
       // B. In-App Notification
       await addNotificationService({
         sender: booking.user,
-        targetUser: booking.provider,
+        targetUser: providerUserId,
         title: partnerTitle,
         message: partnerMessage,
         type: "booking",
         bookingId: booking._id,
       });
 
-      // C. Email Notification
+      // C. Production Email Notification with Full Details
       if (partnerUserDoc.email) {
-        await emailWithNodemailer({
+        await sendPartnerNewBookingEmail({
           email: partnerUserDoc.email,
-          subject: partnerTitle,
-          html: `<p>Hello ${partnerUserDoc.fullName || "Partner"},</p><p>${partnerMessage}</p><p><strong>Booking ID:</strong> ${booking.bookingId || booking._id}</p><p><strong>Service:</strong> ${serviceName}</p>`,
+          partnerName: providerName,
+          customerName,
+          customerPhone,
+          customerEmail,
+          bookingId: booking.bookingId || booking._id,
+          serviceName,
+          providerAddress,
+          date: booking.date,
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          duration: serviceDoc?.duration,
+          isOneTime: booking.isOneTime,
+          sessionLeft: booking.sessionLeft,
+          servicePrice: booking.servicePrice,
+          addons: booking.addons,
+          tips: booking.tips,
+          totalPrice: booking.totalPrice,
+          paymentMethod: booking.paymentMethod,
+          paymentStatus: booking.paymentStatus,
+          status: booking.status,
+          bookingRequestExpireAt: booking.bookingRequestExpireAt,
         }).catch((e) => console.error("Partner new booking email error:", e.message));
       }
     }
@@ -888,7 +927,7 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
 
       // B. In-App Notification
       await addNotificationService({
-        sender: booking.provider,
+        sender: providerUserId,
         targetUser: booking.user,
         title: userTitle,
         message: userMessage,
@@ -896,24 +935,29 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
         bookingId: booking._id,
       });
 
-      // C. Email Notification (Transaction Receipt)
+      // C. Production Email Notification with Full Details
       if (userDoc.email) {
-        await sendTransactionEmail({
+        await sendUserBookingConfirmationEmail({
           email: userDoc.email,
-          fullName: userDoc.fullName,
+          customerName,
           bookingId: booking.bookingId || booking._id,
-          txRef: booking.transaction_id || `BK_${booking.bookingId || booking._id}`,
           serviceName,
-          providerName: partnerUserDoc?.fullName || partnerDoc?.businessName || "AuraVive Partner",
-          transactionType: "Service Booking",
-          amount: booking.totalPrice || booking.servicePrice || 0,
-          currency: "NGN",
-          paymentMethod: booking.paymentMethod || "card",
-          paymentStatus: booking.paymentMethod === "cash" ? "pending (cash)" : "successful",
-          date: booking.createdAt || new Date(),
-          description: isAutoApproved
-            ? "Your booking has been approved and confirmed."
-            : "Your booking is placed and waiting for provider approval.",
+          providerName,
+          providerAddress,
+          date: booking.date,
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          duration: serviceDoc?.duration,
+          isOneTime: booking.isOneTime,
+          sessionLeft: booking.sessionLeft,
+          servicePrice: booking.servicePrice,
+          addons: booking.addons,
+          tips: booking.tips,
+          totalPrice: booking.totalPrice,
+          paymentMethod: booking.paymentMethod,
+          paymentStatus: booking.paymentStatus,
+          status: booking.status,
+          pin: booking.pin,
         }).catch((e) => console.error("User new booking email error:", e.message));
       }
     }

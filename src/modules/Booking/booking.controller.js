@@ -22,10 +22,12 @@ const { bookingService, pendingBookingService, upcomingBookingService, activeBoo
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
 const serviceModel = require("../Service/service.model");
+const { sendNewBookingNotifications } = require("./bookingExpiry.service");
 
 const bookingController = catchAsync(async (req, res) => {
     req.body.user = req.User._id;
     const result = await bookingService(req.body);
+    await sendNewBookingNotifications(result);
     return res.status(status.CREATED).json(response({ status: 'success', statusCode: status.CREATED, type: "Booking", message: "Booking added successfully", data: result, }));
 })
 

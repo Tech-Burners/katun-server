@@ -16,8 +16,9 @@ const { sendNotificationByFcmToken } = require("../../helpers/sendNotificationBy
 const { addNotificationService } = require("../Notification/notification.service");
 const { getOrCreateCycle } = require("../Payout/payout.service");
 const payoutCycleModel = require("../Payout/payoutCycle.model");
+const partnerModel = require("../Partner/partner.model");
 const { emailWithNodemailer } = require("../../helpers/email");
-const { sendOtpVerifiedEmail } = require("../../helpers/emailNotification");
+const { sendOtpVerifiedEmail, sendUserBookingConfirmationEmail } = require("../../helpers/emailNotification");
 const {
     calculateBookingRequestExpireAt,
     adjustPayoutCycleOnRefund,
@@ -31,6 +32,10 @@ const bookingService = async (data) => {
 
     if (!service) {
         throw new ApiError(status.NOT_FOUND, "Service not found");
+    }
+
+    if (!data.provider && service.user) {
+        data.provider = service.user;
     }
 
     // Check slot availability and capacity
@@ -564,12 +569,33 @@ const approveBookingService = async (id) => {
         }
     );
 
-    // 3. Email Notification
+    // 3. Email Notification (Full Details)
     if (userData?.email) {
-        await emailWithNodemailer({
+        const [partnerDoc, partnerUserDoc] = await Promise.all([
+            result.provider ? partnerModel.findOne({ user: result.provider }) : null,
+            result.provider ? userModel.findById(result.provider) : null,
+        ]);
+        await sendUserBookingConfirmationEmail({
             email: userData.email,
-            subject: title,
-            html: `<p>Hello ${userData.fullName || "Valued Customer"},</p><p>Your booking for <strong>${serviceName}</strong> has been approved by the provider.</p>`,
+            customerName: userData.fullName,
+            bookingId: result.bookingId || result._id,
+            serviceName,
+            providerName: partnerDoc?.businessName || partnerUserDoc?.fullName || "AuraVive Partner",
+            providerAddress: partnerDoc?.address || partnerUserDoc?.address || "AuraVive Partner Location",
+            date: result.date,
+            startTime: result.startTime,
+            endTime: result.endTime,
+            duration: service?.duration,
+            isOneTime: result.isOneTime,
+            sessionLeft: result.sessionLeft,
+            servicePrice: result.servicePrice,
+            addons: result.addons,
+            tips: result.tips,
+            totalPrice: result.totalPrice,
+            paymentMethod: result.paymentMethod,
+            paymentStatus: result.paymentStatus,
+            status: "approved",
+            pin: result.pin,
         }).catch((e) => console.error("Approval email error:", e.message));
     }
 
@@ -1007,6 +1033,9 @@ const bookingDetailsService = async (id, loginUserId) => {
                 address: '$partnerData.address',
                 servicePrice: 1,
                 totalPrice: 1,
+                paymentMethod: 1,
+                bookingMethod: { $ifNull: ["$paymentMethod", "card"] },
+                paymentStatus: 1,
                 sessionLeft: 1,
                 date: 1,
                 pin: 1,
@@ -1200,6 +1229,9 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 servicefee: '$serviceData.servicefee',
                 duration: '$serviceData.duration',
                 totalPrice: 1,
+                paymentMethod: 1,
+                bookingMethod: { $ifNull: ["$paymentMethod", "card"] },
+                paymentStatus: 1,
                 sessionLeft: 1,
                 date: 1,
                 pin: 1,

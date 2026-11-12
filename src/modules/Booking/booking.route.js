@@ -34,13 +34,13 @@ router.get('/admin/all-booking', auth(['admin','sub_admin']), allBookingControll
 router.get('/partner/active', auth(['partner']), allActiveBookingController);
 router.get('/partner/completed', auth(['partner']), allCompletedBookingController);
 router.get('/partner/cancelled', auth(['partner']), allCancelledBookingController);
-router.get('/partner/details/:id', auth(['partner']), bookingDetailsAdminEndController);
+router.get('/partner/details/:id', auth(['partner', 'admin', 'sub_admin']), bookingDetailsAdminEndController);
 router.get('/pending-userend', auth(['user']), userPendingBookingController);
 router.get('/upcoming-userend', auth(['user']), userUpcomingBookingController);
 router.get('/active-userend', auth(['user']), userActiveBookingController);
 router.get('/past-userend', auth(['user']), userPastBookingController);
-router.get('/details-userend/:id', auth(['user']), bookingDetailsController);
-router.get('/details/:id', auth(['user']), bookingDetailsController);
+router.get('/details-userend/:id', auth(['user', 'admin', 'sub_admin']), bookingDetailsController);
+router.get('/details/:id', auth(['user', 'admin', 'sub_admin']), bookingDetailsController);
 router.patch('/mark-completed/:id', auth(['partner']), markAsCompletedController);
 router.post('/feedback/:id', auth(['user', 'partner']), bookingFeedbackController);
 router.post("/verify-pin/:bookingId", verifyPinController);

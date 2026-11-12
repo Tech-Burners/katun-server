@@ -657,6 +657,554 @@ const sendOtpVerifiedEmail = async ({
   }
 };
 
+/**
+ * Format date for booking emails
+ */
+const formatBookingDate = (d) => {
+  if (!d) return "As scheduled";
+  const dateObj = d instanceof Date ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return String(d);
+  return dateObj.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+/**
+ * Format time range for booking emails
+ */
+const formatBookingTime = (start, end) => {
+  if (!start && !end) return "Flexible / Standard business hours";
+  const formatSingle = (val) => {
+    if (!val) return "";
+    const dateObj = val instanceof Date ? val : new Date(val);
+    if (isNaN(dateObj.getTime())) return String(val);
+    return dateObj.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+  const startStr = formatSingle(start);
+  const endStr = formatSingle(end);
+  if (startStr && endStr) return `${startStr} - ${endStr}`;
+  return startStr || endStr || "As scheduled";
+};
+
+/**
+ * Clean display name for payment method
+ */
+const getDisplayPaymentMethod = (method) => {
+  const m = String(method || "").toLowerCase();
+  if (m.includes("cash")) return "Cash on Location";
+  if (m.includes("wallet")) return "Digital Wallet";
+  if (m.includes("bank")) return "Bank Transfer";
+  if (m.includes("ussd")) return "USSD";
+  return "Card (Debit/Credit)";
+};
+
+/**
+ * Clean display name for payment status
+ */
+const getDisplayPaymentStatus = (paymentStatus, paymentMethod) => {
+  const m = String(paymentMethod || "").toLowerCase();
+  const s = String(paymentStatus || "").toLowerCase();
+  if (m === "cash") {
+    return s === "paid" ? "Paid (Cash Collected)" : "Pending (Cash on Delivery)";
+  }
+  if (s === "paid" || s === "successful") return "Paid";
+  if (s === "refunded") return "Refunded";
+  if (s === "failed") return "Failed";
+  return "Pending Payment";
+};
+
+/**
+ * 10. User Booking Confirmation Email (Full Details)
+ */
+const sendUserBookingConfirmationEmail = async ({
+  email,
+  customerName,
+  bookingId,
+  serviceName = "Wellness Service",
+  providerName = "AuraVive Partner",
+  providerAddress = "Partner Location",
+  date,
+  startTime,
+  endTime,
+  duration,
+  isOneTime = true,
+  sessionLeft,
+  servicePrice = 0,
+  addons = [],
+  tips = 0,
+  totalPrice = 0,
+  currency = "NGN",
+  paymentMethod = "card",
+  paymentStatus = "paid",
+  status = "pending",
+  pin,
+  ctaUrl = DEFAULT_LOGIN_URL,
+}) => {
+  if (!email) return;
+
+  const displayName = customerName || "Valued Customer";
+  const numTotal = Number(totalPrice) || 0;
+  const formattedTotal = numTotal.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const numBase = Number(servicePrice) || 0;
+  const formattedBase = numBase.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const numTips = Number(tips) || 0;
+  const formattedTips = numTips.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  const currencySymbol = currency === "NGN" ? "₦" : `${currency} `;
+
+  // Format date & time
+  const formattedDate = formatBookingDate(date);
+  const formattedTime = formatBookingTime(startTime, endTime);
+
+  // Status mapping
+  const isApproved = String(status).toLowerCase() === "approved";
+  const badgeText = isApproved ? "Booking Confirmed" : "Booking Placed";
+  const badgeColor = isApproved ? "#059669" : "#D97706";
+  const badgeBg = isApproved ? "#D1FAE5" : "#FEF3C7";
+  const statusIndicator = isApproved
+    ? `<span style="color: #10B981; font-weight: 700;">● Confirmed &amp; Approved</span>`
+    : `<span style="color: #F59E0B; font-weight: 700;">● Pending Partner Approval</span>`;
+
+  // Payment method & status formatting
+  const displayPaymentMethod = getDisplayPaymentMethod(paymentMethod);
+  const displayPaymentStatus = getDisplayPaymentStatus(paymentStatus, paymentMethod);
+
+  // Addons HTML rows
+  let addonsHtml = "";
+  if (Array.isArray(addons) && addons.length > 0) {
+    const addonRows = addons
+      .map(
+        (a) =>
+          `<div style="font-size: 13px; color: #4b5563; margin-top: 4px;">+ ${
+            a.serviceName || a.name || "Add-on"
+          }: <strong>${currencySymbol}${Number(a.price || 0).toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}</strong></div>`
+      )
+      .join("");
+    addonsHtml = `
+      <tr style="border-bottom: 1px solid #f1f5f9;">
+        <td style="color: #64748b; font-weight: 500; vertical-align: top; padding: 11px;">Selected Add-ons</td>
+        <td style="color: #0f172a; text-align: right; padding: 11px;">
+          ${addonRows}
+        </td>
+      </tr>
+    `;
+  }
+
+  // Check-in PIN HTML Card
+  const pinCardHtml = pin
+    ? `
+    <div style="background-color: #f0fdf4; border: 1.5px dashed #16a34a; border-radius: 10px; padding: 22px 18px; text-align: center; margin: 24px 0;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #166534; letter-spacing: 0.8px;">Your Check-in Code (OTP)</div>
+      <div style="font-size: 32px; font-weight: 800; color: #15803d; letter-spacing: 6px; margin: 8px 0 6px;">
+        ${pin}
+      </div>
+      <p style="margin: 0; font-size: 13px; color: #475569; line-height: 1.5;">
+        Please present this 4-digit code to your service provider upon arrival to verify attendance and start your session.
+      </p>
+    </div>
+  `
+    : "";
+
+  // Payment Note
+  let paymentNote = "";
+  if (String(paymentMethod).toLowerCase() === "cash") {
+    paymentNote = `
+      <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #92400e; margin: 18px 0;">
+        <strong>Cash Payment:</strong> You selected <strong>Cash on Location</strong>. Please have <strong>${currencySymbol}${formattedTotal}</strong> ready to pay your provider directly upon check-in.
+      </div>
+    `;
+  } else {
+    paymentNote = `
+      <div style="background-color: #f8fafc; border-left: 4px solid ${BRAND_COLOR}; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #475569; margin: 18px 0;">
+        <strong>Payment Note:</strong> Your payment of <strong>${currencySymbol}${formattedTotal}</strong> was processed via <strong>${displayPaymentMethod}</strong>. No additional charge is required at arrival.
+      </div>
+    `;
+  }
+
+  const content = `
+    <p style="margin: 0 0 16px;">Hello <strong>${displayName}</strong>,</p>
+    <p style="margin: 0 0 20px;">
+      ${
+        isApproved
+          ? `Great news! Your booking for <strong>${serviceName}</strong> has been confirmed. Below are your full appointment details.`
+          : `Thank you for booking with <strong>${APP_NAME}</strong>! Your booking for <strong>${serviceName}</strong> has been placed and is waiting for provider confirmation.`
+      }
+    </p>
+
+    <!-- Total Amount & Status Card -->
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 22px 20px; text-align: center; margin: 20px 0 24px;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.6px;">Total Booking Amount</div>
+      <div style="font-size: 32px; font-weight: 800; color: #0f172a; margin: 6px 0 4px;">
+        ${currencySymbol}${formattedTotal}
+      </div>
+      <div style="font-size: 13px;">
+        ${statusIndicator}
+      </div>
+    </div>
+
+    ${pinCardHtml}
+
+    <!-- Booking Overview Table -->
+    <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 22px;">
+      <table width="100%" cellpadding="11" cellspacing="0" style="border-collapse: collapse; font-size: 13.5px;">
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #fafafa;">
+          <td colspan="2" style="font-weight: 700; color: #334155; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+            Booking &amp; Service Details
+          </td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500; width: 42%;">Booking Reference</td>
+          <td style="color: #0f172a; font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace; text-align: right;">#${bookingId}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Service</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${serviceName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Service Provider</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${providerName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Location / Address</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${providerAddress}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Appointment Date</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${formattedDate}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Scheduled Time</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${formattedTime}</td>
+        </tr>
+        ${duration ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Duration</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${duration} minutes</td>
+        </tr>` : ""}
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Session Type</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${isOneTime ? "Single Session" : `Package (${sessionLeft || "Multiple"} sessions)`}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Payment Method</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${displayPaymentMethod}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Payment Status</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${displayPaymentStatus}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Base Service Price</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${currencySymbol}${formattedBase}</td>
+        </tr>
+        ${addonsHtml}
+        ${numTips > 0 ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Tip</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${currencySymbol}${formattedTips}</td>
+        </tr>` : ""}
+        <tr style="background-color: #fafafa;">
+          <td style="color: #0f172a; font-weight: 700;">Total Amount</td>
+          <td style="color: ${BRAND_COLOR}; font-weight: 800; font-size: 15px; text-align: right;">${currencySymbol}${formattedTotal}</td>
+        </tr>
+      </table>
+    </div>
+
+    ${paymentNote}
+
+    <p style="font-size: 12.5px; color: #64748b; line-height: 1.5; margin: 18px 0 0;">
+      If you need to reschedule or have questions regarding this booking, please contact our support desk at 
+      <a href="mailto:${SUPPORT_EMAIL}" style="color: ${BRAND_COLOR}; font-weight: 500; text-decoration: none;">${SUPPORT_EMAIL}</a>.
+    </p>
+  `;
+
+  const html = renderBaseTemplate({
+    title: isApproved ? `Booking Confirmed: ${serviceName}` : `Booking Placed: ${serviceName}`,
+    badgeText,
+    badgeColor,
+    badgeBg,
+    content,
+    ctaUrl,
+    ctaText: "View Booking in Dashboard",
+  });
+
+  try {
+    await emailWithNodemailer({
+      email,
+      subject: isApproved
+        ? `Booking Confirmed: ${serviceName} [${bookingId}] ✅`
+        : `Booking Placed: ${serviceName} [${bookingId}] 📅`,
+      html,
+    });
+  } catch (error) {
+    console.error(`Failed to send User Booking email to ${email}:`, error.message);
+  }
+};
+
+/**
+ * 11. Partner New Booking Email (Full Details)
+ */
+const sendPartnerNewBookingEmail = async ({
+  email,
+  partnerName,
+  customerName,
+  customerPhone,
+  customerEmail,
+  bookingId,
+  serviceName = "Wellness Service",
+  providerAddress = "Partner Location",
+  date,
+  startTime,
+  endTime,
+  duration,
+  isOneTime = true,
+  sessionLeft,
+  servicePrice = 0,
+  addons = [],
+  tips = 0,
+  totalPrice = 0,
+  currency = "NGN",
+  paymentMethod = "card",
+  paymentStatus = "paid",
+  status = "pending",
+  bookingRequestExpireAt,
+  ctaUrl = DEFAULT_LOGIN_URL,
+}) => {
+  if (!email) return;
+
+  const displayName = partnerName || "Partner";
+  const numTotal = Number(totalPrice) || 0;
+  const formattedTotal = numTotal.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const numBase = Number(servicePrice) || 0;
+  const formattedBase = numBase.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+  const numTips = Number(tips) || 0;
+  const formattedTips = numTips.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+  const currencySymbol = currency === "NGN" ? "₦" : `${currency} `;
+
+  // Format date & time
+  const formattedDate = formatBookingDate(date);
+  const formattedTime = formatBookingTime(startTime, endTime);
+
+  // Status mapping
+  const isApproved = String(status).toLowerCase() === "approved";
+  const badgeText = isApproved ? "New Booking Scheduled" : "Action Required — New Request";
+  const badgeColor = isApproved ? "#059669" : "#DC2626";
+  const badgeBg = isApproved ? "#D1FAE5" : "#FEE2E2";
+  const statusIndicator = isApproved
+    ? `<span style="color: #10B981; font-weight: 700;">● Confirmed on Calendar</span>`
+    : `<span style="color: #EF4444; font-weight: 700;">● Awaiting Your Approval</span>`;
+
+  // Payment method & status formatting
+  const displayPaymentMethod = getDisplayPaymentMethod(paymentMethod);
+  const displayPaymentStatus = getDisplayPaymentStatus(paymentStatus, paymentMethod);
+
+  // Addons HTML rows
+  let addonsHtml = "";
+  if (Array.isArray(addons) && addons.length > 0) {
+    const addonRows = addons
+      .map(
+        (a) =>
+          `<div style="font-size: 13px; color: #4b5563; margin-top: 4px;">+ ${
+            a.serviceName || a.name || "Add-on"
+          }: <strong>${currencySymbol}${Number(a.price || 0).toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}</strong></div>`
+      )
+      .join("");
+    addonsHtml = `
+      <tr style="border-bottom: 1px solid #f1f5f9;">
+        <td style="color: #64748b; font-weight: 500; vertical-align: top; padding: 11px;">Client Add-ons</td>
+        <td style="color: #0f172a; text-align: right; padding: 11px;">
+          ${addonRows}
+        </td>
+      </tr>
+    `;
+  }
+
+  // Action box
+  const isCash = String(paymentMethod).toLowerCase() === "cash";
+  const operationalNotice = isApproved
+    ? `
+      <div style="background-color: #f0fdf4; border-left: 4px solid #16a34a; padding: 14px 18px; border-radius: 4px; margin: 20px 0;">
+        <strong style="color: #166534; font-size: 14px;">Confirmed Appointment</strong>
+        <p style="margin: 6px 0 0; color: #15803d; font-size: 13.5px; line-height: 1.5;">
+          This booking is confirmed on your schedule. Please ensure your assigned staff member and workstation are ready.
+        </p>
+      </div>
+    `
+    : `
+      <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 14px 18px; border-radius: 4px; margin: 20px 0;">
+        <strong style="color: #92400e; font-size: 14px;">Action Required — Pending Approval</strong>
+        <p style="margin: 6px 0 0; color: #78350f; font-size: 13.5px; line-height: 1.5;">
+          A client has requested this appointment. Please log in to your Partner Portal to <strong>approve or decline</strong> this booking before the acceptance window expires.
+        </p>
+      </div>
+    `;
+
+  const cashNotice = isCash
+    ? `
+      <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 14px 16px; margin: 18px 0; font-size: 13px; color: #991b1b;">
+        <strong>Cash Payment Notice:</strong> The client selected <strong>Cash on Location</strong>. Please collect <strong>${currencySymbol}${formattedTotal}</strong> directly from the client upon arrival.
+      </div>
+    `
+    : "";
+
+  const content = `
+    <p style="margin: 0 0 16px;">Hello <strong>${displayName}</strong>,</p>
+    <p style="margin: 0 0 20px;">
+      You have received a new booking for <strong>${serviceName}</strong> on <strong>${APP_NAME}</strong>. Below are the full client and appointment details.
+    </p>
+
+    <!-- Total Booking Value & Status Card -->
+    <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 22px 20px; text-align: center; margin: 20px 0 24px;">
+      <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.6px;">Booking Value</div>
+      <div style="font-size: 32px; font-weight: 800; color: #0f172a; margin: 6px 0 4px;">
+        ${currencySymbol}${formattedTotal}
+      </div>
+      <div style="font-size: 13px;">
+        ${statusIndicator}
+      </div>
+    </div>
+
+    ${operationalNotice}
+
+    <!-- Client & Booking Details Table -->
+    <div style="background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; margin-bottom: 22px;">
+      <table width="100%" cellpadding="11" cellspacing="0" style="border-collapse: collapse; font-size: 13.5px;">
+        <tr style="border-bottom: 1px solid #f1f5f9; background-color: #fafafa;">
+          <td colspan="2" style="font-weight: 700; color: #334155; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+            Booking &amp; Client Overview
+          </td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500; width: 42%;">Booking Reference</td>
+          <td style="color: #0f172a; font-weight: 600; font-family: 'SFMono-Regular', Consolas, monospace; text-align: right;">#${bookingId}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Service</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${serviceName}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Client Name</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${customerName || "Customer"}</td>
+        </tr>
+        ${customerPhone ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Client Phone</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${customerPhone}</td>
+        </tr>` : ""}
+        ${customerEmail ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Client Email</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${customerEmail}</td>
+        </tr>` : ""}
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Appointment Date</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${formattedDate}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Scheduled Time</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${formattedTime}</td>
+        </tr>
+        ${duration ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Duration</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${duration} minutes</td>
+        </tr>` : ""}
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Service Location</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${providerAddress}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Session Type</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${isOneTime ? "Single Session" : `Package (${sessionLeft || "Multiple"} sessions)`}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Payment Method</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${displayPaymentMethod}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Payment Status</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${displayPaymentStatus}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Base Service Price</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${currencySymbol}${formattedBase}</td>
+        </tr>
+        ${addonsHtml}
+        ${numTips > 0 ? `
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="color: #64748b; font-weight: 500;">Tip</td>
+          <td style="color: #0f172a; font-weight: 600; text-align: right;">${currencySymbol}${formattedTips}</td>
+        </tr>` : ""}
+        <tr style="background-color: #fafafa;">
+          <td style="color: #0f172a; font-weight: 700;">Total Booking Value</td>
+          <td style="color: ${BRAND_COLOR}; font-weight: 800; font-size: 15px; text-align: right;">${currencySymbol}${formattedTotal}</td>
+        </tr>
+      </table>
+    </div>
+
+    ${cashNotice}
+
+    <!-- OTP Check-in Advisory -->
+    <div style="background-color: #f8fafc; border-left: 3px solid ${BRAND_COLOR}; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #475569; margin: 18px 0;">
+      <strong>Check-in PIN Verification:</strong> The client has been issued a 4-digit verification code. When the client arrives for their session, ask for this code and enter it into your Partner App/Dashboard to verify attendance and start the service timer.
+    </div>
+  `;
+
+  const html = renderBaseTemplate({
+    title: isApproved ? `New Booking: ${serviceName}` : `New Booking Request: ${serviceName}`,
+    badgeText,
+    badgeColor,
+    badgeBg,
+    content,
+    ctaUrl,
+    ctaText: "Open Partner Dashboard",
+  });
+
+  try {
+    await emailWithNodemailer({
+      email,
+      subject: isApproved
+        ? `New Booking Scheduled: ${serviceName} [${bookingId}] 🗓️`
+        : `Action Required: New Booking Request for ${serviceName} [${bookingId}] ⚠️`,
+      html,
+    });
+  } catch (error) {
+    console.error(`Failed to send Partner Booking email to ${email}:`, error.message);
+  }
+};
+
 module.exports = {
   sendOtpVerifiedEmail,
   sendUserWelcomeEmail,
@@ -667,5 +1215,11 @@ module.exports = {
   sendAccountActivatedEmail,
   sendStaffCredentialsEmail,
   sendTransactionEmail,
+  sendUserBookingConfirmationEmail,
+  sendPartnerNewBookingEmail,
+  formatBookingDate,
+  formatBookingTime,
+  getDisplayPaymentMethod,
+  getDisplayPaymentStatus,
 };
 

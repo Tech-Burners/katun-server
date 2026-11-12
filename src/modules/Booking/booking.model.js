@@ -137,6 +137,12 @@ const bookingSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+
+    bookingEmailSent: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
   },
   {
     timestamps: true,
