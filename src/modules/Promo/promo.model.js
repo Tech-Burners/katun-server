@@ -7,6 +7,7 @@ const promoSchema = new mongoose.Schema({
     discount : { type: Number, required: false },
     minspend : { type: Number, required: false },
     usageLimit : { type: Number, required: false },
+    usedCount : { type: Number, default: 0 },
     validForm : { type: Date, required: false },
     validTo : { type: Date, required: false },    
     eligiblity : { type: String, enum: ['all-users', 'new-users', 'employees'], required: false },

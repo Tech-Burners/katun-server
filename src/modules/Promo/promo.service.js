@@ -211,7 +211,7 @@ const getCouponsByPartnerService = async (partnerId, options = {}) => {
     };
 };
 
-const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
+const verifyCouponService = async ({ code, serviceId, partnerId, amount, userId }) => {
     if (!code || typeof code !== "string" || code.trim() === "") {
         return {
             isValid: false,
@@ -244,8 +244,24 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
         };
     }
 
-    // 3. Expiration Date check (validTo)
-    if (promo.validTo && new Date(promo.validTo) < new Date()) {
+    const now = new Date();
+
+    // 3. Start Date validation (validForm)
+    if (promo.validForm && new Date(promo.validForm) > now) {
+        const formattedStart = new Date(promo.validForm).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+        });
+        return {
+            isValid: false,
+            discountAmount: 0,
+            message: `This coupon is not active yet. Valid from ${formattedStart}`,
+        };
+    }
+
+    // 4. Expiration Date validation (validTo)
+    if (promo.validTo && new Date(promo.validTo) < now) {
         return {
             isValid: false,
             discountAmount: 0,
@@ -253,12 +269,52 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
         };
     }
 
-    // 4. Minimum spend check (if amount is passed)
+    // 5. Usage Limit validation (usageLimit)
+    const usageLimit = Number(promo.usageLimit) || 0;
+    if (usageLimit > 0) {
+        const bookingModel = require("../Booking/booking.model");
+        const bookingsCount = await bookingModel.countDocuments({
+            $or: [
+                { coupon: promo.code },
+                { promoCode: promo.code },
+                { promo: promo._id },
+            ],
+        });
+        const totalUsed = Math.max(Number(promo.usedCount) || 0, bookingsCount);
+        if (totalUsed >= usageLimit) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon has reached its maximum usage limit",
+            };
+        }
+    }
+
+    // 6. Service lookup (if serviceId is provided)
+    let serviceDoc = null;
+    if (serviceId) {
+        if (mongoose.Types.ObjectId.isValid(String(serviceId))) {
+            serviceDoc = await serviceModel.findById(serviceId).select("_id user name servicefee");
+        }
+        if (!serviceDoc) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "Service not found",
+            };
+        }
+    }
+
+    // 7. Minimum spend check (minspend)
     const numericAmount = amount !== undefined && amount !== null && amount !== "" ? Number(amount) : null;
     const minspend = Number(promo.minspend) || 0;
+    let amountToCheck = numericAmount;
+    if (amountToCheck === null && serviceDoc && serviceDoc.servicefee !== undefined) {
+        amountToCheck = Number(serviceDoc.servicefee);
+    }
 
-    if (numericAmount !== null && !isNaN(numericAmount) && numericAmount > 0) {
-        if (minspend > 0 && numericAmount < minspend) {
+    if (minspend > 0 && amountToCheck !== null && !isNaN(amountToCheck) && amountToCheck > 0) {
+        if (amountToCheck < minspend) {
             return {
                 isValid: false,
                 discountAmount: 0,
@@ -267,7 +323,51 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
         }
     }
 
-    // 5. Creator Role & Service/Partner Validation
+    // 8. User Eligibility check (eligiblity)
+    if (promo.eligiblity === "new-users") {
+        if (!userId) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon is only valid for new users. Please sign in to apply this coupon.",
+            };
+        }
+        const bookingModel = require("../Booking/booking.model");
+        const existingBookingsCount = await bookingModel.countDocuments({
+            user: userId,
+            $or: [
+                { paymentStatus: { $in: ["paid", "successful"] } },
+                { status: { $in: ["approved", "completed"] } },
+            ],
+        });
+        if (existingBookingsCount > 0) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon is only valid for new users on their first booking",
+            };
+        }
+    } else if (promo.eligiblity === "employees") {
+        if (!userId) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon is only valid for corporate employees. Please sign in to apply this coupon.",
+            };
+        }
+        const userModel = require("../User/user.model");
+        const currentUser = await userModel.findById(userId).select("role employer isEmployee");
+        const isEmployee = currentUser && (currentUser.role === "employee" || currentUser.isEmployee || currentUser.employer);
+        if (!isEmployee) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon is only valid for corporate employees",
+            };
+        }
+    }
+
+    // 9. Creator Role & Service/Partner Validation
     // - Admin coupons (createdBy: 'admin'): valid for all users across all services
     // - Partner coupons (createdBy: 'partner'): valid only for services belonging to that specific partner
     if (promo.createdBy === "partner") {
@@ -276,22 +376,10 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
         let checkedContext = false;
 
         // Check A: service is provided -> check if the service belongs to this partner
-        if (serviceId) {
+        if (serviceDoc) {
             checkedContext = true;
-            let serviceDoc = null;
-            if (mongoose.Types.ObjectId.isValid(String(serviceId))) {
-                serviceDoc = await serviceModel.findById(serviceId).select("_id user name");
-            }
-            if (serviceDoc) {
-                if (String(serviceDoc.user) === promoPartnerUserId) {
-                    isMatch = true;
-                }
-            } else {
-                return {
-                    isValid: false,
-                    discountAmount: 0,
-                    message: "Service not found",
-                };
+            if (String(serviceDoc.user) === promoPartnerUserId) {
+                isMatch = true;
             }
         }
 
@@ -332,7 +420,7 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
         }
     }
 
-    // 6. Discount Amount
+    // 10. Discount Amount
     const discountAmount = Number(promo.discount || 0);
 
     return {

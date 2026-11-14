@@ -110,11 +110,18 @@ const verifyCouponController = catchAsync(async (req, res) => {
             ? req.body?.servicePrice
             : req.query?.amount;
 
+    const userId =
+        req.User?._id ||
+        req.body?.userId ||
+        req.body?.user ||
+        req.query?.userId;
+
     const result = await verifyCouponService({
         code,
         serviceId,
         partnerId,
         amount,
+        userId,
     });
 
     return res.status(status.OK).json(
