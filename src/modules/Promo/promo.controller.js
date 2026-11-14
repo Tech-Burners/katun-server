@@ -117,21 +117,18 @@ const verifyCouponController = catchAsync(async (req, res) => {
         amount,
     });
 
-    const resObj = response({
-        status: "success",
-        statusCode: status.OK,
-        type: "Promo",
-        message: result.message || (result.isValid ? "Coupon is valid" : "Invalid coupon"),
-        data: {
-            isValid: result.isValid,
-            discountAmount: result.discountAmount,
-        },
-    });
-
-    resObj.data.isValid = result.isValid;
-    resObj.data.discountAmount = result.discountAmount;
-
-    return res.status(status.OK).json(resObj);
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Promo",
+            message: result.message || (result.isValid ? "Coupon is valid" : "Invalid coupon"),
+            data: {
+                isValid: result.isValid,
+                discountAmount: result.discountAmount,
+            },
+        })
+    );
 });
 
 module.exports = {
