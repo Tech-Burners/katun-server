@@ -212,7 +212,11 @@ const getCouponsByPartnerService = async (partnerId, options = {}) => {
 
 const verifyCouponService = async ({ code, partnerId, amount }) => {
     if (!code || typeof code !== "string" || code.trim() === "") {
-        throw new ApiError(status.BAD_REQUEST, "Coupon code is required");
+        return {
+            isValid: false,
+            discountAmount: 0,
+            message: "Coupon code is required",
+        };
     }
 
     const trimmedCode = code.trim();
@@ -223,17 +227,29 @@ const verifyCouponService = async ({ code, partnerId, amount }) => {
     });
 
     if (!promo) {
-        throw new ApiError(status.NOT_FOUND, "Invalid coupon code");
+        return {
+            isValid: false,
+            discountAmount: 0,
+            message: "Invalid coupon code",
+        };
     }
 
     // 2. Status validation (Active / Inactive)
     if (promo.status && promo.status !== "active") {
-        throw new ApiError(status.BAD_REQUEST, `This coupon is currently ${promo.status}`);
+        return {
+            isValid: false,
+            discountAmount: 0,
+            message: `This coupon is currently ${promo.status}`,
+        };
     }
 
     // 3. Expiration Date check (validTo)
     if (promo.validTo && new Date(promo.validTo) < new Date()) {
-        throw new ApiError(status.BAD_REQUEST, "This coupon has expired");
+        return {
+            isValid: false,
+            discountAmount: 0,
+            message: "This coupon has expired",
+        };
     }
 
     // 4. Minimum spend check (if amount is passed)
@@ -242,24 +258,24 @@ const verifyCouponService = async ({ code, partnerId, amount }) => {
 
     if (numericAmount !== null && !isNaN(numericAmount) && numericAmount > 0) {
         if (minspend > 0 && numericAmount < minspend) {
-            throw new ApiError(
-                status.BAD_REQUEST,
-                `Minimum booking amount of ₦${minspend.toLocaleString()} is required to use this coupon`
-            );
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: `Minimum booking amount of ₦${minspend.toLocaleString()} is required to use this coupon`,
+            };
         }
     }
 
     // 5. Creator Role & Partner Validation
     // Admin promos: valid for all partners
     // Partner promos: only valid for the specific partner who created it
-    let partnerInfo = null;
-
     if (promo.createdBy === "partner") {
         if (!partnerId) {
-            throw new ApiError(
-                status.BAD_REQUEST,
-                "This coupon is created by a specific partner. Please provide a partner to apply this coupon."
-            );
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon is only valid for a specific partner. Please provide the partner ID.",
+            };
         }
 
         const promoPartnerUserId = String(promo.user);
@@ -270,64 +286,36 @@ const verifyCouponService = async ({ code, partnerId, amount }) => {
         // Check A: inputPartnerId matches promo.user directly
         if (inputPartnerId === promoPartnerUserId) {
             isMatch = true;
-            partnerInfo = await partnerModel.findOne({ user: promo.user }).select("_id businessName user");
         } else if (mongoose.Types.ObjectId.isValid(inputPartnerId)) {
             // Check B: inputPartnerId is a Partner document _id
             const partnerDoc = await partnerModel.findById(inputPartnerId).select("_id businessName user");
             if (partnerDoc && String(partnerDoc.user) === promoPartnerUserId) {
                 isMatch = true;
-                partnerInfo = partnerDoc;
             } else {
                 // Check C: inputPartnerId is a user ID in partners collection
                 const partnerByUser = await partnerModel.findOne({ user: inputPartnerId }).select("_id businessName user");
                 if (partnerByUser && String(partnerByUser.user) === promoPartnerUserId) {
                     isMatch = true;
-                    partnerInfo = partnerByUser;
                 }
             }
         }
 
         if (!isMatch) {
-            const ownerPartner = await partnerModel.findOne({ user: promo.user }).select("businessName");
-            const partnerName = ownerPartner?.businessName || "the issuing partner";
-            throw new ApiError(
-                status.BAD_REQUEST,
-                `This coupon is only valid for bookings with ${partnerName}`
-            );
-        }
-    } else if (promo.createdBy === "admin") {
-        // Admin coupon is valid for all partners
-        if (partnerId && mongoose.Types.ObjectId.isValid(String(partnerId))) {
-            partnerInfo =
-                (await partnerModel.findById(partnerId).select("_id businessName user")) ||
-                (await partnerModel.findOne({ user: partnerId }).select("_id businessName user"));
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon is not valid for this partner",
+            };
         }
     }
 
     // 6. Discount Amount
     const discountAmount = Number(promo.discount || 0);
 
-    const finalAmount =
-        numericAmount !== null && numericAmount > 0
-            ? Number(Math.max(0, numericAmount - discountAmount).toFixed(2))
-            : null;
-
     return {
         isValid: true,
-        code: promo.code,
-        name: promo.name || promo.code,
-        description: promo.description || "",
         discountAmount,
-        minspend: promo.minspend || 0,
-        createdBy: promo.createdBy,
-        partner: partnerInfo
-            ? {
-                  id: partnerInfo._id,
-                  businessName: partnerInfo.businessName,
-              }
-            : null,
-        ...(numericAmount !== null && numericAmount > 0 ? { originalAmount: numericAmount, finalAmount } : {}),
-        promoId: promo._id,
+        message: "Coupon is valid",
     };
 };
 
