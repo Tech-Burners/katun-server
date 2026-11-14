@@ -101,14 +101,39 @@ const verifyCouponController = catchAsync(async (req, res) => {
         req.query?.partnerId ||
         req.query?.partner;
 
-    const amount =
-        req.body?.amount !== undefined
-            ? req.body?.amount
-            : req.body?.totalPrice !== undefined
+    const totalPrice =
+        req.body?.totalPrice !== undefined
             ? req.body?.totalPrice
-            : req.body?.servicePrice !== undefined
-            ? req.body?.servicePrice
+            : req.body?.totalAmount !== undefined
+            ? req.body?.totalAmount
+            : req.body?.grossAmount !== undefined
+            ? req.body?.grossAmount
+            : req.body?.amount !== undefined
+            ? req.body?.amount
+            : req.query?.totalPrice !== undefined
+            ? req.query?.totalPrice
             : req.query?.amount;
+
+    const servicePrice =
+        req.body?.servicePrice !== undefined
+            ? req.body?.servicePrice
+            : req.query?.servicePrice;
+
+    const isOneTime =
+        req.body?.isOneTime !== undefined
+            ? req.body?.isOneTime
+            : req.query?.isOneTime;
+
+    const sessions =
+        req.body?.sessions !== undefined
+            ? req.body?.sessions
+            : req.body?.noOfSessions !== undefined
+            ? req.body?.noOfSessions
+            : req.body?.sessionCount !== undefined
+            ? req.body?.sessionCount
+            : req.query?.sessions;
+
+    const addons = req.body?.addons || req.query?.addons;
 
     const userId =
         req.User?._id ||
@@ -120,7 +145,11 @@ const verifyCouponController = catchAsync(async (req, res) => {
         code,
         serviceId,
         partnerId,
-        amount,
+        totalPrice,
+        servicePrice,
+        isOneTime,
+        sessions,
+        addons,
         userId,
     });
 

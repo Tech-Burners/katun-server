@@ -211,7 +211,18 @@ const getCouponsByPartnerService = async (partnerId, options = {}) => {
     };
 };
 
-const verifyCouponService = async ({ code, serviceId, partnerId, amount, userId }) => {
+const verifyCouponService = async ({
+    code,
+    serviceId,
+    partnerId,
+    totalPrice,
+    amount,
+    servicePrice,
+    isOneTime,
+    sessions,
+    addons,
+    userId,
+}) => {
     if (!code || typeof code !== "string" || code.trim() === "") {
         return {
             isValid: false,
@@ -294,7 +305,7 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount, userId 
     let serviceDoc = null;
     if (serviceId) {
         if (mongoose.Types.ObjectId.isValid(String(serviceId))) {
-            serviceDoc = await serviceModel.findById(serviceId).select("_id user name servicefee");
+            serviceDoc = await serviceModel.findById(serviceId).select("_id user name servicefee pass addons");
         }
         if (!serviceDoc) {
             return {
@@ -305,16 +316,67 @@ const verifyCouponService = async ({ code, serviceId, partnerId, amount, userId 
         }
     }
 
-    // 7. Minimum spend check (minspend)
-    const numericAmount = amount !== undefined && amount !== null && amount !== "" ? Number(amount) : null;
-    const minspend = Number(promo.minspend) || 0;
-    let amountToCheck = numericAmount;
-    if (amountToCheck === null && serviceDoc && serviceDoc.servicefee !== undefined) {
-        amountToCheck = Number(serviceDoc.servicefee);
+    // 7. Calculate Total Price across all sessions and all costs for minspend validation
+    let calculatedTotalPrice = null;
+
+    // A. Direct total price passed from frontend (takes highest priority)
+    const passedTotal =
+        totalPrice !== undefined && totalPrice !== null && totalPrice !== ""
+            ? Number(totalPrice)
+            : amount !== undefined && amount !== null && amount !== ""
+            ? Number(amount)
+            : null;
+
+    if (passedTotal !== null && !isNaN(passedTotal)) {
+        calculatedTotalPrice = passedTotal;
     }
 
-    if (minspend > 0 && amountToCheck !== null && !isNaN(amountToCheck) && amountToCheck > 0) {
-        if (amountToCheck < minspend) {
+    // B. If total price not passed directly, compute from service, sessions, pass, and addons
+    if (calculatedTotalPrice === null && serviceDoc) {
+        const baseSessionFee =
+            servicePrice !== undefined && servicePrice !== null && !isNaN(Number(servicePrice))
+                ? Number(servicePrice)
+                : Number(serviceDoc.servicefee || 0);
+
+        const isSingle = isOneTime === true || isOneTime === "true";
+
+        let sessionsTotal = 0;
+        if (isSingle) {
+            sessionsTotal = baseSessionFee;
+        } else {
+            // Check for explicit session count
+            const explicitSessionCount = Number(sessions);
+            if (!isNaN(explicitSessionCount) && explicitSessionCount > 0) {
+                sessionsTotal = baseSessionFee * explicitSessionCount;
+            } else if (serviceDoc.pass?.price && Number(serviceDoc.pass.price) > 0) {
+                // If service has a multi-session pass with bundled price
+                sessionsTotal = Number(serviceDoc.pass.price);
+            } else if (serviceDoc.pass?.noOfSessions && Number(serviceDoc.pass.noOfSessions) > 0) {
+                // Multi-session count * base session fee
+                sessionsTotal = baseSessionFee * Number(serviceDoc.pass.noOfSessions);
+            } else {
+                sessionsTotal = baseSessionFee;
+            }
+        }
+
+        // Calculate all additional costs (addons)
+        let addonsTotal = 0;
+        if (Array.isArray(addons)) {
+            addonsTotal = addons.reduce((sum, item) => {
+                const itemPrice = typeof item === "number" ? item : Number(item?.price || 0);
+                return sum + (!isNaN(itemPrice) ? itemPrice : 0);
+            }, 0);
+        } else if (typeof addons === "number" && !isNaN(addons)) {
+            addonsTotal = addons;
+        }
+
+        calculatedTotalPrice = sessionsTotal + addonsTotal;
+    }
+
+    // C. Check minspend against the total price of all sessions and all costs
+    const minspend = Number(promo.minspend) || 0;
+    if (minspend > 0 && calculatedTotalPrice !== null && !isNaN(calculatedTotalPrice) && calculatedTotalPrice > 0) {
+        if (calculatedTotalPrice < minspend) {
             return {
                 isValid: false,
                 discountAmount: 0,
