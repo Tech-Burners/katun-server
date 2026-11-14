@@ -1,6 +1,7 @@
 const { default: mongoose } = require("mongoose");
 const promoModel = require("./promo.model");
 const partnerModel = require("../Partner/partner.model");
+const serviceModel = require("../Service/service.model");
 const ApiError = require("../../helpers/ApiError");
 const { default: status } = require("http-status");
 
@@ -210,7 +211,7 @@ const getCouponsByPartnerService = async (partnerId, options = {}) => {
     };
 };
 
-const verifyCouponService = async ({ code, partnerId, amount }) => {
+const verifyCouponService = async ({ code, serviceId, partnerId, amount }) => {
     if (!code || typeof code !== "string" || code.trim() === "") {
         return {
             isValid: false,
@@ -266,45 +267,67 @@ const verifyCouponService = async ({ code, partnerId, amount }) => {
         }
     }
 
-    // 5. Creator Role & Partner Validation
-    // Admin promos: valid for all partners
-    // Partner promos: only valid for the specific partner who created it
+    // 5. Creator Role & Service/Partner Validation
+    // - Admin coupons (createdBy: 'admin'): valid for all users across all services
+    // - Partner coupons (createdBy: 'partner'): valid only for services belonging to that specific partner
     if (promo.createdBy === "partner") {
-        if (!partnerId) {
+        const promoPartnerUserId = String(promo.user);
+        let isMatch = false;
+        let checkedContext = false;
+
+        // Check A: service is provided -> check if the service belongs to this partner
+        if (serviceId) {
+            checkedContext = true;
+            let serviceDoc = null;
+            if (mongoose.Types.ObjectId.isValid(String(serviceId))) {
+                serviceDoc = await serviceModel.findById(serviceId).select("_id user name");
+            }
+            if (serviceDoc) {
+                if (String(serviceDoc.user) === promoPartnerUserId) {
+                    isMatch = true;
+                }
+            } else {
+                return {
+                    isValid: false,
+                    discountAmount: 0,
+                    message: "Service not found",
+                };
+            }
+        }
+
+        // Check B: partner is provided (and not already matched via service)
+        if (!isMatch && partnerId) {
+            checkedContext = true;
+            const inputPartnerId = String(partnerId);
+
+            if (inputPartnerId === promoPartnerUserId) {
+                isMatch = true;
+            } else if (mongoose.Types.ObjectId.isValid(inputPartnerId)) {
+                const partnerDoc = await partnerModel.findById(inputPartnerId).select("_id businessName user");
+                if (partnerDoc && String(partnerDoc.user) === promoPartnerUserId) {
+                    isMatch = true;
+                } else {
+                    const partnerByUser = await partnerModel.findOne({ user: inputPartnerId }).select("_id businessName user");
+                    if (partnerByUser && String(partnerByUser.user) === promoPartnerUserId) {
+                        isMatch = true;
+                    }
+                }
+            }
+        }
+
+        if (!checkedContext) {
             return {
                 isValid: false,
                 discountAmount: 0,
-                message: "This coupon is only valid for a specific partner. Please provide the partner ID.",
+                message: "This coupon is only valid for a specific partner's services. Please provide the service or partner.",
             };
-        }
-
-        const promoPartnerUserId = String(promo.user);
-        const inputPartnerId = String(partnerId);
-
-        let isMatch = false;
-
-        // Check A: inputPartnerId matches promo.user directly
-        if (inputPartnerId === promoPartnerUserId) {
-            isMatch = true;
-        } else if (mongoose.Types.ObjectId.isValid(inputPartnerId)) {
-            // Check B: inputPartnerId is a Partner document _id
-            const partnerDoc = await partnerModel.findById(inputPartnerId).select("_id businessName user");
-            if (partnerDoc && String(partnerDoc.user) === promoPartnerUserId) {
-                isMatch = true;
-            } else {
-                // Check C: inputPartnerId is a user ID in partners collection
-                const partnerByUser = await partnerModel.findOne({ user: inputPartnerId }).select("_id businessName user");
-                if (partnerByUser && String(partnerByUser.user) === promoPartnerUserId) {
-                    isMatch = true;
-                }
-            }
         }
 
         if (!isMatch) {
             return {
                 isValid: false,
                 discountAmount: 0,
-                message: "This coupon is not valid for this partner",
+                message: "This coupon is only valid for services provided by the issuing partner",
             };
         }
     }

@@ -82,13 +82,25 @@ const getCouponsByPartnerController = catchAsync(async (req, res) => {
 });
 
 const verifyCouponController = catchAsync(async (req, res) => {
-    const code = req.body?.code || req.body?.coupon || req.body?.couponCode || req.query?.code;
+    const code =
+        req.body?.code ||
+        req.body?.coupon ||
+        req.body?.couponCode ||
+        req.query?.code;
+
+    const serviceId =
+        req.body?.service ||
+        req.body?.serviceId ||
+        req.query?.service ||
+        req.query?.serviceId;
+
     const partnerId =
         req.body?.partner ||
         req.body?.partnerId ||
         req.body?.provider ||
         req.query?.partnerId ||
         req.query?.partner;
+
     const amount =
         req.body?.amount !== undefined
             ? req.body?.amount
@@ -100,6 +112,7 @@ const verifyCouponController = catchAsync(async (req, res) => {
 
     const result = await verifyCouponService({
         code,
+        serviceId,
         partnerId,
         amount,
     });
