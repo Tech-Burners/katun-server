@@ -234,16 +234,39 @@ const verifyCouponService = async ({
     const trimmedCode = code.trim();
 
     // 1. Case-insensitive search for promo by code
-    const promo = await promoModel.findOne({
+    const matchingPromos = await promoModel.find({
         code: { $regex: new RegExp(`^${trimmedCode.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
     });
 
-    if (!promo) {
+    if (!matchingPromos || matchingPromos.length === 0) {
         return {
             isValid: false,
             discountAmount: 0,
             message: "Invalid coupon code",
         };
+    }
+
+    let promo = matchingPromos[0];
+    if (matchingPromos.length > 1) {
+        // If multiple promos exist with the same code, prioritize context match (partner/service) or active admin promo
+        const activePromos = matchingPromos.filter((p) => p.status === "active");
+        const pool = activePromos.length > 0 ? activePromos : matchingPromos;
+
+        if (serviceId || partnerId) {
+            let matched = null;
+            if (serviceId && mongoose.Types.ObjectId.isValid(String(serviceId))) {
+                const sDoc = await serviceModel.findById(serviceId).select("user");
+                if (sDoc?.user) {
+                    matched = pool.find((p) => String(p.user) === String(sDoc.user));
+                }
+            }
+            if (!matched && partnerId) {
+                matched = pool.find((p) => String(p.user) === String(partnerId));
+            }
+            promo = matched || pool.find((p) => p.createdBy === "admin") || pool[0];
+        } else {
+            promo = pool.find((p) => p.createdBy === "admin") || pool[0];
+        }
     }
 
     // 2. Status validation (Active / Inactive)
@@ -394,8 +417,9 @@ const verifyCouponService = async ({
     }
 
     // 8. User Eligibility check (eligiblity)
-    // Only validate eligibility if added by admin and explicitly set (partners do not configure eligibility)
-    if (promo.createdBy === "admin" && promo.eligiblity && promo.eligiblity !== "all-users") {
+    // If there is no eligibility (or it is 'all-users'), all users can use it.
+    // Only validate restricted eligibility ('new-users' or 'employees') if explicitly configured on an admin promo.
+    if (promo.createdBy === "admin" && (promo.eligiblity === "new-users" || promo.eligiblity === "employees")) {
         if (promo.eligiblity === "new-users") {
             if (!userId) {
                 return {
