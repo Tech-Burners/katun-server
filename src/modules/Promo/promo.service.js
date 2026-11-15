@@ -257,32 +257,38 @@ const verifyCouponService = async ({
 
     const now = new Date();
 
-    // 3. Start Date validation (validForm)
-    if (promo.validForm && new Date(promo.validForm) > now) {
-        const formattedStart = new Date(promo.validForm).toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-        });
-        return {
-            isValid: false,
-            discountAmount: 0,
-            message: `This coupon is not active yet. Valid from ${formattedStart}`,
-        };
+    // 3. Start Date validation (validForm) - only if explicitly configured
+    if (promo.validForm) {
+        const startDate = new Date(promo.validForm);
+        if (!isNaN(startDate.getTime()) && startDate > now) {
+            const formattedStart = startDate.toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+            });
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: `This coupon is not active yet. Valid from ${formattedStart}`,
+            };
+        }
     }
 
-    // 4. Expiration Date validation (validTo)
-    if (promo.validTo && new Date(promo.validTo) < now) {
-        return {
-            isValid: false,
-            discountAmount: 0,
-            message: "This coupon has expired",
-        };
+    // 4. Expiration Date validation (validTo) - only if explicitly configured
+    if (promo.validTo) {
+        const endDate = new Date(promo.validTo);
+        if (!isNaN(endDate.getTime()) && endDate < now) {
+            return {
+                isValid: false,
+                discountAmount: 0,
+                message: "This coupon has expired",
+            };
+        }
     }
 
-    // 5. Usage Limit validation (usageLimit)
-    const usageLimit = Number(promo.usageLimit) || 0;
-    if (usageLimit > 0) {
+    // 5. Usage Limit validation (usageLimit) - only if explicitly configured
+    if (promo.usageLimit !== undefined && promo.usageLimit !== null && Number(promo.usageLimit) > 0) {
+        const usageLimit = Number(promo.usageLimit);
         const bookingModel = require("../Booking/booking.model");
         const bookingsCount = await bookingModel.countDocuments({
             $or: [
@@ -373,59 +379,64 @@ const verifyCouponService = async ({
         calculatedTotalPrice = sessionsTotal + addonsTotal;
     }
 
-    // C. Check minspend against the total price of all sessions and all costs
-    const minspend = Number(promo.minspend) || 0;
-    if (minspend > 0 && calculatedTotalPrice !== null && !isNaN(calculatedTotalPrice) && calculatedTotalPrice > 0) {
-        if (calculatedTotalPrice < minspend) {
-            return {
-                isValid: false,
-                discountAmount: 0,
-                message: `Minimum booking amount of ₦${minspend.toLocaleString()} is required to use this coupon`,
-            };
+    // C. Check minspend against the total price of all sessions and all costs - only if explicitly configured
+    if (promo.minspend !== undefined && promo.minspend !== null && Number(promo.minspend) > 0) {
+        const minspend = Number(promo.minspend);
+        if (calculatedTotalPrice !== null && !isNaN(calculatedTotalPrice) && calculatedTotalPrice > 0) {
+            if (calculatedTotalPrice < minspend) {
+                return {
+                    isValid: false,
+                    discountAmount: 0,
+                    message: `Minimum booking amount of ₦${minspend.toLocaleString()} is required to use this coupon`,
+                };
+            }
         }
     }
 
     // 8. User Eligibility check (eligiblity)
-    if (promo.eligiblity === "new-users") {
-        if (!userId) {
-            return {
-                isValid: false,
-                discountAmount: 0,
-                message: "This coupon is only valid for new users. Please sign in to apply this coupon.",
-            };
-        }
-        const bookingModel = require("../Booking/booking.model");
-        const existingBookingsCount = await bookingModel.countDocuments({
-            user: userId,
-            $or: [
-                { paymentStatus: { $in: ["paid", "successful"] } },
-                { status: { $in: ["approved", "completed"] } },
-            ],
-        });
-        if (existingBookingsCount > 0) {
-            return {
-                isValid: false,
-                discountAmount: 0,
-                message: "This coupon is only valid for new users on their first booking",
-            };
-        }
-    } else if (promo.eligiblity === "employees") {
-        if (!userId) {
-            return {
-                isValid: false,
-                discountAmount: 0,
-                message: "This coupon is only valid for corporate employees. Please sign in to apply this coupon.",
-            };
-        }
-        const userModel = require("../User/user.model");
-        const currentUser = await userModel.findById(userId).select("role employer isEmployee");
-        const isEmployee = currentUser && (currentUser.role === "employee" || currentUser.isEmployee || currentUser.employer);
-        if (!isEmployee) {
-            return {
-                isValid: false,
-                discountAmount: 0,
-                message: "This coupon is only valid for corporate employees",
-            };
+    // Only validate eligibility if added by admin and explicitly set (partners do not configure eligibility)
+    if (promo.createdBy === "admin" && promo.eligiblity && promo.eligiblity !== "all-users") {
+        if (promo.eligiblity === "new-users") {
+            if (!userId) {
+                return {
+                    isValid: false,
+                    discountAmount: 0,
+                    message: "This coupon is only valid for new users. Please sign in to apply this coupon.",
+                };
+            }
+            const bookingModel = require("../Booking/booking.model");
+            const existingBookingsCount = await bookingModel.countDocuments({
+                user: userId,
+                $or: [
+                    { paymentStatus: { $in: ["paid", "successful"] } },
+                    { status: { $in: ["approved", "completed"] } },
+                ],
+            });
+            if (existingBookingsCount > 0) {
+                return {
+                    isValid: false,
+                    discountAmount: 0,
+                    message: "This coupon is only valid for new users on their first booking",
+                };
+            }
+        } else if (promo.eligiblity === "employees") {
+            if (!userId) {
+                return {
+                    isValid: false,
+                    discountAmount: 0,
+                    message: "This coupon is only valid for corporate employees. Please sign in to apply this coupon.",
+                };
+            }
+            const userModel = require("../User/user.model");
+            const currentUser = await userModel.findById(userId).select("role employer isEmployee");
+            const isEmployee = currentUser && (currentUser.role === "employee" || currentUser.isEmployee || currentUser.employer);
+            if (!isEmployee) {
+                return {
+                    isValid: false,
+                    discountAmount: 0,
+                    message: "This coupon is only valid for corporate employees",
+                };
+            }
         }
     }
 

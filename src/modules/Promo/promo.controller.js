@@ -24,8 +24,24 @@ const addPromoController = catchAsync(async (req, res) => {
     if (req.body.minimumSpend !== undefined && req.body.minspend === undefined) req.body.minspend = req.body.minimumSpend;
     if (!req.body.validTo && req.body.expirationDate) req.body.validTo = req.body.expirationDate;
 
-    // Auto-generate promo code if not provided
-    if (!req.body.code) {
+    // Do NOT set default data for promos.
+    // Partner promos do not have eligibility; never set or store default eligibility for partners.
+    if (req.body.createdBy === 'partner') {
+        delete req.body.eligiblity;
+        if (req.body.usageLimit === undefined || req.body.usageLimit === null || req.body.usageLimit === '') {
+            delete req.body.usageLimit;
+        }
+    }
+
+    // Clean up empty strings or nulls so no default/empty fields are stored
+    ['eligiblity', 'validForm', 'validTo', 'minspend', 'usageLimit', 'description'].forEach(field => {
+        if (req.body[field] === '' || req.body[field] === null || req.body[field] === undefined) {
+            delete req.body[field];
+        }
+    });
+
+    // Auto-generate promo code only if not provided
+    if (!req.body.code || req.body.code.trim() === '') {
         req.body.code = `PROMO${Math.floor(100000 + Math.random() * 900000)}`;
     }
 
@@ -34,7 +50,26 @@ const addPromoController = catchAsync(async (req, res) => {
 })
 
 const editPromoController = catchAsync(async (req, res) => {
-    if(req.file) req.body.image = `/uploads/promo/${req.file.filename}`
+    if(req.file) req.body.image = `/uploads/promo/${req.file.filename}`;
+
+    // Normalize field names
+    if (!req.body.name && req.body.title) req.body.name = req.body.title;
+    if (req.body.discountValue !== undefined && req.body.discount === undefined) req.body.discount = req.body.discountValue;
+    if (req.body.minimumSpend !== undefined && req.body.minspend === undefined) req.body.minspend = req.body.minimumSpend;
+    if (!req.body.validTo && req.body.expirationDate) req.body.validTo = req.body.expirationDate;
+
+    // Partner promos do not have eligibility
+    if (req.User.role === 'partner') {
+        delete req.body.eligiblity;
+    }
+
+    // Clean up empty strings or nulls
+    ['eligiblity', 'validForm', 'validTo', 'minspend', 'usageLimit', 'description'].forEach(field => {
+        if (req.body[field] === '' || req.body[field] === null) {
+            delete req.body[field];
+        }
+    });
+
     const result = await editPromoService(req.params.id, req.body);
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Promo", message: "Promo edited successfully", data: result, }));
 })
