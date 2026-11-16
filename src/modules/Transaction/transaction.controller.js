@@ -28,6 +28,9 @@ const { checkSlotAvailability } =
 
 const response =
   require("../../helpers/response");
+const {
+  executePaymentProcessing,
+} = require("../../helpers/flutterWaveWebhook");
 
 const generate4DigitPin =
   require("../../helpers/generatepin");
@@ -440,7 +443,9 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
               "NGN",
 
             redirect_url:
-              process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success",
+              req.body.redirect_url ||
+              process.env.FLW_SUCCESS_URL ||
+              "https://api.auravive.ng/api/v1/transaction/success",
 
             payment_options:
               paymentMethod,
@@ -724,7 +729,9 @@ const purchaseCreditController =
               "NGN",
 
             redirect_url:
-              process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success",
+              req.body.redirect_url ||
+              process.env.FLW_SUCCESS_URL ||
+              "https://api.auravive.ng/api/v1/transaction/success",
 
             payment_options:
               paymentMethod,
@@ -999,7 +1006,9 @@ const tipsController =
               "NGN",
 
             redirect_url:
-              process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success",
+              req.body.redirect_url ||
+              process.env.FLW_SUCCESS_URL ||
+              "https://api.auravive.ng/api/v1/transaction/success",
 
             payment_options:
               paymentMethod,
@@ -1087,79 +1096,57 @@ const tipsController =
 
 
 
-const verifyPayment = catchAsync(
-  async (req, res) => {
+const verifyPayment = catchAsync(async (req, res) => {
+  const transactionId =
+    req.query.transaction_id ||
+    req.body.transaction_id ||
+    req.params.transaction_id ||
+    null;
+  const txRef =
+    req.query.tx_ref ||
+    req.body.tx_ref ||
+    req.params.tx_ref ||
+    null;
 
-    const {
-      transaction_id,
-    } = req.query;
-
-
-    if (
-      !transaction_id
-    ) {
-
-      return res.status(400).json({
-        message:
-          "Transaction ID is required",
-      });
-    }
-
-
-    const payment =
-      await verifyFlutterwavePayment(
-        transaction_id
-      );
-
-
-    if (
-      !payment
-    ) {
-
-      return res.status(404).json({
-        message:
-          "Payment not found",
-      });
-    }
-
-
-    const transaction =
-      await Transaction.findOne({
-        tx_ref:
-          payment.tx_ref,
-      });
-
-
-    if (
-      !transaction
-    ) {
-
-      return res.status(404).json({
-        message:
-          "Local transaction not found",
-      });
-    }
-
-
-    return res.status(200).json({
-
-      success:
-        true,
-
-      paymentStatus:
-        transaction.payment_status,
-
-      flutterwaveStatus:
-        payment.status,
-
-      tx_ref:
-        payment.tx_ref,
-
-      transaction_id:
-        payment.id,
+  if (!transactionId && !txRef) {
+    return res.status(400).json({
+      status: "fail",
+      message: "tx_ref or transaction_id is required for payment verification",
     });
   }
-);
+
+  const result = await executePaymentProcessing({
+    transactionId,
+    txRef,
+  });
+
+  if (!result.success) {
+    return res.status(400).json({
+      status: "fail",
+      message: result.message || "Payment verification failed",
+      data: result,
+    });
+  }
+
+  const { transaction, booking, alreadyProcessed } = result;
+
+  return res.status(200).json({
+    status: "success",
+    message: alreadyProcessed
+      ? "Payment was already verified and processed"
+      : "Payment verified and processed successfully",
+    data: {
+      transactionId: transaction?.transaction_id || transactionId,
+      tx_ref: transaction?.tx_ref || txRef,
+      paymentStatus: transaction?.payment_status,
+      amount: transaction?.gross_amount,
+      currency: transaction?.currency || "NGN",
+      bookingId: booking?._id,
+      pin: booking?.pin,
+      booking,
+    },
+  });
+});
 
 
 

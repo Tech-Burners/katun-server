@@ -34,10 +34,12 @@ app.use(helmet.crossOriginResourcePolicy({ policy: "cross-origin" }));
 
 const startAllocationCron = require("./modules/AllocationManagement/allocation.cron");
 const startBookingCron = require("./modules/Booking/booking.cron");
+const { startTransactionCron } = require("./modules/Transaction/transaction.cron");
 
 // Start cron jobs
 startAllocationCron();
 startBookingCron();
+startTransactionCron();
 
 // Session
 const MemoryStore = session.MemoryStore;
