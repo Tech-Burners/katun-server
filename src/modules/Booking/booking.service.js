@@ -130,10 +130,19 @@ const bookingService = async (data) => {
             //  booking now contains providerLocation
             const booking = await bookingModel.create([data], { session });
 
-            const commissionRate = 0.10;
+            const serviceDoc = await serviceModel.findById(data.service).session(session);
+            const categoryCommission = serviceDoc?.category
+                ? await commissionModel.findOne({ category: serviceDoc.category }).session(session)
+                : null;
+            const commissionPercent =
+                categoryCommission && typeof categoryCommission.commission === "number" && categoryCommission.commission > 0
+                    ? categoryCommission.commission
+                    : 10;
+            const commissionRate = commissionPercent / 100;
             const grossAmount = Number(data.totalPrice);
-            const commission = grossAmount * commissionRate;
-            const netAmount = grossAmount - commission;
+            const baseServicePrice = Number(data.servicePrice) || (grossAmount > 0 ? Number((grossAmount / 1.05).toFixed(2)) : 0);
+            const commission = Number((baseServicePrice * commissionRate).toFixed(2));
+            const netAmount = Number((baseServicePrice - commission).toFixed(2));
 
             const tx_ref = `txn_${Date.now()}_${data.user}`;
 
@@ -342,6 +351,31 @@ const markAsCompletedService = async (id, data = {}) => {
         booking.checkin = new Date();
         if (booking.sessionLeft == 0) {
             booking.status = 'completed';
+            // Deduct commission and app fee for cash bookings if not already paid
+            if (booking.paymentMethod === 'cash' && booking.paymentStatus !== 'paid') {
+                const serviceDoc = await serviceModel.findById(booking.service);
+                const comDoc = serviceDoc?.category
+                    ? await commissionModel.findOne({ category: serviceDoc.category })
+                    : null;
+                const rate = (comDoc && typeof comDoc.commission === 'number' && comDoc.commission > 0)
+                    ? comDoc.commission
+                    : 10;
+                const totalPrice = Number(booking.totalPrice || 0);
+                const baseServicePrice = Number(booking.servicePrice) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
+                const commissionAmount = Number((baseServicePrice * (rate / 100)).toFixed(2));
+                const partnerNet = Number((baseServicePrice - commissionAmount).toFixed(2));
+                const deductionAmount = Number(Math.max(0, totalPrice - partnerNet).toFixed(2));
+
+                const providerDoc = await userModel.findById(booking.provider);
+                if (providerDoc) {
+                    if (providerDoc.digitalWallet < deductionAmount) {
+                        throw new ApiError(412, "Insufficient provider balance to cover platform commission");
+                    }
+                    providerDoc.digitalWallet = Number((providerDoc.digitalWallet - deductionAmount).toFixed(2));
+                    await providerDoc.save();
+                }
+                booking.paymentStatus = 'paid';
+            }
         }
         booking.pin = generate4DigitPin();
         booking.pinVerified = false;
@@ -814,32 +848,45 @@ const assignStuffService = async (id, stuff) => {
 
 const completeBookingService = async (id) => {
     const booking = await bookingModel.findById(id);
-    // console.log({ booking })
-    const provider = await userModel.findOne({ _id: booking.provider })
-    // console.log({ provider })
-    const service = await serviceModel.findOne({ _id: booking.service })
-    // console.log({ service })
-    const comission = await commissionModel.findOne({ category: service.category })
-    // console.log({ comission })
-    comissionAmount = booking.totalPrice * comission.commission
+    if (!booking) {
+        throw new ApiError(status.NOT_FOUND, 'Booking not found');
+    }
+    const provider = await userModel.findOne({ _id: booking.provider });
+    const service = await serviceModel.findOne({ _id: booking.service });
+    const comissionDoc = service?.category
+        ? await commissionModel.findOne({ category: service.category })
+        : null;
+
+    const commissionRate = (comissionDoc && typeof comissionDoc.commission === 'number' && comissionDoc.commission > 0)
+        ? comissionDoc.commission
+        : 10;
+    const totalPrice = Number(booking.totalPrice || 0);
+    const baseServicePrice = Number(booking.servicePrice) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
+    const commissionAmount = Number((baseServicePrice * (commissionRate / 100)).toFixed(2));
+    const partnerNet = Number((baseServicePrice - commissionAmount).toFixed(2));
+    const deductionAmount = Number(Math.max(0, totalPrice - partnerNet).toFixed(2));
+
     if (booking.paymentMethod === 'cash') {
-        if (provider.digitalWallet < comissionAmount) {
-            throw new ApiError(412, "insufficient provider balance")
-        } else {
-            provider.digitalWallet -= comissionAmount;
+        if (!provider) {
+            throw new ApiError(status.NOT_FOUND, 'Provider not found');
+        }
+        if (booking.paymentStatus !== 'paid') {
+            if (provider.digitalWallet < deductionAmount) {
+                throw new ApiError(412, "Insufficient provider balance to cover platform commission");
+            }
+            provider.digitalWallet = Number((provider.digitalWallet - deductionAmount).toFixed(2));
+            await provider.save();
         }
     }
-    if (booking.paymentMethod === 'wallet') {
-        provider.digitalWallet += comissionAmount;
-    }
-    provider.save();
+
     const updatedBooking = await bookingModel.findOneAndUpdate(
         {
             _id: id,
             status: "approved"
         },
         {
-            status: "completed"
+            status: "completed",
+            ...(booking.paymentMethod === 'cash' ? { paymentStatus: 'paid' } : {})
         },
         {
             new: true
@@ -960,6 +1007,26 @@ const bookingDetailsService = async (id, loginUserId) => {
 
         {
             $lookup: {
+                from: 'commissions',
+                localField: 'serviceData.category',
+                foreignField: 'category',
+                as: 'commissionData'
+            }
+        },
+        { $unwind: { path: "$commissionData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: 'transactions',
+                localField: 'transaction',
+                foreignField: '_id',
+                as: 'transactionData'
+            }
+        },
+        { $unwind: { path: "$transactionData", preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
                 from: 'feedbacks',
                 localField: '_id',
                 foreignField: 'booking',
@@ -1045,12 +1112,51 @@ const bookingDetailsService = async (id, loginUserId) => {
                 createdAt: 1,
                 amenities: { $ifNull: ["$partnerProfileData.amenities", []] },
                 myFeedback: 1,
-                oppositeFeedback: 1
+                oppositeFeedback: 1,
+                commissionData: 1,
+                transactionData: 1
             }
         }
     ]);
 
-    return result[0] || null;
+    if (!result[0]) return null;
+
+    const booking = result[0];
+    const totalPrice = Number(booking.totalPrice) || 0;
+    const baseServicePrice = Number(booking.servicePrice) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
+    const appFee = Number(Math.max(0, totalPrice - baseServicePrice).toFixed(2));
+
+    let commissionRate = 10;
+    let commissionAmount = 0;
+
+    if (booking.transactionData && typeof booking.transactionData.commission === "number") {
+        commissionAmount = Number(booking.transactionData.commission.toFixed(2));
+        if (baseServicePrice > 0) {
+            commissionRate = Number(((commissionAmount / baseServicePrice) * 100).toFixed(2));
+        } else if (booking.transactionData.gross_amount > 0) {
+            commissionRate = Number(((commissionAmount / booking.transactionData.gross_amount) * 100).toFixed(2));
+        }
+    } else {
+        const catCommission = Number(booking.commissionData?.commission);
+        commissionRate = catCommission > 0 ? catCommission : 10;
+        commissionAmount = Number(((baseServicePrice * commissionRate) / 100).toFixed(2));
+    }
+
+    const partnerAmount = Number(Math.max(0, baseServicePrice - commissionAmount).toFixed(2));
+
+    booking.servicePrice = baseServicePrice;
+    booking.appFee = appFee;
+    booking.commissionRate = commissionRate;
+    booking.commissionAmount = commissionAmount;
+    booking.commission = commissionAmount;
+    booking.partnerCommission = commissionAmount;
+    booking.partnerAmount = partnerAmount;
+    booking.netAmount = partnerAmount;
+
+    delete booking.commissionData;
+    delete booking.transactionData;
+
+    return booking;
 };
 
 
@@ -1151,6 +1257,26 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
             }
         },
 
+        {
+            $lookup: {
+                from: 'commissions',
+                localField: 'serviceData.category',
+                foreignField: 'category',
+                as: 'commissionData'
+            }
+        },
+        { $unwind: { path: '$commissionData', preserveNullAndEmptyArrays: true } },
+
+        {
+            $lookup: {
+                from: 'transactions',
+                localField: 'transaction',
+                foreignField: '_id',
+                as: 'transactionData'
+            }
+        },
+        { $unwind: { path: '$transactionData', preserveNullAndEmptyArrays: true } },
+
         // ❗ KEEP ARRAY (IMPORTANT FIX)
         {
             $lookup: {
@@ -1228,6 +1354,7 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 addons: 1,
                 servicefee: '$serviceData.servicefee',
                 duration: '$serviceData.duration',
+                servicePrice: 1,
                 totalPrice: 1,
                 paymentMethod: 1,
                 bookingMethod: { $ifNull: ["$paymentMethod", "card"] },
@@ -1243,12 +1370,51 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 amenities: { $ifNull: ['$partnerData.amenities', []] },
 
                 myFeedback: 1,
-                oppositeFeedback: 1
+                oppositeFeedback: 1,
+                commissionData: 1,
+                transactionData: 1
             }
         }
     ]);
 
-    return result[0] || null;
+    if (!result[0]) return null;
+
+    const booking = result[0];
+    const totalPrice = Number(booking.totalPrice) || 0;
+    const baseServicePrice = Number(booking.servicePrice) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
+    const appFee = Number(Math.max(0, totalPrice - baseServicePrice).toFixed(2));
+
+    let commissionRate = 10;
+    let commissionAmount = 0;
+
+    if (booking.transactionData && typeof booking.transactionData.commission === "number") {
+        commissionAmount = Number(booking.transactionData.commission.toFixed(2));
+        if (baseServicePrice > 0) {
+            commissionRate = Number(((commissionAmount / baseServicePrice) * 100).toFixed(2));
+        } else if (booking.transactionData.gross_amount > 0) {
+            commissionRate = Number(((commissionAmount / booking.transactionData.gross_amount) * 100).toFixed(2));
+        }
+    } else {
+        const catCommission = Number(booking.commissionData?.commission);
+        commissionRate = catCommission > 0 ? catCommission : 10;
+        commissionAmount = Number(((baseServicePrice * commissionRate) / 100).toFixed(2));
+    }
+
+    const partnerAmount = Number(Math.max(0, baseServicePrice - commissionAmount).toFixed(2));
+
+    booking.servicePrice = baseServicePrice;
+    booking.appFee = appFee;
+    booking.commissionRate = commissionRate;
+    booking.commissionAmount = commissionAmount;
+    booking.commission = commissionAmount;
+    booking.partnerCommission = commissionAmount;
+    booking.partnerAmount = partnerAmount;
+    booking.netAmount = partnerAmount;
+
+    delete booking.commissionData;
+    delete booking.transactionData;
+
+    return booking;
 };
 
 const userPendingBookingService = async (user, option) => {

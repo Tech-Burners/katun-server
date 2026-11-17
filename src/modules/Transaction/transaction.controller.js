@@ -28,6 +28,10 @@ const { checkSlotAvailability } =
 
 const response =
   require("../../helpers/response");
+const serviceModel =
+  require("../Service/service.model");
+const commissionModel =
+  require("../Commission/commission.model");
 const {
   executePaymentProcessing,
 } = require("../../helpers/flutterWaveWebhook");
@@ -160,6 +164,8 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
       paymentMethod === "cash"
     ) {
 
+      const baseServicePrice = Number(servicePrice) || (Number(totalPrice) > 0 ? Number((Number(totalPrice) / 1.05).toFixed(2)) : 0);
+
       const bookingData = {
         user: userId,
         service,
@@ -168,7 +174,7 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
         startTime,
         endTime,
         isOneTime,
-        servicePrice,
+        servicePrice: baseServicePrice,
         totalPrice,
         addons,
         paymentMethod,
@@ -215,6 +221,8 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
       paymentMethod === "wallet"
     ) {
 
+      const baseServicePrice = Number(servicePrice) || (Number(totalPrice) > 0 ? Number((Number(totalPrice) / 1.05).toFixed(2)) : 0);
+
       const bookingData = {
         user: userId,
         service,
@@ -223,7 +231,7 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
         startTime,
         endTime,
         isOneTime,
-        servicePrice,
+        servicePrice: baseServicePrice,
         totalPrice,
         addons,
         paymentMethod,
@@ -298,22 +306,35 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
       generateTxRef();
 
 
-    const commissionRate = 0.10;
+    const serviceDoc = await serviceModel.findById(service);
+    const categoryCommission = serviceDoc?.category
+      ? await commissionModel.findOne({ category: serviceDoc.category })
+      : null;
+    const commissionPercent =
+      categoryCommission && typeof categoryCommission.commission === "number" && categoryCommission.commission > 0
+        ? categoryCommission.commission
+        : 10;
+    const commissionRate = commissionPercent / 100;
 
+    const baseServicePrice =
+      Number(servicePrice) ||
+      (grossAmount > 0 ? Number((grossAmount / 1.05).toFixed(2)) : 0);
 
+    // Platform commission is calculated ON BASE SERVICE PRICE ONLY
     const commission =
       Number(
         (
-          grossAmount *
+          baseServicePrice *
           commissionRate
         ).toFixed(2)
       );
 
-
+    // Partner net amount = base service price minus commission
+    // The 5% extra goes to admin (with Flutterwave fee deducted from it)
     const netAmount =
       Number(
         (
-          grossAmount -
+          baseServicePrice -
           commission
         ).toFixed(2)
       );
@@ -400,7 +421,7 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
 
           isOneTime,
 
-          servicePrice,
+          servicePrice: baseServicePrice,
 
           totalPrice,
 
