@@ -49,7 +49,7 @@ router.get("/verify", verifyPayment);
 router.post("/verify", verifyPayment);
 router.get("/verify/:tx_ref", verifyPayment);
 // router.get("/success", flutterwaveCallback);
-router.get("/success", res.status(status.OK).json({ message: "Payment Successful" }));
+router.get("/success", (req, res) => res.status(status.OK).json({ message: "Payment Successful" }));
 router.get("/all-payout", allPayoutController);
 router.get("/refund", refundController);
 // router.get("/pending-payout", partnerMonthlySummaryController);
