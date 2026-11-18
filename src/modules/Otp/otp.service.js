@@ -168,7 +168,7 @@ const sendOTP = async (
                       font-size: 22px;
                       font-weight: 600;
                     ">
-                      ${process.env.appName}
+                      Auravive
                     </h1>
 
                   </td>

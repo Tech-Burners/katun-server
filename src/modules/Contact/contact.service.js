@@ -2,7 +2,7 @@ const { emailWithNodemailer } = require("../../helpers/email");
 
 
 const BRAND_COLOR = "#1F6F78";
-const APP_NAME = process.env.APP_NAME || "auraVibe";
+const APP_NAME = "Auravive";
 
 const sendContactService = async (data) => {
   const { name, email, interestedAs, company, message } = data;

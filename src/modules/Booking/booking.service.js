@@ -251,7 +251,7 @@ const checkPinService = async (bookingId, pin) => {
             userModel.findById(booking.provider),
         ]);
 
-        const providerName = partnerUserDoc?.fullName || "AuraVive Partner";
+        const providerName = partnerUserDoc?.fullName || "Auravive Partner";
         const userTitle = "OTP Verified";
         const userMessage = `Your OTP for ${serviceName} has been verified successfully. Your service session has now started.`;
         const partnerTitle = "Customer OTP Verified";
@@ -394,7 +394,7 @@ const markAsCompletedService = async (id, data = {}) => {
             userModel.findById(booking.provider),
         ]);
 
-        const providerName = partnerUserDoc?.fullName || "AuraVive Partner";
+        const providerName = partnerUserDoc?.fullName || "Auravive Partner";
         const title = "OTP Verified";
         const message = `Your OTP for ${serviceName} has been verified successfully. Your service session has now started.`;
 
@@ -614,8 +614,8 @@ const approveBookingService = async (id) => {
             customerName: userData.fullName,
             bookingId: result.bookingId || result._id,
             serviceName,
-            providerName: partnerDoc?.businessName || partnerUserDoc?.fullName || "AuraVive Partner",
-            providerAddress: partnerDoc?.address || partnerUserDoc?.address || "AuraVive Partner Location",
+            providerName: partnerDoc?.businessName || partnerUserDoc?.fullName || "Auravive Partner",
+            providerAddress: partnerDoc?.address || partnerUserDoc?.address || "Auravive Partner Location",
             date: result.date,
             startTime: result.startTime,
             endTime: result.endTime,
@@ -1123,19 +1123,13 @@ const bookingDetailsService = async (id, loginUserId) => {
 
     const booking = result[0];
     const totalPrice = Number(booking.totalPrice) || 0;
-    const baseServicePrice = Number(booking.servicePrice) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
-    const appFee = Number(Math.max(0, totalPrice - baseServicePrice).toFixed(2));
+    const baseServicePrice = Number(booking.servicePrice) || Number(booking.servicefee) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
 
     let commissionRate = 10;
     let commissionAmount = 0;
 
     if (booking.transactionData && typeof booking.transactionData.commission === "number") {
         commissionAmount = Number(booking.transactionData.commission.toFixed(2));
-        if (baseServicePrice > 0) {
-            commissionRate = Number(((commissionAmount / baseServicePrice) * 100).toFixed(2));
-        } else if (booking.transactionData.gross_amount > 0) {
-            commissionRate = Number(((commissionAmount / booking.transactionData.gross_amount) * 100).toFixed(2));
-        }
     } else {
         const catCommission = Number(booking.commissionData?.commission);
         commissionRate = catCommission > 0 ? catCommission : 10;
@@ -1144,14 +1138,8 @@ const bookingDetailsService = async (id, loginUserId) => {
 
     const partnerAmount = Number(Math.max(0, baseServicePrice - commissionAmount).toFixed(2));
 
-    booking.servicePrice = baseServicePrice;
-    booking.appFee = appFee;
-    booking.commissionRate = commissionRate;
-    booking.commissionAmount = commissionAmount;
-    booking.commission = commissionAmount;
     booking.partnerCommission = commissionAmount;
     booking.partnerAmount = partnerAmount;
-    booking.netAmount = partnerAmount;
 
     delete booking.commissionData;
     delete booking.transactionData;
@@ -1354,7 +1342,6 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 addons: 1,
                 servicefee: '$serviceData.servicefee',
                 duration: '$serviceData.duration',
-                servicePrice: 1,
                 totalPrice: 1,
                 paymentMethod: 1,
                 bookingMethod: { $ifNull: ["$paymentMethod", "card"] },
@@ -1381,19 +1368,13 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
 
     const booking = result[0];
     const totalPrice = Number(booking.totalPrice) || 0;
-    const baseServicePrice = Number(booking.servicePrice) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
-    const appFee = Number(Math.max(0, totalPrice - baseServicePrice).toFixed(2));
+    const baseServicePrice = Number(booking.servicePrice) || Number(booking.servicefee) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
 
     let commissionRate = 10;
     let commissionAmount = 0;
 
     if (booking.transactionData && typeof booking.transactionData.commission === "number") {
         commissionAmount = Number(booking.transactionData.commission.toFixed(2));
-        if (baseServicePrice > 0) {
-            commissionRate = Number(((commissionAmount / baseServicePrice) * 100).toFixed(2));
-        } else if (booking.transactionData.gross_amount > 0) {
-            commissionRate = Number(((commissionAmount / booking.transactionData.gross_amount) * 100).toFixed(2));
-        }
     } else {
         const catCommission = Number(booking.commissionData?.commission);
         commissionRate = catCommission > 0 ? catCommission : 10;
@@ -1402,14 +1383,8 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
 
     const partnerAmount = Number(Math.max(0, baseServicePrice - commissionAmount).toFixed(2));
 
-    booking.servicePrice = baseServicePrice;
-    booking.appFee = appFee;
-    booking.commissionRate = commissionRate;
-    booking.commissionAmount = commissionAmount;
-    booking.commission = commissionAmount;
     booking.partnerCommission = commissionAmount;
     booking.partnerAmount = partnerAmount;
-    booking.netAmount = partnerAmount;
 
     delete booking.commissionData;
     delete booking.transactionData;

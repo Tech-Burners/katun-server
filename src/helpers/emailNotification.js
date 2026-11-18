@@ -1,6 +1,6 @@
 const { emailWithNodemailer } = require("./email");
 
-const APP_NAME = process.env.APPNAME || process.env.APP_NAME || "AuraVive";
+const APP_NAME = "Auravive";
 const BRAND_COLOR = "#1F6F78";
 const SUPPORT_EMAIL = process.env.SMTP_USERNAME || "hello@auravive.ng";
 const DEFAULT_LOGIN_URL = process.env.FRONTEND_URL || process.env.BACKEND_URL || "https://auravive.ng";
@@ -10,14 +10,6 @@ const DEFAULT_LOGIN_URL = process.env.FRONTEND_URL || process.env.BACKEND_URL ||
  */
 const renderBaseTemplate = ({ title, badgeText, badgeColor = "#1F6F78", badgeBg = "#E0F2FE", content, ctaUrl, ctaText }) => {
   const year = new Date().getFullYear();
-
-  const ctaButtonHtml = ctaUrl && ctaText ? `
-    <div style="text-align: center; margin: 32px 0 24px;">
-      <a href="${ctaUrl}" target="_blank" style="background-color: ${BRAND_COLOR}; color: #ffffff; text-decoration: none; padding: 13px 32px; border-radius: 8px; font-size: 14px; font-weight: 600; display: inline-block; box-shadow: 0 2px 4px rgba(31, 111, 120, 0.25);">
-        ${ctaText}
-      </a>
-    </div>
-  ` : "";
 
   return `
   <!DOCTYPE html>
@@ -58,8 +50,6 @@ const renderBaseTemplate = ({ title, badgeText, badgeColor = "#1F6F78", badgeBg 
                 <div style="font-size: 15px; line-height: 1.6; color: #4b5563;">
                   ${content}
                 </div>
-
-                ${ctaButtonHtml}
               </td>
             </tr>
 
@@ -68,7 +58,7 @@ const renderBaseTemplate = ({ title, badgeText, badgeColor = "#1F6F78", badgeBg 
               <td align="center" style="padding: 24px; background-color: #f9fafb; border-top: 1px solid #e5e7eb;">
                 <p style="margin: 0; color: #9ca3af; font-size: 12px; line-height: 1.5;">
                   This is an automated notification from ${APP_NAME}. If you have any questions or need assistance, reach out to our team at 
-                  <a href="mailto:${SUPPORT_EMAIL}" style="color: ${BRAND_COLOR}; text-decoration: none; font-weight: 500;">${SUPPORT_EMAIL}</a>.
+                  <span style="color: ${BRAND_COLOR}; font-weight: 500;">${SUPPORT_EMAIL}</span>.
                 </p>
                 <p style="margin: 10px 0 0; color: #9ca3af; font-size: 12px;">
                   &copy; ${year} ${APP_NAME}. All rights reserved.
@@ -525,7 +515,7 @@ const sendTransactionEmail = async ({
 
     <!-- Security Advisory -->
     <p style="font-size: 12.5px; color: #64748b; line-height: 1.5; margin: 18px 0 0;">
-      Please retain this email as an official record of your transaction. If you have any inquiries regarding this charge or did not authorize it, please contact our support desk immediately at <a href="mailto:${SUPPORT_EMAIL}" style="color: ${BRAND_COLOR}; font-weight: 500; text-decoration: none;">${SUPPORT_EMAIL}</a>.
+      Please retain this email as an official record of your transaction. If you have any inquiries regarding this charge or did not authorize it, please contact our support desk immediately at <span style="color: ${BRAND_COLOR}; font-weight: 500;">${SUPPORT_EMAIL}</span>.
     </p>
   `;
 
@@ -557,7 +547,7 @@ const sendOtpVerifiedEmail = async ({
   email,
   fullName,
   serviceName = "Service",
-  providerName = "AuraVive Partner",
+  providerName = "Auravive Partner",
   bookingId,
   date = new Date(),
   ctaUrl = DEFAULT_LOGIN_URL,
@@ -720,7 +710,7 @@ const sendUserBookingConfirmationEmail = async ({
   customerName,
   bookingId,
   serviceName = "Wellness Service",
-  providerName = "AuraVive Partner",
+  providerName = "Auravive Partner",
   providerAddress = "Partner Location",
   date,
   startTime,

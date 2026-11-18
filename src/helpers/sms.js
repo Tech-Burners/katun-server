@@ -5,7 +5,7 @@ const ApiError = require("./ApiError");
 // Twilio credentials
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const twilioPhone = "AuraVive";
+const twilioPhone = "Auravive";
 // const twilioPhone = process.env.TWILIO_PHONE_NUMBER;
 
 // Create Twilio client

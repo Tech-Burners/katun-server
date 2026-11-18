@@ -840,8 +840,8 @@ const sendNewBookingNotifications = async (bookingDocOrId) => {
     ]);
 
     const isAutoApproved = booking.status === "approved";
-    const providerName = partnerDoc?.businessName || partnerUserDoc?.fullName || "AuraVive Partner";
-    const providerAddress = partnerDoc?.address || partnerUserDoc?.address || "AuraVive Partner Location";
+    const providerName = partnerDoc?.businessName || partnerUserDoc?.fullName || "Auravive Partner";
+    const providerAddress = partnerDoc?.address || partnerUserDoc?.address || "Auravive Partner Location";
     const customerName = userDoc?.fullName || "Valued Customer";
     const customerPhone = `${userDoc?.countryCode || ""} ${userDoc?.number || userDoc?.phoneNumber || ""}`.trim();
     const customerEmail = userDoc?.email;

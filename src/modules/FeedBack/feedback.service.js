@@ -277,7 +277,7 @@ const replyService = async (data) => {
           <!-- Footer -->
           <div style="margin-top:30px;padding-top:15px;border-top:1px solid #eee;text-align:center;">
             <p style="font-size:12px;color:#aaa;margin-top:6px;">
-              © ${new Date().getFullYear()} ${process.env.APPNAME}.. All rights reserved.
+              © ${new Date().getFullYear()} Auravive. All rights reserved.
             </p>
           </div>
 
