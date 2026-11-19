@@ -537,8 +537,8 @@ const executePaymentProcessing = async ({ transactionId, txRef }) => {
 // =====================================================
 const renderPaymentPage = ({
   success = true,
-  title = "Payment Successful",
-  message = "Your payment has been received and processed.",
+  title = "Payment Successful!",
+  message = "Your payment has been received and processed successfully.",
   txRef = "",
   transactionId = "",
   amount,
@@ -551,86 +551,43 @@ const renderPaymentPage = ({
   const statusBg = isSuccess ? "#ecfdf5" : "#fef2f2";
   const statusBorder = isSuccess ? "#a7f3d0" : "#fecaca";
 
-  const pinDisplay = booking?.pin
-    ? `
-      <div style="margin: 22px 0 16px 0; padding: 16px; background: #f0fdf4; border: 2px dashed #16a34a; border-radius: 12px; text-align: center;">
-        <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #166534; margin-bottom: 6px;">
-          Your Check-in PIN / Verification OTP
-        </div>
-        <div style="font-size: 34px; font-weight: 800; letter-spacing: 8px; color: #15803d; font-family: 'Courier New', monospace;">
-          ${booking.pin}
-        </div>
-        <div style="font-size: 12px; color: #166534; margin-top: 6px;">
-          Share this PIN with your service provider when they arrive to begin your session.
-        </div>
-      </div>
-    `
-    : "";
-
-  const bookingDetails = booking
-    ? `
-      <div style="margin-top: 16px; padding: 14px 18px; background: #f8fafc; border-radius: 10px; font-size: 13px; color: #475569; text-align: left;">
-        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #e2e8f0;">
-          <span style="color: #64748b;">Booking ID:</span>
-          <span style="font-weight: 600; color: #0f172a; font-family: monospace;">${booking._id}</span>
-        </div>
-        ${booking.date ? `
-        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #e2e8f0;">
-          <span style="color: #64748b;">Date:</span>
-          <span style="font-weight: 600; color: #0f172a;">${new Date(booking.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
-        </div>` : ""}
-        ${booking.startTime && booking.endTime ? `
-        <div style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #e2e8f0;">
-          <span style="color: #64748b;">Time:</span>
-          <span style="font-weight: 600; color: #0f172a;">${booking.startTime} - ${booking.endTime}</span>
-        </div>` : ""}
-        ${amount ? `
-        <div style="display: flex; justify-content: space-between; padding: 6px 0;">
-          <span style="color: #64748b;">Amount Paid:</span>
-          <span style="font-weight: 700; color: #059669;">₦${Number(amount).toLocaleString()}</span>
-        </div>` : ""}
-      </div>
-    `
-    : amount
-    ? `
-      <div style="margin-top: 16px; padding: 14px 18px; background: #f8fafc; border-radius: 10px; font-size: 13px; color: #475569; text-align: left;">
-        <div style="display: flex; justify-content: space-between; padding: 6px 0;">
-          <span style="color: #64748b;">Amount:</span>
-          <span style="font-weight: 700; color: #059669;">₦${Number(amount).toLocaleString()}</span>
-        </div>
-      </div>
-    `
-    : "";
-
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} | Aura Vive</title>
+  <title>${title} | Auravive</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+      background: #f8fafc;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 24px;
+      padding: 20px;
     }
     .card {
       background: #ffffff;
       border-radius: 20px;
-      box-shadow: 0 20px 40px rgba(0,0,0,0.08);
-      max-width: 480px;
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.06), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+      border: 1px solid #f1f5f9;
+      max-width: 440px;
       width: 100%;
-      padding: 36px 28px;
+      padding: 42px 32px;
       text-align: center;
     }
+    .brand-logo {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: #1F6F78;
+      margin-bottom: 28px;
+    }
     .badge-icon {
-      width: 72px;
-      height: 72px;
+      width: 76px;
+      height: 76px;
       border-radius: 50%;
       background: ${statusBg};
       border: 2px solid ${statusBorder};
@@ -640,8 +597,8 @@ const renderPaymentPage = ({
       margin: 0 auto 20px auto;
     }
     .badge-icon svg {
-      width: 38px;
-      height: 38px;
+      width: 40px;
+      height: 40px;
       stroke: ${statusColor};
     }
     h1 {
@@ -651,10 +608,10 @@ const renderPaymentPage = ({
       margin-bottom: 8px;
     }
     p.subtitle {
-      font-size: 14px;
+      font-size: 15px;
       color: #64748b;
       line-height: 1.5;
-      margin-bottom: 18px;
+      margin-bottom: 16px;
     }
     .ref-box {
       background: #f1f5f9;
@@ -663,40 +620,19 @@ const renderPaymentPage = ({
       font-size: 12px;
       color: #475569;
       word-break: break-all;
-      margin: 14px 0;
+      margin: 16px 0 0 0;
       font-family: monospace;
     }
-    .btn {
-      display: inline-block;
-      margin-top: 22px;
-      padding: 14px 28px;
-      background: ${isSuccess ? "#059669" : "#334155"};
-      color: #ffffff;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 15px;
-      border-radius: 12px;
-      transition: opacity 0.2s;
-    }
-    .btn:hover {
-      opacity: 0.9;
-    }
-    .brand-logo {
-      font-size: 18px;
-      font-weight: 800;
-      letter-spacing: 2px;
-      color: #0f172a;
-      margin-bottom: 24px;
-      text-transform: uppercase;
-    }
-    .brand-logo span {
-      color: #059669;
+    .note {
+      font-size: 13px;
+      color: #94a3b8;
+      margin-top: 16px;
     }
   </style>
 </head>
 <body>
   <div class="card">
-    <div class="brand-logo">Aura <span>Vive</span></div>
+    <div class="brand-logo">Auravive</div>
     <div class="badge-icon">
       ${isSuccess ? `
         <svg fill="none" stroke-width="2.5" viewBox="0 0 24 24" stroke="currentColor">
@@ -710,10 +646,8 @@ const renderPaymentPage = ({
     </div>
     <h1>${title}</h1>
     <p class="subtitle">${message}</p>
-    ${pinDisplay}
-    ${bookingDetails}
     ${txRef ? `<div class="ref-box">Ref: ${txRef}</div>` : ""}
-    <a href="https://auravive.ng" class="btn">Return to Aura Vive</a>
+    <p class="note">You can safely return to the app.</p>
   </div>
 </body>
 </html>`;

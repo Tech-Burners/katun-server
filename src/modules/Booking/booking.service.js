@@ -1109,6 +1109,8 @@ const bookingDetailsService = async (id, loginUserId) => {
                 addons: 1,
                 status: 1,
                 isOneTime: 1,
+                pass: 1,
+                servicePass: '$serviceData.pass',
                 createdAt: 1,
                 amenities: { $ifNull: ["$partnerProfileData.amenities", []] },
                 myFeedback: 1,
@@ -1141,6 +1143,14 @@ const bookingDetailsService = async (id, loginUserId) => {
     booking.partnerCommission = commissionAmount;
     booking.partnerAmount = partnerAmount;
 
+    const totalSession = booking.isOneTime
+        ? 1
+        : (Number(booking.pass?.noOfSessions) || Number(booking.servicePass?.noOfSessions) || Number(booking.sessionLeft) || 1);
+
+    booking.totalSession = totalSession;
+    booking.totalSessions = totalSession;
+
+    delete booking.servicePass;
     delete booking.commissionData;
     delete booking.transactionData;
 
@@ -1353,6 +1363,7 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 status: 1,
                 isOneTime: 1,
                 pass: 1,
+                servicePass: '$serviceData.pass',
                 createdAt: 1,
                 amenities: { $ifNull: ['$partnerData.amenities', []] },
 
@@ -1386,6 +1397,14 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
     booking.partnerCommission = commissionAmount;
     booking.partnerAmount = partnerAmount;
 
+    const totalSession = booking.isOneTime
+        ? 1
+        : (Number(booking.pass?.noOfSessions) || Number(booking.servicePass?.noOfSessions) || Number(booking.sessionLeft) || 1);
+
+    booking.totalSession = totalSession;
+    booking.totalSessions = totalSession;
+
+    delete booking.servicePass;
     delete booking.commissionData;
     delete booking.transactionData;
 

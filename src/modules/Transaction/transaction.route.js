@@ -24,7 +24,7 @@ const {
   getBanks,
 } = require("./transaction.controller");
 const { auth } = require("../../middlewares/auth");
-const { flutterwaveCallback } = require("../../helpers/flutterWaveWebhook");
+const { flutterwaveCallback, renderPaymentPage, executePaymentProcessing } = require("../../helpers/flutterWaveWebhook");
 const { default: status } = require("http-status");
 
 const router = express.Router();
@@ -49,7 +49,41 @@ router.get("/verify", verifyPayment);
 router.post("/verify", verifyPayment);
 router.get("/verify/:tx_ref", verifyPayment);
 // router.get("/success", flutterwaveCallback);
-router.get("/success", (req, res) => res.status(status.OK).json({ message: "Payment Successful" }));
+router.get("/success", (req, res) => {
+  const { status: paymentStatus, tx_ref: txRef, transaction_id: transactionId } = req.query;
+
+  // Background sync if payment was successful and not yet verified
+  if (paymentStatus === "successful" && (transactionId || txRef)) {
+    executePaymentProcessing({ transactionId, txRef }).catch((err) =>
+      console.error("Background payment processing error on /success:", err.message)
+    );
+  }
+
+  // If client explicitly requests JSON
+  const accept = req.headers?.accept || "";
+  if (req.query?.format === "json" || (accept.includes("application/json") && !accept.includes("text/html"))) {
+    return res.status(status.OK).json({
+      status: "success",
+      statusCode: status.OK,
+      message: "Payment Successful",
+      data: { tx_ref: txRef, transaction_id: transactionId },
+    });
+  }
+
+  // Render clean, modern Payment Successful page
+  const isCancelled = paymentStatus === "cancelled";
+  return res.status(status.OK).send(
+    renderPaymentPage({
+      success: !isCancelled,
+      title: isCancelled ? "Payment Cancelled" : "Payment Successful!",
+      message: isCancelled
+        ? "You cancelled the payment process. No charges were made."
+        : "Your payment has been received and processed successfully.",
+      txRef,
+      transactionId,
+    })
+  );
+});
 router.get("/all-payout", allPayoutController);
 router.get("/refund", refundController);
 // router.get("/pending-payout", partnerMonthlySummaryController);
