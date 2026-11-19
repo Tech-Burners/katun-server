@@ -689,6 +689,12 @@ const flutterwaveCallback = async (req, res) => {
     });
   }
 
+  // If browser lands on /webhook/flutterwave, redirect to /api/v1/transaction/success
+  if (!wantsJson(req) && (req.originalUrl || "").includes("/webhook/flutterwave")) {
+    const queryString = new URLSearchParams(req.query).toString();
+    return res.redirect(`/api/v1/transaction/success?${queryString}`);
+  }
+
   // 1. If user cancelled checkout
   if (paymentStatus === "cancelled") {
     if (wantsJson(req)) {

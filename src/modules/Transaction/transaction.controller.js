@@ -464,9 +464,9 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
               "NGN",
 
             redirect_url:
-              req.body.redirect_url ||
-              process.env.FLW_SUCCESS_URL ||
-              "https://api.auravive.ng/api/v1/transaction/success",
+              (req.body.redirect_url && !req.body.redirect_url.includes("webhook/flutterwave"))
+                ? req.body.redirect_url
+                : (process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success"),
 
             payment_options:
               paymentMethod,
@@ -750,9 +750,9 @@ const purchaseCreditController =
               "NGN",
 
             redirect_url:
-              req.body.redirect_url ||
-              process.env.FLW_SUCCESS_URL ||
-              "https://api.auravive.ng/api/v1/transaction/success",
+              (req.body.redirect_url && !req.body.redirect_url.includes("webhook/flutterwave"))
+                ? req.body.redirect_url
+                : (process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success"),
 
             payment_options:
               paymentMethod,
@@ -1027,9 +1027,9 @@ const tipsController =
               "NGN",
 
             redirect_url:
-              req.body.redirect_url ||
-              process.env.FLW_SUCCESS_URL ||
-              "https://api.auravive.ng/api/v1/transaction/success",
+              (req.body.redirect_url && !req.body.redirect_url.includes("webhook/flutterwave"))
+                ? req.body.redirect_url
+                : (process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success"),
 
             payment_options:
               paymentMethod,

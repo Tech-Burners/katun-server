@@ -52,8 +52,11 @@ router.get("/verify/:tx_ref", verifyPayment);
 router.get("/success", (req, res) => {
   const { status: paymentStatus, tx_ref: txRef, transaction_id: transactionId } = req.query;
 
+  const isCancelled = paymentStatus === "cancelled";
+  const isSuccessful = paymentStatus === "successful" || paymentStatus === "completed" || (!isCancelled && (transactionId || txRef));
+
   // Background sync if payment was successful and not yet verified
-  if (paymentStatus === "successful" && (transactionId || txRef)) {
+  if (isSuccessful && (transactionId || txRef)) {
     executePaymentProcessing({ transactionId, txRef }).catch((err) =>
       console.error("Background payment processing error on /success:", err.message)
     );
@@ -63,15 +66,14 @@ router.get("/success", (req, res) => {
   const accept = req.headers?.accept || "";
   if (req.query?.format === "json" || (accept.includes("application/json") && !accept.includes("text/html"))) {
     return res.status(status.OK).json({
-      status: "success",
+      status: isCancelled ? "cancelled" : "success",
       statusCode: status.OK,
-      message: "Payment Successful",
-      data: { tx_ref: txRef, transaction_id: transactionId },
+      message: isCancelled ? "Payment Cancelled" : "Payment Successful",
+      data: { tx_ref: txRef, transaction_id: transactionId, status: paymentStatus },
     });
   }
 
   // Render clean, modern Payment Successful page
-  const isCancelled = paymentStatus === "cancelled";
   return res.status(status.OK).send(
     renderPaymentPage({
       success: !isCancelled,
