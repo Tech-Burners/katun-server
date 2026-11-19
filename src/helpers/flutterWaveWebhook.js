@@ -605,7 +605,7 @@ const renderPaymentPage = ({
       font-size: 24px;
       font-weight: 700;
       color: #0f172a;
-      margin-bottom: 8px;
+      margin-bottom: ${isSuccess ? "0" : "8px"};
     }
     p.subtitle {
       font-size: 15px;
@@ -645,9 +645,10 @@ const renderPaymentPage = ({
       `}
     </div>
     <h1>${title}</h1>
-    <p class="subtitle">${message}</p>
-    ${txRef ? `<div class="ref-box">Ref: ${txRef}</div>` : ""}
-    <p class="note">You can safely return to the app.</p>
+    ${!isSuccess ? `
+      ${message ? `<p class="subtitle">${message}</p>` : ""}
+      ${txRef ? `<div class="ref-box">Ref: ${txRef}</div>` : ""}
+    ` : ""}
   </div>
 </body>
 </html>`;
