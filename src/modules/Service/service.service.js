@@ -626,7 +626,8 @@ const aServiceDetailsService = async (id, userId = null) => {
         avgRating: 1,
         ratingCount: 1,
 
-        isFavourite: 1
+        isFavourite: 1,
+        platformFeePercent: { $literal: 5 }
       }
     }
   ]);
@@ -636,6 +637,7 @@ const aServiceDetailsService = async (id, userId = null) => {
   }
 
   const service = result[0];
+  service.platformFeePercent = 5;
   const isOwnerOrAdmin = userId && (
     String(userId) === String(service.providerId)
   );

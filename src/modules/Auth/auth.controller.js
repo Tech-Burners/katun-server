@@ -26,6 +26,8 @@ const { myDocumentsService, updateDocumentsService } = require("../Partner/partn
 const { getAdminByUserId } = require("../Admin/admin.service");
 const { add } = require("winston");
 const userModel = require("../User/user.model");
+const partnerModel = require("../Partner/partner.model");
+const normalizeArray = require("../../helpers/normalizeArray");
 
 
 
@@ -721,8 +723,24 @@ const createPartnerController = catchAsync(async (req, res) => {
 
   /* ---------------- MERGE DATA ---------------- */
 
+  const rawCategories =
+    req.body.category ||
+    req.body.categories ||
+    req.body["category[]"] ||
+    req.body["categories[]"];
+  const categories = normalizeArray(rawCategories);
+
+  const rawSubcategories =
+    req.body.subcategory ||
+    req.body.subcategories ||
+    req.body["subcategory[]"] ||
+    req.body["subcategories[]"];
+  const subcategories = normalizeArray(rawSubcategories);
+
   const userData = {
     ...req.body,        // step-2 form data
+    ...(categories.length > 0 && { category: categories, categories }),
+    ...(subcategories.length > 0 && { subcategory: subcategories, subcategories }),
     email: req.User.email,
     password: req.User.password,
     role: req.User.role
@@ -742,11 +760,20 @@ const createPartnerController = catchAsync(async (req, res) => {
     }).catch((err) => console.error("Partner registration email error:", err.message));
   }
 
+  const partnerDoc = await partnerModel.findOne({ user: registeredUser._id });
+
+  const responseData = {
+    ...registeredUser.toObject(),
+    category: partnerDoc?.category || categories,
+    categories: partnerDoc?.categories || partnerDoc?.category || categories,
+    partner: partnerDoc,
+  };
+
   return res.status(status.CREATED).json(
     response({
       status: "OK",
       message: "Partner account created",
-      data: registeredUser,
+      data: responseData,
       accessToken
     })
   );
@@ -1022,7 +1049,9 @@ const updateProfile = catchAsync(async (req, res) => {
       // whatsappNumber: result.user.whatsappNumber,
       number: result.user.number,
       countryCode: result.user.countryCode,
-      image: result.user.image
+      image: result.user.image,
+      category: result.partner?.category || [],
+      categories: result.partner?.categories || result.partner?.category || [],
     };
   }
 
@@ -1210,6 +1239,8 @@ const userDetailsByID = catchAsync(async (req, res) => {
       number: result.user.number,
       countryCode: result.user.countryCode,
       image: result.user.image,
+      category: result.partner?.category || [],
+      categories: result.partner?.categories || result.partner?.category || [],
       isVerified: result.user.isVerified
     };
   }

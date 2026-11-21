@@ -35,6 +35,7 @@ const commissionModel =
 const {
   executePaymentProcessing,
 } = require("../../helpers/flutterWaveWebhook");
+const { calculateBookingPricing } = require("../../helpers/bookingPricing");
 
 const generate4DigitPin =
   require("../../helpers/generatepin");
@@ -93,7 +94,7 @@ const bookController = catchAsync(
 
 
     // =====================================================
-    // VALIDATION
+    // VALIDATION & LOOKUPS
     // =====================================================
 
     if (!service || !partner) {
@@ -103,21 +104,12 @@ const bookController = catchAsync(
       });
     }
 
-
-    const grossAmount =
-      Number(totalPrice);
-
-
-    if (
-      !Number.isFinite(grossAmount) ||
-      grossAmount <= 0
-    ) {
-      return res.status(400).json({
-        message:
-          "Invalid payment amount",
+    const serviceDoc = await serviceModel.findById(service);
+    if (!serviceDoc) {
+      return res.status(404).json({
+        message: "Service not found",
       });
     }
-
 
     const allowedPaymentMethods = [
       "card",
@@ -126,7 +118,6 @@ const bookController = catchAsync(
       "wallet",
       "cash",
     ];
-
 
     if (
       !allowedPaymentMethods.includes(
@@ -147,12 +138,40 @@ const bookController = catchAsync(
       await partnerModel.findOne({
         user: partner,
       });
-const partnerUserDoc = await getUserById(partnerDetails.user);
+
     const isAutoApproved =
       Boolean(
         partnerDetails?.serviceAutoApproved
       );
 
+    const categoryCommission = serviceDoc?.category
+      ? await commissionModel.findOne({ category: serviceDoc.category })
+      : null;
+
+    // Server calculates all pricing from its own data (never trusting app-sent totalPrice)
+    const pricing = await calculateBookingPricing({
+      serviceDoc,
+      isOneTime,
+      pass: req.body.pass || serviceDoc?.pass,
+      addons,
+      promoDiscount: req.body.promoDiscount || req.body.discount,
+      promoCode: req.body.promoCode || req.body.couponCode,
+      partnerDoc: partnerDetails,
+      commissionDoc: categoryCommission,
+      fallbackServicePrice: servicePrice,
+    });
+
+    const grossAmount = pricing.totalPrice;
+
+    if (
+      !Number.isFinite(grossAmount) ||
+      grossAmount <= 0
+    ) {
+      return res.status(400).json({
+        message:
+          "Invalid payment amount",
+      });
+    }
 
     const bookingRequestExpireAt = calculateBookingRequestExpireAt(req.body);
 
@@ -164,8 +183,6 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
       paymentMethod === "cash"
     ) {
 
-      const baseServicePrice = Number(servicePrice) || (Number(totalPrice) > 0 ? Number((Number(totalPrice) / 1.05).toFixed(2)) : 0);
-
       const bookingData = {
         user: userId,
         service,
@@ -173,9 +190,18 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
         date,
         startTime,
         endTime,
-        isOneTime,
-        servicePrice: baseServicePrice,
-        totalPrice,
+        isOneTime: Boolean(isOneTime),
+        pass: !isOneTime ? (req.body.pass || serviceDoc?.pass) : undefined,
+        servicePrice: pricing.servicePrice,
+        addonsTotal: pricing.addonsTotal,
+        promoDiscount: pricing.promoDiscount,
+        promoCode: req.body.promoCode || req.body.couponCode,
+        subtotal: pricing.subtotal,
+        platformFee: pricing.platformFee,
+        platformFeePercent: pricing.platformFeePercent,
+        partnerCommission: pricing.partnerCommission,
+        partnerCommissionPercent: pricing.partnerCommissionPercent,
+        totalPrice: pricing.totalPrice,
         addons,
         paymentMethod,
         bookingRequestExpireAt,
@@ -221,8 +247,6 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
       paymentMethod === "wallet"
     ) {
 
-      const baseServicePrice = Number(servicePrice) || (Number(totalPrice) > 0 ? Number((Number(totalPrice) / 1.05).toFixed(2)) : 0);
-
       const bookingData = {
         user: userId,
         service,
@@ -230,9 +254,18 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
         date,
         startTime,
         endTime,
-        isOneTime,
-        servicePrice: baseServicePrice,
-        totalPrice,
+        isOneTime: Boolean(isOneTime),
+        pass: !isOneTime ? (req.body.pass || serviceDoc?.pass) : undefined,
+        servicePrice: pricing.servicePrice,
+        addonsTotal: pricing.addonsTotal,
+        promoDiscount: pricing.promoDiscount,
+        promoCode: req.body.promoCode || req.body.couponCode,
+        subtotal: pricing.subtotal,
+        platformFee: pricing.platformFee,
+        platformFeePercent: pricing.platformFeePercent,
+        partnerCommission: pricing.partnerCommission,
+        partnerCommissionPercent: pricing.partnerCommissionPercent,
+        totalPrice: pricing.totalPrice,
         addons,
         paymentMethod,
         bookingRequestExpireAt,
@@ -305,40 +338,8 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
     const tx_ref =
       generateTxRef();
 
-
-    const serviceDoc = await serviceModel.findById(service);
-    const categoryCommission = serviceDoc?.category
-      ? await commissionModel.findOne({ category: serviceDoc.category })
-      : null;
-    const commissionPercent =
-      categoryCommission && typeof categoryCommission.commission === "number" && categoryCommission.commission > 0
-        ? categoryCommission.commission
-        : 10;
-    const commissionRate = commissionPercent / 100;
-
-    const baseServicePrice =
-      Number(servicePrice) ||
-      (grossAmount > 0 ? Number((grossAmount / 1.05).toFixed(2)) : 0);
-
-    // Platform commission is calculated ON BASE SERVICE PRICE ONLY
-    const commission =
-      Number(
-        (
-          baseServicePrice *
-          commissionRate
-        ).toFixed(2)
-      );
-
-    // Partner net amount = base service price minus commission
-    // The 5% extra goes to admin (with Flutterwave fee deducted from it)
-    const netAmount =
-      Number(
-        (
-          baseServicePrice -
-          commission
-        ).toFixed(2)
-      );
-
+    const commission = pricing.partnerCommission;
+    const netAmount = pricing.partnerAmount;
 
     const pin =
       generate4DigitPin();
@@ -419,11 +420,29 @@ const partnerUserDoc = await getUserById(partnerDetails.user);
 
           endTime,
 
-          isOneTime,
+          isOneTime: Boolean(isOneTime),
 
-          servicePrice: baseServicePrice,
+          pass: !isOneTime ? (req.body.pass || serviceDoc?.pass) : undefined,
 
-          totalPrice,
+          servicePrice: pricing.servicePrice,
+
+          addonsTotal: pricing.addonsTotal,
+
+          promoDiscount: pricing.promoDiscount,
+
+          promoCode: req.body.promoCode || req.body.couponCode,
+
+          subtotal: pricing.subtotal,
+
+          platformFee: pricing.platformFee,
+
+          platformFeePercent: pricing.platformFeePercent,
+
+          partnerCommission: pricing.partnerCommission,
+
+          partnerCommissionPercent: pricing.partnerCommissionPercent,
+
+          totalPrice: pricing.totalPrice,
 
           addons,
 

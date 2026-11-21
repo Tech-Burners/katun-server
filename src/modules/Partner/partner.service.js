@@ -792,10 +792,28 @@ const pendingPartnerForApprovalService = async (options) => {
             },
         },
         {
-            $unwind: {
-                path: "$categoryData",
-                preserveNullAndEmptyArrays: true,
-            },
+            $addFields: {
+                categoryNames: "$categoryData.name",
+                categoryName: {
+                    $cond: {
+                        if: { $and: [{ $isArray: "$categoryData" }, { $gt: [{ $size: "$categoryData" }, 0] }] },
+                        then: {
+                            $reduce: {
+                                input: "$categoryData.name",
+                                initialValue: "",
+                                in: {
+                                    $cond: [
+                                        { $eq: ["$$value", ""] },
+                                        "$$this",
+                                        { $concat: ["$$value", ", ", "$$this"] }
+                                    ]
+                                }
+                            }
+                        },
+                        else: ""
+                    }
+                }
+            }
         },
         {
             $match: searchMatch,
@@ -819,7 +837,8 @@ const pendingPartnerForApprovalService = async (options) => {
                             address: "$userData.address",
                             // whatsappNumber: "$userData.whatsappNumber",
                             email: "$userData.email",
-                            categoryName: "$categoryData.name",
+                            categoryName: 1,
+                            categories: "$categoryData",
                             // location: 1,
                             // address: 1,
                             createdAt: 1,
@@ -904,10 +923,28 @@ const allPartnerService = async (options) => {
             },
         },
         {
-            $unwind: {
-                path: "$categoryData",
-                preserveNullAndEmptyArrays: true,
-            },
+            $addFields: {
+                categoryNames: "$categoryData.name",
+                categoryName: {
+                    $cond: {
+                        if: { $and: [{ $isArray: "$categoryData" }, { $gt: [{ $size: "$categoryData" }, 0] }] },
+                        then: {
+                            $reduce: {
+                                input: "$categoryData.name",
+                                initialValue: "",
+                                in: {
+                                    $cond: [
+                                        { $eq: ["$$value", ""] },
+                                        "$$this",
+                                        { $concat: ["$$value", ", ", "$$this"] }
+                                    ]
+                                }
+                            }
+                        },
+                        else: ""
+                    }
+                }
+            }
         },
 
         { $match: searchMatch },
@@ -1100,7 +1137,8 @@ const allPartnerService = async (options) => {
                             countryCode: "$userData.countryCode",
                             // whatsappNumber: "$userData.whatsappNumber",
                             email: "$userData.email",
-                            categoryName: "$categoryData.name",
+                            categoryName: 1,
+                            categories: "$categoryData",
                             location: 1,
                             address: 1,
                             rating: 1,
@@ -1284,10 +1322,28 @@ const detailsForAdminService = async (userId) => {
             },
         },
         {
-            $unwind: {
-                path: "$categoryData",
-                preserveNullAndEmptyArrays: true,
-            },
+            $addFields: {
+                categoryNames: "$categoryData.name",
+                categoryName: {
+                    $cond: {
+                        if: { $and: [{ $isArray: "$categoryData" }, { $gt: [{ $size: "$categoryData" }, 0] }] },
+                        then: {
+                            $reduce: {
+                                input: "$categoryData.name",
+                                initialValue: "",
+                                in: {
+                                    $cond: [
+                                        { $eq: ["$$value", ""] },
+                                        "$$this",
+                                        { $concat: ["$$value", ", ", "$$this"] }
+                                    ]
+                                }
+                            }
+                        },
+                        else: ""
+                    }
+                }
+            }
         },
 
         // 1. Lookup services of this partner
@@ -1495,7 +1551,9 @@ const detailsForAdminService = async (userId) => {
                 image: "$userData.image",
                 email: "$userData.email",
                 note: "$userData.note",
-                categoryName: "$categoryData.name",
+                categoryName: 1,
+                categories: "$categoryData",
+                categoryNames: 1,
                 businessCertification: 1,
                 identityProof: 1,
                 rating: 1,

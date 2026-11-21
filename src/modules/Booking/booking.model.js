@@ -42,6 +42,39 @@ const bookingSchema = new mongoose.Schema(
 
     totalPrice: Number,
 
+    promoDiscount: {
+      type: Number,
+      default: 0,
+    },
+
+    platformFee: {
+      type: Number,
+      default: 0,
+    },
+
+    platformFeePercent: {
+      type: Number,
+      default: 5,
+    },
+
+    partnerCommission: {
+      type: Number,
+      default: 0,
+    },
+
+    partnerCommissionPercent: {
+      type: Number,
+      default: 10,
+    },
+
+    subtotal: {
+      type: Number,
+    },
+
+    promoCode: {
+      type: String,
+    },
+
     addons: [
       {
         serviceName: {

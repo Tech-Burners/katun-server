@@ -6,6 +6,7 @@ const userModel = require('../User/user.model');
 const { addPartnerService, editPartnerService } = require('../Partner/partner.service');
 const partnerModel = require('../Partner/partner.model');
 const employerModel = require('../Employer/employer.model');
+const normalizeArray = require('../../helpers/normalizeArray');
 const { tokenGenerator } = require('../../helpers/tokenGenerator');
 const { verifyAppleToken, verifyGoogleToken } = require('../../helpers/verifyAppleToken');
 
@@ -179,16 +180,32 @@ const addUser = async (userBody) => {
   // userBody.fullName = userBody.businessName ? userBody.businessName : userBody.fullName;
   const user = await userModel.create(userBody);
   if (userBody.role === 'partner') {
+    const rawCategories =
+      userBody.category ||
+      userBody.categories ||
+      userBody["category[]"] ||
+      userBody["categories[]"];
+    const categories = normalizeArray(rawCategories);
+
+    const rawSubcategories =
+      userBody.subcategory ||
+      userBody.subcategories ||
+      userBody["subcategory[]"] ||
+      userBody["subcategories[]"];
+    const subcategories = normalizeArray(rawSubcategories);
+
     const payload = {
       user: user._id,
       ...(userBody.businessName && { businessName: userBody.businessName }),
       ...(userBody.image && { image: userBody.image }),
-      ...(userBody.category && { category: userBody.category }),
-      ...(userBody.subcategory && { subcategory: userBody.subcategory }),
+      ...(categories.length > 0 && { category: categories, categories }),
+      ...(subcategories.length > 0 && { subcategory: subcategories, subcategories }),
       ...(userBody.bankStatement && { bankStatement: userBody.bankStatement }),
       ...(userBody.businessCertification && { businessCertification: userBody.businessCertification }),
       ...(userBody.identityProof && { identityProof: userBody.identityProof }),
       ...(userBody.certificate && { certificate: userBody.certificate }),
+      ...(userBody.aboutUs && { aboutUs: userBody.aboutUs }),
+      ...(userBody.amenities && { amenities: userBody.amenities }),
     };
     // console.log({ payload })
     await addPartnerService(payload)
@@ -474,6 +491,19 @@ const updateUserById = async (id, data) => {
   let companyData = null;
 
   if (user.role === 'partner') {
+    const rawCategories =
+      data.category ||
+      data.categories ||
+      data["category[]"] ||
+      data["categories[]"];
+    const categories = rawCategories !== undefined ? normalizeArray(rawCategories) : null;
+
+    const rawSubcategories =
+      data.subcategory ||
+      data.subcategories ||
+      data["subcategory[]"] ||
+      data["subcategories[]"];
+    const subcategories = rawSubcategories !== undefined ? normalizeArray(rawSubcategories) : null;
 
     const partnerPayload = {
       businessName: data.fullName,
@@ -481,7 +511,9 @@ const updateUserById = async (id, data) => {
       address: data.address,
       amenities: data.amenities,
       serviceAutoApproved: data.serviceAutoApproved,
-      aboutUs: data.aboutUs
+      aboutUs: data.aboutUs,
+      ...(categories && { category: categories, categories }),
+      ...(subcategories && { subcategory: subcategories, subcategories }),
     };
     // console.log({ partnerPayload });
 
@@ -565,6 +597,10 @@ const partnerProfileService = async (userId) => {
         businessName: '$partnerData.businessName',
         aboutUs: '$partnerData.aboutUs',
         amenities: { $ifNull: ['$partnerData.amenities', []] },
+        category: { $ifNull: ['$partnerData.category', []] },
+        categories: { $ifNull: ['$partnerData.categories', '$partnerData.category'] },
+        subcategory: { $ifNull: ['$partnerData.subcategory', []] },
+        subcategories: { $ifNull: ['$partnerData.subcategories', '$partnerData.subcategory'] },
         // location: '$partnerData.location',
         // whatsappNumber: 1,
         number: 1,

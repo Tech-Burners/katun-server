@@ -31,8 +31,10 @@ const partnerSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
-    category: { type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: false },
+    category: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: false }],
+    categories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Category', required: false }],
     subcategory: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SubCategory', required: false }],
+    subcategories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'SubCategory', required: false }],
     user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
 

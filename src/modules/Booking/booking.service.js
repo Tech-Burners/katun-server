@@ -25,6 +25,7 @@ const {
     getAppointmentStartTime,
 } = require("./bookingExpiry.service");
 const { checkSlotAvailability } = require("../Availability/availability.service");
+const { calculateBookingPricing } = require("../../helpers/bookingPricing");
 
 const bookingService = async (data) => {
 
@@ -71,6 +72,41 @@ const bookingService = async (data) => {
     }
 
     data.pin = generate4DigitPin();
+
+    // Calculate server-side pricing breakdown
+    const categoryCommission = service?.category
+        ? await commissionModel.findOne({ category: service.category })
+        : null;
+    const partnerDetails = data.provider
+        ? await partnerModel.findOne({ user: data.provider })
+        : null;
+
+    const pricing = await calculateBookingPricing({
+        serviceDoc: service,
+        isOneTime: data.isOneTime,
+        pass: data.pass || service.pass,
+        addons: data.addons || [],
+        promoDiscount: data.promoDiscount,
+        promoCode: data.promoCode,
+        partnerDoc: partnerDetails,
+        commissionDoc: categoryCommission,
+        categoryCommissionRate: data.partnerCommissionPercent,
+        partnerCommissionRate: data.partnerCommissionPercent,
+        fallbackServicePrice: data.servicePrice,
+    });
+
+    data.servicePrice = pricing.servicePrice;
+    data.promoDiscount = pricing.promoDiscount;
+    data.subtotal = pricing.subtotal;
+    data.platformFeePercent = pricing.platformFeePercent;
+    data.platformFee = pricing.platformFee;
+    data.partnerCommissionPercent = pricing.partnerCommissionPercent;
+    data.partnerCommission = pricing.partnerCommission;
+    data.totalPrice = pricing.totalPrice;
+
+    if (!data.isOneTime && !data.pass && service.pass) {
+        data.pass = service.pass;
+    }
 
     /**
      * --------------------------------
@@ -130,19 +166,9 @@ const bookingService = async (data) => {
             //  booking now contains providerLocation
             const booking = await bookingModel.create([data], { session });
 
-            const serviceDoc = await serviceModel.findById(data.service).session(session);
-            const categoryCommission = serviceDoc?.category
-                ? await commissionModel.findOne({ category: serviceDoc.category }).session(session)
-                : null;
-            const commissionPercent =
-                categoryCommission && typeof categoryCommission.commission === "number" && categoryCommission.commission > 0
-                    ? categoryCommission.commission
-                    : 10;
-            const commissionRate = commissionPercent / 100;
-            const grossAmount = Number(data.totalPrice);
-            const baseServicePrice = Number(data.servicePrice) || (grossAmount > 0 ? Number((grossAmount / 1.05).toFixed(2)) : 0);
-            const commission = Number((baseServicePrice * commissionRate).toFixed(2));
-            const netAmount = Number((baseServicePrice - commission).toFixed(2));
+            const grossAmount = pricing.totalPrice;
+            const commission = pricing.partnerCommission;
+            const netAmount = pricing.partnerAmount;
 
             const tx_ref = `txn_${Date.now()}_${data.user}`;
 
@@ -1087,6 +1113,8 @@ const bookingDetailsService = async (id, loginUserId) => {
                 bookingId: '$_id',
                 pinVerified: 1,
                 customBookingId: "$bookingId",
+                image: '$serviceData.image',
+                serviceImage: '$serviceData.image',
                 serviceName: '$serviceData.name',
                 serviceId: '$serviceData._id',
                 endTime: 1,
@@ -1099,6 +1127,11 @@ const bookingDetailsService = async (id, loginUserId) => {
                 location: '$partnerData.location',
                 address: '$partnerData.address',
                 servicePrice: 1,
+                storedPromoDiscount: '$promoDiscount',
+                storedPlatformFee: '$platformFee',
+                storedPlatformFeePercent: '$platformFeePercent',
+                storedSubtotal: '$subtotal',
+                servicefeeRaw: '$serviceData.servicefee',
                 totalPrice: 1,
                 paymentMethod: 1,
                 bookingMethod: { $ifNull: ["$paymentMethod", "card"] },
@@ -1115,8 +1148,6 @@ const bookingDetailsService = async (id, loginUserId) => {
                 amenities: { $ifNull: ["$partnerProfileData.amenities", []] },
                 myFeedback: 1,
                 oppositeFeedback: 1,
-                commissionData: 1,
-                transactionData: 1
             }
         }
     ]);
@@ -1124,24 +1155,31 @@ const bookingDetailsService = async (id, loginUserId) => {
     if (!result[0]) return null;
 
     const booking = result[0];
-    const totalPrice = Number(booking.totalPrice) || 0;
-    const baseServicePrice = Number(booking.servicePrice) || Number(booking.servicefee) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
 
-    let commissionRate = 10;
-    let commissionAmount = 0;
+    const pricing = await calculateBookingPricing({
+        serviceDoc: {
+            servicefee: booking.servicefeeRaw,
+            pass: booking.servicePass,
+        },
+        isOneTime: booking.isOneTime,
+        pass: booking.pass,
+        addons: booking.addons || [],
+        promoDiscount: booking.storedPromoDiscount,
+        fallbackServicePrice: booking.servicePrice,
+    });
 
-    if (booking.transactionData && typeof booking.transactionData.commission === "number") {
-        commissionAmount = Number(booking.transactionData.commission.toFixed(2));
-    } else {
-        const catCommission = Number(booking.commissionData?.commission);
-        commissionRate = catCommission > 0 ? catCommission : 10;
-        commissionAmount = Number(((baseServicePrice * commissionRate) / 100).toFixed(2));
-    }
+    booking.servicePrice = pricing.servicePrice;
+    booking.addonsTotal = pricing.addonsTotal;
+    booking.promoDiscount = pricing.promoDiscount;
+    booking.subtotal = pricing.subtotal;
+    booking.platformFeePercent = pricing.platformFeePercent;
+    booking.platformFee = pricing.platformFee;
+    booking.totalPrice = pricing.totalPrice;
 
-    const partnerAmount = Number(Math.max(0, baseServicePrice - commissionAmount).toFixed(2));
-
-    booking.partnerCommission = commissionAmount;
-    booking.partnerAmount = partnerAmount;
+    // Remove partner-only figures from user endpoint
+    delete booking.partnerCommission;
+    delete booking.partnerAmount;
+    delete booking.partnerCommissionPercent;
 
     const totalSession = booking.isOneTime
         ? 1
@@ -1151,8 +1189,11 @@ const bookingDetailsService = async (id, loginUserId) => {
     booking.totalSessions = totalSession;
 
     delete booking.servicePass;
-    delete booking.commissionData;
-    delete booking.transactionData;
+    delete booking.servicefeeRaw;
+    delete booking.storedPromoDiscount;
+    delete booking.storedPlatformFee;
+    delete booking.storedPlatformFeePercent;
+    delete booking.storedSubtotal;
 
     return booking;
 };
@@ -1339,6 +1380,8 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 pinVerified: 1,
                 bookingId: '$_id',
                 customBookingId: "$bookingId",
+                image: '$serviceData.image',
+                serviceImage: '$serviceData.image',
                 serviceName: '$serviceData.name',
                 serviceId: '$serviceData._id',
                 userName: '$userData.fullName',
@@ -1350,15 +1393,18 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
                 countryCode: '$userData.countryCode',
                 assignedStaff: '$assignedToData.name',
                 addons: 1,
-                servicefee: '$serviceData.servicefee',
                 duration: '$serviceData.duration',
-                totalPrice: 1,
+                servicefeeRaw: '$serviceData.servicefee',
+                servicePrice: 1,
+                storedPromoDiscount: '$promoDiscount',
+                storedPartnerCommission: '$partnerCommission',
+                storedPartnerCommissionPercent: '$partnerCommissionPercent',
+                storedSubtotal: '$subtotal',
                 paymentMethod: 1,
                 bookingMethod: { $ifNull: ["$paymentMethod", "card"] },
                 paymentStatus: 1,
                 sessionLeft: 1,
                 date: 1,
-                pin: 1,
                 tips: 1,
                 status: 1,
                 isOneTime: 1,
@@ -1378,24 +1424,32 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
     if (!result[0]) return null;
 
     const booking = result[0];
-    const totalPrice = Number(booking.totalPrice) || 0;
-    const baseServicePrice = Number(booking.servicePrice) || Number(booking.servicefee) || (totalPrice > 0 ? Number((totalPrice / 1.05).toFixed(2)) : 0);
 
-    let commissionRate = 10;
-    let commissionAmount = 0;
+    const catCommission = Number(booking.commissionData?.commission);
+    const commissionPercent = Number(booking.storedPartnerCommissionPercent) || (catCommission > 0 ? catCommission : 10);
 
-    if (booking.transactionData && typeof booking.transactionData.commission === "number") {
-        commissionAmount = Number(booking.transactionData.commission.toFixed(2));
-    } else {
-        const catCommission = Number(booking.commissionData?.commission);
-        commissionRate = catCommission > 0 ? catCommission : 10;
-        commissionAmount = Number(((baseServicePrice * commissionRate) / 100).toFixed(2));
-    }
+    const pricing = await calculateBookingPricing({
+        serviceDoc: {
+            servicefee: booking.servicefeeRaw,
+            pass: booking.servicePass,
+        },
+        isOneTime: booking.isOneTime,
+        pass: booking.pass,
+        addons: booking.addons || [],
+        promoDiscount: booking.storedPromoDiscount,
+        fallbackServicePrice: booking.servicePrice,
+        partnerCommissionRate: commissionPercent,
+    });
 
-    const partnerAmount = Number(Math.max(0, baseServicePrice - commissionAmount).toFixed(2));
-
-    booking.partnerCommission = commissionAmount;
-    booking.partnerAmount = partnerAmount;
+    // Fix: servicefee must return the base price of the booked option
+    booking.servicefee = pricing.servicePrice;
+    booking.servicePrice = pricing.servicePrice;
+    booking.addonsTotal = pricing.addonsTotal;
+    booking.promoDiscount = pricing.promoDiscount;
+    booking.subtotal = pricing.subtotal;
+    booking.partnerCommissionPercent = pricing.partnerCommissionPercent;
+    booking.partnerCommission = pricing.partnerCommission;
+    booking.partnerAmount = pricing.partnerAmount;
 
     const totalSession = booking.isOneTime
         ? 1
@@ -1404,9 +1458,22 @@ const bookingDetailsAdminEndService = async (id, loginUserId) => {
     booking.totalSession = totalSession;
     booking.totalSessions = totalSession;
 
+    // The partner's breakdown should not include the user's platform fee
+    delete booking.platformFee;
+    delete booking.platformFeePercent;
+    delete booking.totalPrice;
+
+    // Remove pin from partner endpoint (must get from user in person)
+    delete booking.pin;
+
     delete booking.servicePass;
+    delete booking.servicefeeRaw;
     delete booking.commissionData;
     delete booking.transactionData;
+    delete booking.storedPromoDiscount;
+    delete booking.storedPartnerCommission;
+    delete booking.storedPartnerCommissionPercent;
+    delete booking.storedSubtotal;
 
     return booking;
 };
@@ -1478,6 +1545,7 @@ const userPendingBookingService = async (user, option) => {
                 $project: {
                     customBookingId: "$bookingId",
                     image: '$serviceData.image',
+                    serviceImage: '$serviceData.image',
                     serviceName: '$serviceData.name',
                     serviceId: '$serviceData._id',
                     providerName: '$userData.fullName',
@@ -1588,6 +1656,7 @@ const userUpcomingBookingService = async (user, option) => {
                 $project: {
                     customBookingId: "$bookingId",
                     image: "$serviceData.image",
+                    serviceImage: "$serviceData.image",
                     serviceName: "$serviceData.name",
                     serviceId: "$serviceData._id",
 
@@ -2930,6 +2999,7 @@ const userActiveBookingService = async (user, option) => {
                 $project: {
                     customBookingId: "$bookingId",
                     image: "$serviceData.image",
+                    serviceImage: "$serviceData.image",
 
                     name: "$serviceData.image",
                     serviceName: "$serviceData.name",
@@ -3080,7 +3150,8 @@ const userPastBookingService = async (user, option) => {
             {
                 $project: {
                     customBookingId: "$bookingId",
-                    image: 1,
+                    image: "$serviceData.image",
+                    serviceImage: "$serviceData.image",
                     name: "$serviceData.image",
 
                     serviceName: "$serviceData.name",

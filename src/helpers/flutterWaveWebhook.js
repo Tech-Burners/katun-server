@@ -15,6 +15,7 @@ const {
   sendNewBookingNotifications,
   getAppointmentStartTime,
 } = require("../modules/Booking/bookingExpiry.service");
+const { calculateBookingPricing } = require("./bookingPricing");
 
 // =====================================================
 // NORMALIZE PAYMENT METHOD
@@ -486,6 +487,31 @@ const executePaymentProcessing = async ({ transactionId, txRef }) => {
         } else {
           bookingPayload.sessionLeft = sessions;
           bookingPayload.expireDate = new Date(baseTime + validity * 86400000);
+        }
+
+        if (bookingPayload.servicePrice === undefined || bookingPayload.partnerCommission === undefined) {
+          const pricing = await calculateBookingPricing({
+            serviceDoc: serviceData,
+            isOneTime: data.isOneTime,
+            pass: data.pass || serviceData?.pass,
+            addons: data.addons || [],
+            promoDiscount: data.promoDiscount,
+            promoCode: data.promoCode,
+            partnerCommissionRate: transaction.commission && transaction.gross_amount ? (transaction.commission / transaction.gross_amount) * 100 : 10,
+            fallbackServicePrice: data.servicePrice,
+          });
+          bookingPayload.servicePrice = pricing.servicePrice;
+          bookingPayload.addonsTotal = pricing.addonsTotal;
+          bookingPayload.promoDiscount = pricing.promoDiscount;
+          bookingPayload.subtotal = pricing.subtotal;
+          bookingPayload.platformFee = pricing.platformFee;
+          bookingPayload.platformFeePercent = pricing.platformFeePercent;
+          bookingPayload.partnerCommission = pricing.partnerCommission;
+          bookingPayload.partnerCommissionPercent = pricing.partnerCommissionPercent;
+          bookingPayload.totalPrice = pricing.totalPrice;
+          if (!data.isOneTime && !bookingPayload.pass && serviceData?.pass) {
+            bookingPayload.pass = serviceData.pass;
+          }
         }
 
         try {
