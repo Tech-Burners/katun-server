@@ -445,29 +445,31 @@ const withdrawCreditService = async (user, amount) => {
       throw new ApiError(412, 'Insufficient balance');
     }
 
-    // Check if the user is an employee of a company
+    // Check if the user is an employee of a company or has HR-allocated credit
     const isCompanyEmployee = await employeeModel.exists({
       user,
       company: { $exists: true, $ne: null }
     }).session(session);
 
-    if (isCompanyEmployee) {
-      const maxWithdrawable = Math.min(
-        userData.rechargedCredit || 0,
-        userData.digitalWallet || 0
+    const hasAllocatedCredit = (userData.allocatedCredit && userData.allocatedCredit > 0) || isCompanyEmployee;
+
+    if (hasAllocatedCredit) {
+      const maxWithdrawable = Math.max(
+        0,
+        Math.min(userData.rechargedCredit || 0, userData.digitalWallet || 0)
       );
 
       if (maxWithdrawable <= 0) {
         throw new ApiError(
           400,
-          'Employees cannot withdraw credits allocated by company. Only recharged credits can be withdrawn.'
+          'Credits allocated by HR/company cannot be withdrawn. Only self-topped-up credits can be withdrawn.'
         );
       }
 
       if (amount > maxWithdrawable) {
         throw new ApiError(
           412,
-          `Insufficient withdrawable balance. You can only withdraw up to your recharged amount (${maxWithdrawable.toFixed(2)} NGN).`
+          `Insufficient withdrawable balance. You can only withdraw up to your topped-up amount (${maxWithdrawable.toFixed(2)} NGN). HR-allocated credits cannot be withdrawn.`
         );
       }
 
@@ -475,7 +477,19 @@ const withdrawCreditService = async (user, amount) => {
         0,
         Number(((userData.rechargedCredit || 0) - amount).toFixed(2))
       );
-    } else if (userData.rechargedCredit) {
+    } else if (userData.rechargedCredit && userData.rechargedCredit > 0) {
+      const maxWithdrawable = Math.max(
+        0,
+        Math.min(userData.rechargedCredit, userData.digitalWallet || 0)
+      );
+
+      if (amount > maxWithdrawable) {
+        throw new ApiError(
+          412,
+          `Insufficient withdrawable balance. You can only withdraw up to your topped-up amount (${maxWithdrawable.toFixed(2)} NGN).`
+        );
+      }
+
       userData.rechargedCredit = Math.max(
         0,
         Number(((userData.rechargedCredit || 0) - amount).toFixed(2))

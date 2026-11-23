@@ -556,10 +556,30 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
   const { page = 1, limit = 10 } = options;
   const skip = (page - 1) * limit;
 
-  // Get user wallet
-  const user = await User.findById(userId).select('digitalWallet');
+  // Get user wallet & credit breakdown
+  const user = await User.findById(userId).select('digitalWallet rechargedCredit allocatedCredit');
   if (!user) {
     throw new Error('User not found');
+  }
+
+  const isCompanyEmployee = await Employee.exists({
+    user: userId,
+    company: { $exists: true, $ne: null }
+  });
+
+  const totalCredit = user.digitalWallet || 0;
+  const allocatedCredit = user.allocatedCredit || 0;
+  const rechargedCredit = user.rechargedCredit || 0;
+
+  // Withdrawable credit calculation:
+  // HR/company allocated credits CANNOT be withdrawn. Only self-topped-up credits can be withdrawn.
+  let withdrawableCredit = 0;
+  if (allocatedCredit > 0 || isCompanyEmployee) {
+    withdrawableCredit = Math.max(0, Math.min(rechargedCredit, totalCredit));
+  } else if (rechargedCredit > 0) {
+    withdrawableCredit = Math.max(0, Math.min(rechargedCredit, totalCredit));
+  } else {
+    withdrawableCredit = totalCredit;
   }
 
   // 🔥 FIX: handle ObjectId vs string safely
@@ -635,7 +655,15 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
   const transactions = result?.[0]?.transactions || [];
 
   return {
-    digitalWallet: user.digitalWallet || 0,
+    digitalWallet: totalCredit,
+    totalCredit: totalCredit,
+    balance: totalCredit,
+    withdrawableCredit: Number(withdrawableCredit.toFixed(2)),
+    withdrawableAmount: Number(withdrawableCredit.toFixed(2)),
+    allocatedCredit: Number(allocatedCredit.toFixed(2)),
+    nonWithdrawableCredit: Number(allocatedCredit.toFixed(2)),
+    rechargedCredit: Number(rechargedCredit.toFixed(2)),
+    isCompanyEmployee: !!isCompanyEmployee,
     transactions,
     pagination: {
       totalResults: totalCount,

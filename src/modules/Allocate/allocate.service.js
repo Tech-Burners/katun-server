@@ -3,6 +3,11 @@ const allocationManagementModel = require('../AllocationManagement/allocationMan
 const employeeModel = require('../Employee/employee.model');
 const allocatedModel = require('./allocate.model');
 const employerModel = require('../Employer/employer.model');
+const userModel = require('../User/user.model');
+const transactionModel = require('../Transaction/transaction.model');
+const ApiError = require('../../helpers/ApiError');
+const { addAuditReport } = require('../Audit/audit.service');
+const { reclaimCreditEmployeeService, bulkReclaimCreditEmployeeService } = require('../Employee/employee.service');
 
 
 // const addAllocatedService = async (data) => {
@@ -277,11 +282,129 @@ const getAllocateByIdService = async (id) => {
     return await allocatedModel.findById(id);
 };
 
+const reclaimAllocatedCreditToHrService = async (data) => {
+    // 1. If employeeId is supplied, delegate to reclaimCreditEmployeeService
+    if (data.employeeId) {
+        return await reclaimCreditEmployeeService(data.employeeId, data);
+    }
+
+    // 2. If employeeIds array is supplied, delegate to bulkReclaimCreditEmployeeService
+    if (Array.isArray(data.employeeIds) && data.employeeIds.length > 0) {
+        return await bulkReclaimCreditEmployeeService(data.employeeIds, data);
+    }
+
+    // 3. If userId is provided: find employee for that user, or handle direct userId & companyId
+    if (data.userId) {
+        const employee = await employeeModel.findOne({ user: data.userId });
+        if (employee) {
+            return await reclaimCreditEmployeeService(employee._id, data);
+        }
+
+        if (!data.companyId) {
+            throw new ApiError(400, "companyId is required when user has no linked employee profile");
+        }
+
+        const session = await mongoose.startSession();
+        try {
+            session.startTransaction();
+
+            const user = await userModel.findById(data.userId).session(session);
+            if (!user) throw new ApiError(404, "User not found");
+
+            const company = await employerModel.findById(data.companyId).session(session);
+            if (!company) throw new ApiError(404, "Company not found");
+
+            const unusedAllocatedCredit = Math.max(
+                0,
+                Math.min(user.allocatedCredit || 0, user.digitalWallet || 0)
+            );
+
+            if (unusedAllocatedCredit <= 0) {
+                throw new ApiError(400, "This user has no unused allocated credit to return to HR.");
+            }
+
+            let reclaimAmount;
+            if (data.amount !== undefined && data.amount !== null && data.amount !== 'all') {
+                const requestedAmount = Number(data.amount);
+                if (isNaN(requestedAmount) || requestedAmount <= 0) {
+                    throw new ApiError(400, "Invalid reclaim amount");
+                }
+                if (requestedAmount > unusedAllocatedCredit) {
+                    throw new ApiError(
+                        400,
+                        `Requested amount (${requestedAmount} NGN) exceeds available unused allocated credit (${unusedAllocatedCredit} NGN).`
+                    );
+                }
+                reclaimAmount = Number(requestedAmount.toFixed(2));
+            } else {
+                reclaimAmount = Number(unusedAllocatedCredit.toFixed(2));
+            }
+
+            user.allocatedCredit = Math.max(0, Number(((user.allocatedCredit || 0) - reclaimAmount).toFixed(2)));
+            user.digitalWallet = Math.max(0, Number(((user.digitalWallet || 0) - reclaimAmount).toFixed(2)));
+            await user.save({ session });
+
+            company.creditBalance = Number(((company.creditBalance || 0) + reclaimAmount).toFixed(2));
+            await company.save({ session });
+
+            const tx_ref = `reclaim_${Date.now()}_${user._id}`;
+            await transactionModel.create([
+                {
+                    tx_ref,
+                    user: user._id,
+                    partner: company.user?.[0] || user._id,
+                    user_email: user.email,
+                    currency: 'NGN',
+                    gross_amount: reclaimAmount,
+                    commission: 0,
+                    net_amount: reclaimAmount,
+                    status: 'successful',
+                    payment_status: 'successful',
+                    payment_method: 'wallet',
+                    paymentType: 'reclaim',
+                    description: `Admin manual reclaim: ${reclaimAmount} NGN unused HR credit returned to ${company.companyName || 'company'}`
+                }
+            ], { session });
+
+            await addAuditReport(
+                {
+                    action: "reclaim",
+                    summary: `Admin reclaimed ${reclaimAmount} NGN unused allocated credit from ${user.fullName} back to ${company.companyName}`,
+                    performedBy: data.performedBy
+                },
+                session
+            );
+
+            await session.commitTransaction();
+
+            return {
+                userId: user._id,
+                userName: user.fullName,
+                companyId: company._id,
+                companyName: company.companyName,
+                reclaimedAmount: reclaimAmount,
+                userDigitalWallet: user.digitalWallet,
+                userAllocatedCredit: user.allocatedCredit,
+                userRechargedCredit: user.rechargedCredit || 0,
+                companyCreditBalance: company.creditBalance
+            };
+        } catch (error) {
+            await session.abortTransaction();
+            throw error;
+        } finally {
+            session.endSession();
+        }
+    }
+
+    throw new ApiError(400, "Please provide employeeId, employeeIds, or userId to reclaim credit.");
+};
+
 module.exports = {
     addAllocatedService,
     getAllAllocateService,
     editAllocateService,
     deleteAllocateService,
     getAllocateByIdService,
-    pauseUnpauseAllocateService
+    pauseUnpauseAllocateService,
+    reclaimAllocatedCreditToHrService
 }

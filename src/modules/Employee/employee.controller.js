@@ -7,7 +7,9 @@ const { editEmployeeService, getCompanyAllEmployeeService,
     bulkSuspendEmployeeService,
     bulkActiveEmployeeService,
     bulkAddNoteService,
-    bulkAllocateCreditEmployeeService} = require("./employee.service");
+    bulkAllocateCreditEmployeeService,
+    reclaimCreditEmployeeService,
+    bulkReclaimCreditEmployeeService} = require("./employee.service");
 const { addEmployeeService, getEmployeeService,
     getAllEmployeeService, deleteEmployeeService } = require("./employee.service");
 const { status } = require("http-status");
@@ -357,7 +359,52 @@ const activeEmployeeController = catchAsync(async (req, res) => {
 const deleteEmployeeController = catchAsync(async (req, res) => {
     const result = await deleteEmployeeService(req.params.id, req.User._id);
     return res.status(status.OK).json(response({ status: 'success', statusCode: status.OK, type: "Employee", message: "Employee deleted successfully", data: result, }));
-})
+});
+
+const reclaimCreditEmployeeController = catchAsync(async (req, res) => {
+    req.body.performedBy = req.User._id;
+    req.body.role = req.User.role;
+    const result = await reclaimCreditEmployeeService(req.params.id, req.body);
+    return res.status(status.OK).json(
+        response({
+            status: 'success',
+            statusCode: status.OK,
+            type: "Employee",
+            message: "Unused credit reclaimed to HR successfully",
+            data: result,
+        })
+    );
+});
+
+const bulkReclaimCreditEmployeeController = catchAsync(async (req, res) => {
+    const { employeeIds, amount } = req.body;
+
+    if (!Array.isArray(employeeIds) || employeeIds.length === 0) {
+        return res.status(status.BAD_REQUEST).json(
+            response({
+                status: "fail",
+                statusCode: status.BAD_REQUEST,
+                message: "Please provide employeeIds array.",
+            })
+        );
+    }
+
+    const result = await bulkReclaimCreditEmployeeService(employeeIds, {
+        amount,
+        performedBy: req.User._id,
+        role: req.User.role,
+    });
+
+    return res.status(status.OK).json(
+        response({
+            status: "success",
+            statusCode: status.OK,
+            type: "Employee",
+            message: "Bulk reclaim of unused credit to HR processed successfully",
+            data: result,
+        })
+    );
+});
 
 module.exports = {
     addEmployeeController,
@@ -375,5 +422,7 @@ module.exports = {
     bulkSuspendEmployeeController,
     bulkActiveEmployeeController,
     bulkAddNoteController,
-    bulkAllocateCreditEmployeeController
+    bulkAllocateCreditEmployeeController,
+    reclaimCreditEmployeeController,
+    bulkReclaimCreditEmployeeController
 }

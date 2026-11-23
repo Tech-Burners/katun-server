@@ -1,7 +1,7 @@
 const { default: status } = require("http-status");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
-const { editAllocateService, deleteAllocateService, getAllocateByIdService, addAllocatedService, getAllAllocateService, pauseUnpauseAllocateService } = require("./allocate.service");
+const { editAllocateService, deleteAllocateService, getAllocateByIdService, addAllocatedService, getAllAllocateService, pauseUnpauseAllocateService, reclaimAllocatedCreditToHrService } = require("./allocate.service");
 const employerModel = require("../Employer/employer.model");
 
 
@@ -88,6 +88,21 @@ const getAllocateByIdController = catchAsync(async (req, res) => {
     return res.status(status.OK).json(response({ status: 'Success', statusCode: status.OK, type: 'allocate', message: 'allocate-found', data: allocate }));
 });
 
+const reclaimAllocatedCreditController = catchAsync(async (req, res) => {
+    req.body.performedBy = req.User._id;
+    req.body.role = req.User.role;
+    const result = await reclaimAllocatedCreditToHrService(req.body);
+    return res.status(status.OK).json(
+        response({
+            status: 'Success',
+            statusCode: status.OK,
+            type: 'allocate',
+            message: 'Unused credit reclaimed to HR successfully',
+            data: result
+        })
+    );
+});
+
 
 module.exports = {
     addAllocateController,
@@ -95,5 +110,6 @@ module.exports = {
     deleteAllocateController,
     getAllAllocateController,
     getAllocateByIdController,
-    pauseUnpauseAllocateController
+    pauseUnpauseAllocateController,
+    reclaimAllocatedCreditController
 }

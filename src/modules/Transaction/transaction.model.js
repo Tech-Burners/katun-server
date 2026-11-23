@@ -186,6 +186,7 @@ const transactionSchema = new mongoose.Schema(
         "tip",
         "booking",
         "refund",
+        "reclaim",
       ],
       required: true,
       index: true,

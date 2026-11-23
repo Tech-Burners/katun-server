@@ -27,6 +27,7 @@ const { getAdminByUserId } = require("../Admin/admin.service");
 const { add } = require("winston");
 const userModel = require("../User/user.model");
 const partnerModel = require("../Partner/partner.model");
+const employeeModel = require("../Employee/employee.model");
 const normalizeArray = require("../../helpers/normalizeArray");
 
 
@@ -1075,6 +1076,24 @@ const updateProfile = catchAsync(async (req, res) => {
   }
 
   else {
+    const totalCredit = result.user.digitalWallet || 0;
+    const allocatedCredit = result.user.allocatedCredit || 0;
+    const rechargedCredit = result.user.rechargedCredit || 0;
+
+    const isCompanyEmployee = await employeeModel.exists({
+      user: result.user._id,
+      company: { $exists: true, $ne: null }
+    });
+
+    let withdrawableCredit = 0;
+    if (allocatedCredit > 0 || isCompanyEmployee) {
+      withdrawableCredit = Math.max(0, Math.min(rechargedCredit, totalCredit));
+    } else if (rechargedCredit > 0) {
+      withdrawableCredit = Math.max(0, Math.min(rechargedCredit, totalCredit));
+    } else {
+      withdrawableCredit = totalCredit;
+    }
+
     formattedData = {
       name: result.user.fullName,
       email: result.user.email,
@@ -1082,7 +1101,16 @@ const updateProfile = catchAsync(async (req, res) => {
       number: result.user.number,
       countryCode: result.user.countryCode,
       address: result.user.address,
-      location: result.user.location
+      location: result.user.location,
+      digitalWallet: totalCredit,
+      totalCredit: totalCredit,
+      balance: totalCredit,
+      withdrawableCredit: Number(withdrawableCredit.toFixed(2)),
+      withdrawableAmount: Number(withdrawableCredit.toFixed(2)),
+      allocatedCredit: Number(allocatedCredit.toFixed(2)),
+      nonWithdrawableCredit: Number(allocatedCredit.toFixed(2)),
+      rechargedCredit: Number(rechargedCredit.toFixed(2)),
+      isCompanyEmployee: !!isCompanyEmployee
     };
   }
 
@@ -1265,6 +1293,24 @@ const userDetailsByID = catchAsync(async (req, res) => {
   }
 
   else {
+    const totalCredit = result.user.digitalWallet || 0;
+    const allocatedCredit = result.user.allocatedCredit || 0;
+    const rechargedCredit = result.user.rechargedCredit || 0;
+
+    const isCompanyEmployee = await employeeModel.exists({
+      user: result.user._id,
+      company: { $exists: true, $ne: null }
+    });
+
+    let withdrawableCredit = 0;
+    if (allocatedCredit > 0 || isCompanyEmployee) {
+      withdrawableCredit = Math.max(0, Math.min(rechargedCredit, totalCredit));
+    } else if (rechargedCredit > 0) {
+      withdrawableCredit = Math.max(0, Math.min(rechargedCredit, totalCredit));
+    } else {
+      withdrawableCredit = totalCredit;
+    }
+
     formattedData = {
       name: result.user.fullName,
       email: result.user.email,
@@ -1272,7 +1318,16 @@ const userDetailsByID = catchAsync(async (req, res) => {
       number: result.user.number,
       countryCode: result.user.countryCode,
       address: result.user.address,
-      location: result.user.location
+      location: result.user.location,
+      digitalWallet: totalCredit,
+      totalCredit: totalCredit,
+      balance: totalCredit,
+      withdrawableCredit: Number(withdrawableCredit.toFixed(2)),
+      withdrawableAmount: Number(withdrawableCredit.toFixed(2)),
+      allocatedCredit: Number(allocatedCredit.toFixed(2)),
+      nonWithdrawableCredit: Number(allocatedCredit.toFixed(2)),
+      rechargedCredit: Number(rechargedCredit.toFixed(2)),
+      isCompanyEmployee: !!isCompanyEmployee
     };
   }
 
