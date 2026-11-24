@@ -72,6 +72,168 @@ const generateTxRef = () => {
   return `txn_${Date.now()}_${crypto.randomUUID()}`;
 };
 
+const sanitizePaymentLink = (link, req) => {
+  if (!link || typeof link !== "string") return link;
+  // If it's a test/sandbox dev link that gets blocked or rejected on live checkout
+  if (link.includes("dev-flutterwave.com")) {
+    const token = link.split("/").filter(Boolean).pop();
+    let baseUrl = process.env.BACKEND_URL;
+    if (!baseUrl && req) {
+      const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+      baseUrl = `${proto}://${req.get("host")}`;
+    }
+    baseUrl = (baseUrl || "https://api.auravive.ng").replace(/\/+$/, "");
+    return `${baseUrl}/api/v1/transaction/pay/${token}`;
+  }
+  return link;
+};
+
+const renderSandboxCheckout = async (req, res) => {
+  const { token } = req.params;
+  if (!token) {
+    return res.status(400).send("Invalid checkout token");
+  }
+
+  try {
+    const flwRes = await axios.get(
+      `https://ravesandboxapi.flutterwave.com/flwv3-pug/getpaidx/api/hosted_pay/${encodeURIComponent(token)}?json=1`,
+      { timeout: 15000 }
+    );
+    const config = flwRes.data;
+    if (!config || config.status === "error") {
+      return res.status(404).send("This payment session has expired or is invalid.");
+    }
+
+    const publicKey = config.public_key || config.PBFPubKey;
+    const redirectUrl = config.redirect_url || (process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success");
+
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Flutterwave Checkout</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://checkout.flutterwave.com/v3.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f1f5f9;
+      margin: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      color: #0f172a;
+    }
+    .box {
+      background: #ffffff;
+      padding: 36px 28px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      max-width: 420px;
+      width: 90%;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: #fef3c7;
+      color: #92400e;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 9999px;
+      margin-bottom: 16px;
+    }
+    .amount {
+      font-size: 28px;
+      font-weight: 700;
+      margin: 8px 0 20px;
+      color: #0f172a;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #f5a623;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn {
+      display: block;
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px 20px;
+      background: #f5a623;
+      color: #ffffff;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #d97706; }
+    .note { color: #64748b; font-size: 13px; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="badge">SANDBOX TEST MODE</div>
+    <div class="spinner" id="spinner"></div>
+    <div class="amount">${config.currency || "NGN"} ${Number(config.amount || 0).toLocaleString()}</div>
+    <p style="margin: 0; color: #475569; font-size: 14px;">Opening Flutterwave Checkout...</p>
+    <button class="btn" id="payBtn" onclick="launchCheckout()">Click Here to Pay</button>
+    <div class="note">A Flutterwave secure payment modal will open.</div>
+  </div>
+  <script>
+    var checkoutConfig = {
+      public_key: "${publicKey}",
+      tx_ref: "${config.tx_ref}",
+      amount: ${config.amount},
+      currency: "${config.currency || 'NGN'}",
+      payment_options: "card,banktransfer,ussd",
+      customer: ${JSON.stringify(config.customer || {})},
+      meta: ${JSON.stringify(config.meta || {})},
+      callback: function(res) {
+        var redUrl = "${redirectUrl}";
+        var sep = redUrl.indexOf("?") === -1 ? "?" : "&";
+        var dest = redUrl + sep +
+          "status=" + encodeURIComponent(res.status || "successful") +
+          "&tx_ref=" + encodeURIComponent(res.tx_ref || "${config.tx_ref}") +
+          "&transaction_id=" + encodeURIComponent(res.transaction_id || res.id || "");
+        window.location.href = dest;
+      },
+      onclose: function() {
+        var spinner = document.getElementById("spinner");
+        if (spinner) spinner.style.display = "none";
+      }
+    };
+
+    function launchCheckout() {
+      if (typeof FlutterwaveCheckout === "function") {
+        FlutterwaveCheckout(checkoutConfig);
+      } else {
+        alert("Payment gateway is loading. Please wait a moment and click again.");
+      }
+    }
+
+    window.addEventListener("load", function() {
+      setTimeout(launchCheckout, 400);
+    });
+  </script>
+</body>
+</html>`;
+
+    return res.status(200).send(html);
+  } catch (err) {
+    console.error("Sandbox checkout rendering error:", err.message);
+    return res.status(500).send("Unable to load checkout session. Please try again.");
+  }
+};
+
 
 const bookController = catchAsync(
   async (req, res) => {
@@ -514,11 +676,13 @@ const bookController = catchAsync(
         );
 
 
-      const paymentLink =
+      const paymentLink = sanitizePaymentLink(
         paymentResponse
           ?.data
           ?.data
-          ?.link;
+          ?.link,
+        req
+      );
 
 
       if (!paymentLink) {
@@ -800,11 +964,13 @@ const purchaseCreditController =
         );
 
 
-      const paymentLink =
+      const paymentLink = sanitizePaymentLink(
         paymentResponse
           ?.data
           ?.data
-          ?.link;
+          ?.link,
+        req
+      );
 
 
       if (!paymentLink) {
@@ -1082,11 +1248,13 @@ const tipsController =
         );
 
 
-      const paymentLink =
+      const paymentLink = sanitizePaymentLink(
         paymentResponse
           ?.data
           ?.data
-          ?.link;
+          ?.link,
+        req
+      );
 
 
       if (!paymentLink) {
@@ -1716,8 +1884,9 @@ const initializePayment = async (req, res) => {
       }
     );
 
+    const paymentLink = sanitizePaymentLink(response?.data?.data?.link, req);
     res.json({
-      paymentLink: response.data.data.link,
+      paymentLink,
       tx_ref,
     });
   } catch (error) {
@@ -2586,5 +2755,6 @@ module.exports = {
   allPayoutOfAPartnerController,
   withdrawCreditController,
   tipsController,
-  getBanks
+  getBanks,
+  renderSandboxCheckout,
 };

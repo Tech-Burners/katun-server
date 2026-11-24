@@ -383,11 +383,21 @@ const getPartnerAllServiceService = async (user, options) => {
 };
 
 
-const aServiceDetailsService = async (id, userId = null) => {
+const aServiceDetailsService = async (id, userId = null, locationOptions = null) => {
 
   const userObjectId = userId
     ? new mongoose.Types.ObjectId(userId)
     : null;
+
+  let coordinates = null;
+  if (locationOptions?.lat != null && locationOptions?.lng != null && !isNaN(Number(locationOptions.lat)) && !isNaN(Number(locationOptions.lng))) {
+    coordinates = [Number(locationOptions.lng), Number(locationOptions.lat)];
+  } else if (userId) {
+    const loginUser = await userModel.findById(userId).select("location");
+    if (loginUser?.location?.coordinates?.length === 2) {
+      coordinates = loginUser.location.coordinates;
+    }
+  }
 
   return await serviceModel.aggregate([
     {
@@ -627,7 +637,58 @@ const aServiceDetailsService = async (id, userId = null) => {
         ratingCount: 1,
 
         isFavourite: 1,
-        platformFeePercent: { $literal: 5 }
+        platformFeePercent: { $literal: 5 },
+        distance: coordinates
+          ? {
+              $cond: [
+                {
+                  $and: [
+                    { $isArray: "$provider.location.coordinates" },
+                    { $eq: [{ $size: "$provider.location.coordinates" }, 2] }
+                  ]
+                },
+                {
+                  $round: [
+                    {
+                      $multiply: [
+                        {
+                          $sqrt: {
+                            $add: [
+                              {
+                                $pow: [
+                                  {
+                                    $subtract: [
+                                      { $arrayElemAt: ["$provider.location.coordinates", 0] },
+                                      coordinates[0]
+                                    ]
+                                  },
+                                  2
+                                ]
+                              },
+                              {
+                                $pow: [
+                                  {
+                                    $subtract: [
+                                      { $arrayElemAt: ["$provider.location.coordinates", 1] },
+                                      coordinates[1]
+                                    ]
+                                  },
+                                  2
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        111
+                      ]
+                    },
+                    2
+                  ]
+                },
+                null
+              ]
+            }
+          : null
       }
     }
   ]);
@@ -985,14 +1046,10 @@ const allServiceService = async (options) => {
   // console.log("📌 Input Options:", { userId, lat, lng });
 
   // ---------- LOCATION COORDINATES ----------
-  // Only use explicit lat/lng from query (for "near me" behavior)
-  // Do NOT auto-fetch from logged-in user to prevent inconsistent result counts
-  if (lat && lng) {
+  if (lat && lng && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
     coordinates = [Number(lng), Number(lat)];
     useLocationFilter = true;
-    // console.log("📍 Using explicit lat/lng coordinates");
   }
-  // Removed auto user location fetch to fix inconsistency between auth/no-auth
 
   // console.log("📍 Coordinates:", coordinates ? "YES" : "NO");
 
@@ -1027,7 +1084,7 @@ const allServiceService = async (options) => {
   // ---------- LOCATION FILTER (Only if explicit coordinates exist) ----------
   let locationFilterApplied = false;
   if (coordinates) {
-    const radiusKm = 50;
+    const radiusKm = options.radius ? Number(options.radius) : 50;
     const radiusDegrees = radiusKm / 111;
     pipeline.push({
       $addFields: {
@@ -1080,7 +1137,20 @@ const allServiceService = async (options) => {
       partnerId: "$partner.user",
       isCertified: { $ifNull: ["$partner.isCertified", false] },
       isVerified: { $ifNull: ["$partner.isVerified", false] },
-      distance: coordinates ? { $round: [{ $multiply: ["$distance", 111] }, 2] } : null,
+      distance: coordinates
+        ? {
+            $cond: [
+              {
+                $and: [
+                  { $isArray: "$user.location.coordinates" },
+                  { $eq: [{ $size: "$user.location.coordinates" }, 2] }
+                ]
+              },
+              { $round: [{ $multiply: ["$distance", 111] }, 2] },
+              null
+            ]
+          }
+        : null,
     },
   });
 
@@ -1136,7 +1206,7 @@ const popularService = async (userId, options) => {
   let coordinates = null;
 
   // ---------- LOCATION ----------
-  if (lat && lng) {
+  if (lat && lng && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
     coordinates = [Number(lng), Number(lat)];
   }
 
@@ -1266,7 +1336,18 @@ const popularService = async (userId, options) => {
       },
 
       distance: coordinates
-        ? { $round: ["$distance", 2] }
+        ? {
+            $cond: [
+              {
+                $and: [
+                  { $isArray: "$user.location.coordinates" },
+                  { $eq: [{ $size: "$user.location.coordinates" }, 2] }
+                ]
+              },
+              { $round: [{ $multiply: ["$distance", 111] }, 2] },
+              null
+            ]
+          }
         : null,
     },
   });

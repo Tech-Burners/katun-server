@@ -541,12 +541,14 @@ const updatePartnerService = async (id, data) => {
 }
 
 
-const aPartnerDetailsService = async (id, userId = null) => {
+const aPartnerDetailsService = async (id, userId = null, locationOptions = null) => {
 
     let userCoordinates = null;
 
-    // ---------- LOGIN USER LOCATION ----------
-    if (userId) {
+    if (locationOptions?.lat != null && locationOptions?.lng != null && !isNaN(Number(locationOptions.lat)) && !isNaN(Number(locationOptions.lng))) {
+        userCoordinates = [Number(locationOptions.lng), Number(locationOptions.lat)];
+    } else if (userId) {
+        // ---------- LOGIN USER LOCATION ----------
         const loginUser = await userModel
             .findById(userId)
             .select("location");
@@ -732,7 +734,7 @@ const aPartnerDetailsService = async (id, userId = null) => {
 
                 // ✅ provider distance (MAIN REQUIREMENT)
                 distance: userCoordinates
-                    ? { $round: ["$distance", 2] }
+                    ? { $round: [{ $multiply: ["$distance", 111] }, 2] }
                     : null,
             },
         },

@@ -2,6 +2,44 @@ const { default: status } = require("http-status");
 const { deleteServiceService, editServiceService, addServiceService, getAllServiceService, aServiceDetailsService, disableServiceService, activeEmployerService, getPartnerAllServiceService, popularService, allServiceService, nearestPopularService } = require("./service.service");
 const catchAsync = require("../../helpers/catchAsync");
 const response = require("../../helpers/response");
+const userModel = require("../User/user.model");
+
+const extractLocationCoordinates = async (req) => {
+  const queryLat = req.query?.latitude ?? req.query?.lat;
+  const queryLng = req.query?.longitude ?? req.query?.lng ?? req.query?.lon ?? req.query?.long;
+  const bodyLat = req.body?.latitude ?? req.body?.lat;
+  const bodyLng = req.body?.longitude ?? req.body?.lng ?? req.body?.lon ?? req.body?.long;
+
+  let lat = queryLat !== undefined && queryLat !== null && queryLat !== "" ? queryLat : bodyLat;
+  let lng = queryLng !== undefined && queryLng !== null && queryLng !== "" ? queryLng : bodyLng;
+
+  if (
+    lat !== undefined && lat !== null && lat !== "" && lat !== "null" && lat !== "undefined" &&
+    lng !== undefined && lng !== null && lng !== "" && lng !== "null" && lng !== "undefined" &&
+    !isNaN(Number(lat)) && !isNaN(Number(lng))
+  ) {
+    return { lat: Number(lat), lng: Number(lng) };
+  }
+
+  // Fallback to logged-in user profile location if dynamic location is not provided
+  if (req.User) {
+    if (req.User.location?.coordinates?.length === 2) {
+      const [uLng, uLat] = req.User.location.coordinates;
+      if (uLng != null && uLat != null && !isNaN(Number(uLng)) && !isNaN(Number(uLat))) {
+        return { lat: Number(uLat), lng: Number(uLng) };
+      }
+    }
+    const userDoc = await userModel.findById(req.User._id).select("location");
+    if (userDoc?.location?.coordinates?.length === 2) {
+      const [uLng, uLat] = userDoc.location.coordinates;
+      if (uLng != null && uLat != null && !isNaN(Number(uLng)) && !isNaN(Number(uLat))) {
+        return { lat: Number(uLat), lng: Number(uLng) };
+      }
+    }
+  }
+
+  return null;
+};
 
 
 const addServiceController = catchAsync(async (req, res) => {
@@ -69,11 +107,13 @@ const getAllServiceController = catchAsync(async (req, res) => {
 });
 
 const popularServiceController = catchAsync(async (req, res) => {
+  const loc = await extractLocationCoordinates(req);
+
   const option = {
     page: Number(req.query.page) || 1,
     limit: Number(req.query.limit) || 10,
-    lng: req.query.lng,
-    lat: req.query.lat,
+    lng: loc ? loc.lng : null,
+    lat: loc ? loc.lat : null,
     search: req.query.search || "",  
   };
 
@@ -95,27 +135,14 @@ const popularServiceController = catchAsync(async (req, res) => {
 
 
 const nearestPopularServiceController = catchAsync(async (req, res) => {
-  const { lat, lng } = req.query;
-
-  const hasLocation =
-    lat !== undefined &&
-    lat !== null &&
-    lat !== "" &&
-    lat !== "null" &&
-    lat !== "undefined" &&
-    lng !== undefined &&
-    lng !== null &&
-    lng !== "" &&
-    lng !== "null" &&
-    lng !== "undefined" &&
-    !isNaN(Number(lat)) &&
-    !isNaN(Number(lng));
+  const loc = await extractLocationCoordinates(req);
+  const hasLocation = loc !== null;
 
   const option = {
     page: Number(req.query.page) || 1,
     limit: Number(req.query.limit) || 10,
-    lat: hasLocation ? Number(lat) : null,
-    lng: hasLocation ? Number(lng) : null,
+    lat: loc ? loc.lat : null,
+    lng: loc ? loc.lng : null,
     search: req.query.search || "",
     radius: req.query.radius ? Number(req.query.radius) : undefined,
     maxDistance: req.query.maxDistance ? Number(req.query.maxDistance) : undefined,
@@ -141,6 +168,8 @@ const nearestPopularServiceController = catchAsync(async (req, res) => {
 
 
 const allServiceController = catchAsync(async (req, res) => {
+  const loc = await extractLocationCoordinates(req);
+
   const option = {
     page: Number(req.query.page) || 1,
     limit: Number(req.query.limit) || 10,
@@ -150,8 +179,9 @@ const allServiceController = catchAsync(async (req, res) => {
     rating: req.query.rating,
     search: req.query.search,
 
-    lat: req.query.lat,
-    lng: req.query.lng,
+    lat: loc ? loc.lat : null,
+    lng: loc ? loc.lng : null,
+    radius: req.query.radius ? Number(req.query.radius) : undefined,
 
     userId: req.User?._id || null,
   };
@@ -198,8 +228,9 @@ const getPartnerAllServiceController = catchAsync(async (req, res) => {
 
 const aServiceDetailsController = catchAsync(async (req, res) => {
     const userId = req.User?._id || null;
+    const loc = await extractLocationCoordinates(req);
 
-    const result = await aServiceDetailsService(req.params.id, userId);
+    const result = await aServiceDetailsService(req.params.id, userId, loc);
 
     return res.status(status.OK).json(
         response({

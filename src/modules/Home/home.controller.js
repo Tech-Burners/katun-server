@@ -32,17 +32,39 @@ const homeController = catchAsync(async (req, res) => {
     upcomingBooking = await pendingBookingService(req.User._id);
   }
 
-  const { longitude, latitude } = req.body;
+  // 1. Dynamic location from query or body
+  const queryLat = req.query?.latitude ?? req.query?.lat;
+  const queryLng = req.query?.longitude ?? req.query?.lng ?? req.query?.lon ?? req.query?.long;
+  const bodyLat = req.body?.latitude ?? req.body?.lat;
+  const bodyLng = req.body?.longitude ?? req.body?.lng ?? req.body?.lon ?? req.body?.long;
+
+  let lat = queryLat !== undefined && queryLat !== null && queryLat !== "" ? queryLat : bodyLat;
+  let lng = queryLng !== undefined && queryLng !== null && queryLng !== "" ? queryLng : bodyLng;
+
+  // 2. Fallback to logged-in user's profile location if dynamic location is not provided
+  if ((lat == null || lng == null || lat === "" || lng === "") && req.User?.location?.coordinates?.length === 2) {
+    const [uLng, uLat] = req.User.location.coordinates;
+    if (uLng != null && uLat != null && !isNaN(Number(uLng)) && !isNaN(Number(uLat))) {
+      lng = uLng;
+      lat = uLat;
+    }
+  }
+
+  const hasLocation =
+    lat != null &&
+    lng != null &&
+    lat !== "" &&
+    lng !== "" &&
+    !isNaN(Number(lat)) &&
+    !isNaN(Number(lng));
 
   let nearest;
 
-  if (req.User && longitude != null && latitude != null) {
-    // Logged-in user
-    // Show services within 8 KM
-    nearest = await nearestService(longitude, latitude);
+  if (hasLocation) {
+    // Show services sorted by distance/relevance with distance calculated
+    nearest = await nearestService(Number(lng), Number(lat));
   } else {
-    // Guest
-    // Show ALL active services
+    // Optional location: show all active services without error
     nearest = await nearestService();
   }
 
@@ -92,7 +114,31 @@ const homeController = catchAsync(async (req, res) => {
 // });
 
 const allNerestController = catchAsync(async (req, res) => {
-  const { longitude, latitude } = req.body;
+  // 1. Dynamic location from query or body
+  const queryLat = req.query?.latitude ?? req.query?.lat;
+  const queryLng = req.query?.longitude ?? req.query?.lng ?? req.query?.lon ?? req.query?.long;
+  const bodyLat = req.body?.latitude ?? req.body?.lat;
+  const bodyLng = req.body?.longitude ?? req.body?.lng ?? req.body?.lon ?? req.body?.long;
+
+  let lat = queryLat !== undefined && queryLat !== null && queryLat !== "" ? queryLat : bodyLat;
+  let lng = queryLng !== undefined && queryLng !== null && queryLng !== "" ? queryLng : bodyLng;
+
+  // 2. Fallback to logged-in user profile location
+  if ((lat == null || lng == null || lat === "" || lng === "") && req.User?.location?.coordinates?.length === 2) {
+    const [uLng, uLat] = req.User.location.coordinates;
+    if (uLng != null && uLat != null && !isNaN(Number(uLng)) && !isNaN(Number(uLat))) {
+      lng = uLng;
+      lat = uLat;
+    }
+  }
+
+  const hasLocation =
+    lat != null &&
+    lng != null &&
+    lat !== "" &&
+    lng !== "" &&
+    !isNaN(Number(lat)) &&
+    !isNaN(Number(lng));
 
   const options = {
     page: Number(req.query.page) || 1,
@@ -101,8 +147,8 @@ const allNerestController = catchAsync(async (req, res) => {
   };
 
   const nearest = await allNearestService(
-    longitude,
-    latitude,
+    hasLocation ? Number(lng) : null,
+    hasLocation ? Number(lat) : null,
     options,
     req.User
   );

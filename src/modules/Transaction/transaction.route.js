@@ -22,6 +22,7 @@ const {
   withdrawCreditController,
   tipsController,
   getBanks,
+  renderSandboxCheckout,
 } = require("./transaction.controller");
 const { auth } = require("../../middlewares/auth");
 const { flutterwaveCallback, renderPaymentPage, executePaymentProcessing } = require("../../helpers/flutterWaveWebhook");
@@ -45,6 +46,7 @@ router.get("/all-transaction", allTransactionController);
 router.get("/earning", earningController);
 router.get("/getBanks", getBanks);
 router.get("/getBanks/:country", getBanks);
+router.get("/pay/:token", renderSandboxCheckout);
 router.get("/verify", verifyPayment);
 router.post("/verify", verifyPayment);
 router.get("/verify/:tx_ref", verifyPayment);

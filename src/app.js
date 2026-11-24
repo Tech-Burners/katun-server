@@ -19,6 +19,7 @@ const { logViewer } = require("./helpers/logViewer");
 
 // Initialize Express App
 const app = express();
+app.set("trust proxy", 1);
 
 
 // Body Parsers

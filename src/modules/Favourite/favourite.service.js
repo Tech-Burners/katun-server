@@ -12,20 +12,24 @@ const favouriteUnfavouriteService = async (data) => {
 
 
 
-const myFavouriteService = async (userId) => {
-
-  // ---------- LOGIN USER LOCATION ----------
-  const loginUser = await userModel
-    .findById(userId)
-    .select("location");
+const myFavouriteService = async (userId, locationOptions = null) => {
 
   let coordinates = null;
 
-  if (
-    loginUser?.location?.coordinates &&
-    loginUser.location.coordinates.length === 2
-  ) {
-    coordinates = loginUser.location.coordinates;
+  if (locationOptions?.lat != null && locationOptions?.lng != null && !isNaN(Number(locationOptions.lat)) && !isNaN(Number(locationOptions.lng))) {
+    coordinates = [Number(locationOptions.lng), Number(locationOptions.lat)];
+  } else {
+    // ---------- LOGIN USER LOCATION ----------
+    const loginUser = await userModel
+      .findById(userId)
+      .select("location");
+
+    if (
+      loginUser?.location?.coordinates &&
+      loginUser.location.coordinates.length === 2
+    ) {
+      coordinates = loginUser.location.coordinates;
+    }
   }
 
   const pipeline = [
@@ -169,7 +173,7 @@ const myFavouriteService = async (userId) => {
       },
 
       distance: coordinates
-        ? { $round: ["$distance", 2] }
+        ? { $round: [{ $multiply: ["$distance", 111] }, 2] }
         : null,
     },
   });

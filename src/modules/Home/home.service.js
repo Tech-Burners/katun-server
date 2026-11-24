@@ -632,12 +632,18 @@ const allNearestService = async (longitude, latitude, options) => {
         providerId: "$providerInfo._id",
 
         distance: {
-          $round: [
+          $cond: [
             {
-              $ifNull: ["$distance", 0],
+              $ne: [
+                { $type: "$distance" },
+                "missing"
+              ]
             },
-            2,
-          ],
+            {
+              $round: ["$distance", 2]
+            },
+            null
+          ]
         },
       },
     }

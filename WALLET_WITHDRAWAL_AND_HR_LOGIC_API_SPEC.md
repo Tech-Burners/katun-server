@@ -27,18 +27,98 @@ AuraVive operates a hybrid wallet system distinguishing between **company-funded
 
 ---
 
-## 2. Customer Mobile App Integration
+## 2. Authentication, Request Headers & Role Rules (MANDATORY)
 
-### 2.1 Screen: Wallet & Balance Overview
+Every wallet and transaction endpoint requires proper authentication headers and the correct user role. Failure to supply the exact headers will result in `401 Unauthorized` or `401 You are not authorized`.
+
+### 2.1 Standard Request Headers
+
+Every request from the mobile application (Flutter / React Native / iOS / Android) or frontend web MUST include:
+
+| Header Key | Header Value | Description |
+|---|---|---|
+| `Authorization` | `Bearer <JWT_ACCESS_TOKEN>` | **Mandatory.** The access token returned upon login. |
+| `Content-Type` | `application/json` | **Mandatory** for POST, PATCH, PUT requests. |
+| `Accept` | `application/json` | Recommended for all requests. |
+
+```http
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+Content-Type: application/json
+Accept: application/json
+```
+
+---
+
+### 2.2 Crucial: User Role Matrix & Avoiding `401 "You are not authorized"`
+
+The server strictly verifies the **`role`** encoded inside the JWT payload against allowed roles for that route:
+
+```javascript
+// Server middleware: src/middlewares/auth.js
+if (userRoles && !userRoles.includes(decodedData.role)) {
+  throw new ApiError(status.UNAUTHORIZED, "You are not authorized");
+}
+```
+
+> [!WARNING]
+> If the client sends a token belonging to a **Partner (`role: "partner"`)**, **Admin**, or **HR** to a Customer User endpoint (or vice versa), the server immediately returns:
+> ```json
+> {
+>   "status": "Error",
+>   "statusCode": 401,
+>   "message": "You are not authorized",
+>   "data": { "type": "Error" },
+>   "errors": []
+> }
+> ```
+
+#### Endpoint vs Allowed Role Reference Table
+
+| Endpoint | Method | Allowed JWT Roles | Can Partner Call? | Can Customer User Call? |
+|---|---|---|:---:|:---:|
+| `/api/v1/overview/user/wallet-transactions` | `GET` | `['user']` | ❌ **No** (`401`) | ✅ **Yes** |
+| `/api/v1/auth/my-profile` | `GET` | `['user', 'partner', 'hr', 'admin']` | ✅ Yes | ✅ Yes |
+| `/api/v1/transaction/withdraw-credit` | `PATCH` | `['user', 'partner']` | ✅ Yes | ✅ Yes |
+| `/api/v1/transaction/purchase-credit` | `POST` | `['user', 'partner', 'hr']` | ✅ Yes | ✅ Yes |
+| `/api/v1/overview/partner/earning-overview` | `GET` | `['partner']` | ✅ **Yes** | ❌ **No** (`401`) |
+| `/api/v1/allocate/reclaim-to-hr` | `PATCH` / `POST` | `['admin', 'sub_admin']` | ❌ No | ❌ No |
+
+#### How to Check Token Role
+Paste your token into [jwt.io](https://jwt.io) and verify the payload:
+```json
+{
+  "_id": "673f1234567890abcdef1234",
+  "fullName": "Jane Doe",
+  "email": "jane@example.com",
+  "role": "user",        <--- MUST BE "user" for customer wallet endpoints!
+  "tokenVersion": 0
+}
+```
+
+---
+
+## 3. Customer Mobile App Integration
+
+### 3.1 Screen: Wallet & Balance Overview
 
 #### API Endpoint
 - **URL:** `{{BASE_URL}}/api/v1/overview/user/wallet-transactions`
 - **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <user_jwt_token>`
+- **Required Headers:**
+  - `Authorization: Bearer <USER_JWT_TOKEN>` *(Must have `role: "user"`)*
+  - `Content-Type: application/json`
+  - `Accept: application/json`
 - **Query Parameters:**
-  - `page`: (optional, default `1`)
-  - `limit`: (optional, default `10`)
+  - `page`: (optional, integer, default: `1`)
+  - `limit`: (optional, integer, default: `10`)
+
+#### Example cURL Request:
+```bash
+curl -X GET "https://api.auravive.com/api/v1/overview/user/wallet-transactions?page=1&limit=10" \
+  -H "Authorization: Bearer YOUR_USER_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json"
+```
 
 #### Response Structure (`200 OK`)
 ```json
@@ -89,13 +169,21 @@ AuraVive operates a hybrid wallet system distinguishing between **company-funded
 
 ---
 
-### 2.2 Screen: Profile Details
+### 3.2 Screen: Profile Details
 
 #### API Endpoint
 - **URL:** `{{BASE_URL}}/api/v1/auth/my-profile`
 - **Method:** `GET`
-- **Headers:**
-  - `Authorization: Bearer <user_jwt_token>`
+- **Required Headers:**
+  - `Authorization: Bearer <JWT_ACCESS_TOKEN>` *(Allowed roles: `user`, `partner`, `hr`, `admin`)*
+  - `Accept: application/json`
+
+#### Example cURL Request:
+```bash
+curl -X GET "https://api.auravive.com/api/v1/auth/my-profile" \
+  -H "Authorization: Bearer YOUR_USER_ACCESS_TOKEN" \
+  -H "Accept: application/json"
+```
 
 #### Response Data for `role === 'user'`
 ```json
@@ -129,14 +217,26 @@ AuraVive operates a hybrid wallet system distinguishing between **company-funded
 
 ---
 
-### 2.3 Screen: Withdraw Credit (Cash-Out)
+### 3.3 Screen: Withdraw Credit (Cash-Out)
+
+Allows customers or partners to withdraw their self-funded balance to their verified bank account.
 
 #### API Endpoint
 - **URL:** `{{BASE_URL}}/api/v1/transaction/withdraw-credit`
 - **Method:** `PATCH`
-- **Headers:**
-  - `Authorization: Bearer <user_jwt_token>`
+- **Required Headers:**
+  - `Authorization: Bearer <JWT_ACCESS_TOKEN>` *(Allowed roles: `user`, `partner`)*
   - `Content-Type: application/json`
+  - `Accept: application/json`
+
+#### Example cURL Request:
+```bash
+curl -X PATCH "https://api.auravive.com/api/v1/transaction/withdraw-credit" \
+  -H "Authorization: Bearer YOUR_USER_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{"amount": 5000}'
+```
 
 #### Request Payload
 ```json
@@ -168,6 +268,59 @@ AuraVive operates a hybrid wallet system distinguishing between **company-funded
     "paymentType": "withdraw",
     "status": "successful",
     "payment_status": "successful",
+    "payout_status": "pending",
+    "createdAt": "2026-11-23T10:00:00.000Z"
+  }
+}
+```
+
+---
+
+### 3.4 Screen: Top-Up / Purchase Credit (Self Deposit)
+
+Allows customers to fund their wallet via card or mobile money using Flutterwave. 100% of these funds are withdrawable.
+
+#### API Endpoint
+- **URL:** `{{BASE_URL}}/api/v1/transaction/purchase-credit`
+- **Method:** `POST`
+- **Required Headers:**
+  - `Authorization: Bearer <JWT_ACCESS_TOKEN>` *(Allowed roles: `user`, `partner`, `hr`)*
+  - `Content-Type: application/json`
+  - `Accept: application/json`
+
+#### Example cURL Request:
+```bash
+curl -X POST "https://api.auravive.com/api/v1/transaction/purchase-credit" \
+  -H "Authorization: Bearer YOUR_USER_ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d '{
+    "amount": 10000,
+    "paymentMethod": "flutterwave"
+  }'
+```
+
+#### Request Payload
+```json
+{
+  "amount": 10000,
+  "paymentMethod": "flutterwave"
+}
+```
+
+#### Response Structure (`200 OK`)
+Returns the Flutterwave payment gateway checkout URL for the mobile app webview:
+```json
+{
+  "statusCode": 200,
+  "status": "OK",
+  "message": "Payment initiated successfully",
+  "data": {
+    "paymentUrl": "https://checkout.flutterwave.com/v3/hosted/pay/...",
+    "tx_ref": "txn_1795064112233_a9b8c7d6..."
+  }
+}
+```
     "payout_status": "pending",
     "createdAt": "2026-11-23T10:00:00.000Z"
   }
@@ -413,7 +566,145 @@ Step 5: Admin Period-End Reclaim
 
 ---
 
-## 5. Client Implementation Checklist for AI Agents
+## 5. Mobile App (Flutter / Dart) Complete Integration Code
+
+Here is ready-to-use production Flutter code using `dio` and `http` handling tokens, headers, and error parsing.
+
+### 5.1 Dio Implementation with Auth Interceptor
+
+```dart
+import 'package:dio/dio.dart';
+
+class WalletApiClient {
+  final Dio _dio;
+  final String baseUrl;
+  final Future<String?> Function() getUserToken;
+
+  WalletApiClient({
+    required this.baseUrl,
+    required this.getUserToken,
+  }) : _dio = Dio(BaseOptions(
+          baseUrl: baseUrl,
+          connectTimeout: const Duration(seconds: 15),
+          receiveTimeout: const Duration(seconds: 15),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+          },
+        )) {
+    // Attach JWT Bearer Token automatically
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) async {
+          final token = await getUserToken();
+          if (token != null && token.isNotEmpty) {
+            options.headers['Authorization'] = 'Bearer $token';
+          }
+          return handler.next(options);
+        },
+        onError: (DioException error, handler) {
+          if (error.response?.statusCode == 401) {
+            final message = error.response?.data?['message'] ?? '';
+            if (message == 'You are not authorized') {
+              // CAUTION: Logged in with wrong role (e.g. Partner token used on User API)
+              print('CRITICAL: Token role does not match endpoint role requirement!');
+            } else if (message == 'Session expired. Please login again.') {
+              // Token expired or invalidated -> redirect to login screen
+              print('Session expired. Redirecting to login...');
+            }
+          }
+          return handler.next(error);
+        },
+      ),
+    );
+  }
+
+  /// 1. Fetch Wallet Balance & Transaction History
+  Future<Map<String, dynamic>> getWalletOverview({int page = 1, int limit = 10}) async {
+    final response = await _dio.get(
+      '/api/v1/overview/user/wallet-transactions',
+      queryParameters: {'page': page, 'limit': limit},
+    );
+    return response.data['data'];
+  }
+
+  /// 2. Withdraw Withdrawable Credit
+  Future<Map<String, dynamic>> withdrawCredit({required double amount}) async {
+    final response = await _dio.patch(
+      '/api/v1/transaction/withdraw-credit',
+      data: {'amount': amount},
+    );
+    return response.data['data'];
+  }
+
+  /// 3. Top-Up Wallet Balance via Flutterwave
+  Future<String> purchaseCredit({required double amount}) async {
+    final response = await _dio.post(
+      '/api/v1/transaction/purchase-credit',
+      data: {
+        'amount': amount,
+        'paymentMethod': 'flutterwave',
+      },
+    );
+    // Returns checkout URL to open in WebView or external browser
+    return response.data['data']['paymentUrl'];
+  }
+}
+```
+
+### 5.2 Native `http` Package Implementation
+
+```dart
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+class WalletHttpService {
+  final String baseUrl;
+  final String userToken; // MUST be token with role: 'user'
+
+  WalletHttpService({required this.baseUrl, required this.userToken});
+
+  Map<String, String> get _headers => {
+        'Authorization': 'Bearer $userToken',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      };
+
+  Future<Map<String, dynamic>> fetchWallet({int page = 1, int limit = 10}) async {
+    final url = Uri.parse('$baseUrl/api/v1/overview/user/wallet-transactions?page=$page&limit=$limit');
+    final res = await http.get(url, headers: _headers);
+
+    if (res.statusCode == 200) {
+      final jsonBody = jsonDecode(res.body);
+      return jsonBody['data'];
+    } else if (res.statusCode == 401) {
+      throw Exception('Unauthorized: Ensure your token has role "user"');
+    } else {
+      throw Exception('Failed to load wallet: ${res.body}');
+    }
+  }
+
+  Future<void> requestWithdrawal(double amount) async {
+    final url = Uri.parse('$baseUrl/api/v1/transaction/withdraw-credit');
+    final res = await http.patch(
+      url,
+      headers: _headers,
+      body: jsonEncode({'amount': amount}),
+    );
+
+    if (res.statusCode == 200) {
+      return; // Success!
+    } else {
+      final errorJson = jsonDecode(res.body);
+      throw Exception(errorJson['message'] ?? 'Withdrawal failed');
+    }
+  }
+}
+```
+
+---
+
+## 6. Client Implementation Checklist for AI Agents
 
 When prompting an AI (or writing client code) to update the User App or Admin Panel, follow this checklist:
 

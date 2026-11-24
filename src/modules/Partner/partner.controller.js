@@ -290,9 +290,22 @@ const partnerFeedbackController = catchAsync(async (req, res) => {
 
 
 const aPartnerDetailsController = catchAsync(async (req, res) => {
+  const queryLat = req.query?.latitude ?? req.query?.lat;
+  const queryLng = req.query?.longitude ?? req.query?.lng ?? req.query?.lon ?? req.query?.long;
+  const bodyLat = req.body?.latitude ?? req.body?.lat;
+  const bodyLng = req.body?.longitude ?? req.body?.lng ?? req.body?.lon ?? req.body?.long;
+
+  let lat = queryLat !== undefined && queryLat !== null && queryLat !== "" ? queryLat : bodyLat;
+  let lng = queryLng !== undefined && queryLng !== null && queryLng !== "" ? queryLng : bodyLng;
+
+  const locationOptions = (lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng)))
+    ? { lat: Number(lat), lng: Number(lng) }
+    : null;
+
   const result = await aPartnerDetailsService(
     req.params.id,
-    req.User?._id || null
+    req.User?._id || null,
+    locationOptions
   );
 
   return res.status(status.OK).json(
