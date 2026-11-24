@@ -106,6 +106,15 @@ const renderSandboxCheckout = async (req, res) => {
 
     const publicKey = config.public_key || config.PBFPubKey;
     const redirectUrl = config.redirect_url || (process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success");
+    const configTxRef = config.tx_ref || config.txRef;
+    const transaction = configTxRef
+      ? await Transaction.findOne({ tx_ref: configTxRef }).lean()
+      : null;
+    const paymentOptions =
+      transaction?.payment_method ||
+      config.payment_options ||
+      config.paymentOptions ||
+      "card";
 
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -194,6 +203,7 @@ const renderSandboxCheckout = async (req, res) => {
       tx_ref: "${config.tx_ref}",
       amount: ${config.amount},
       currency: "${config.currency || 'NGN'}",
+      payment_options: ${JSON.stringify(paymentOptions)},
       customer: ${JSON.stringify(config.customer || {})},
       meta: ${JSON.stringify(config.meta || {})},
       callback: function(res) {
@@ -554,6 +564,9 @@ const bookController = catchAsync(
         payoutCycle:
           cycle?._id,
 
+        payment_method:
+          paymentMethod,
+
         // Payment lifecycle
         payment_status:
           "pending",
@@ -894,6 +907,9 @@ const purchaseCreditController =
         payout_status:
           "pending",
 
+        payment_method:
+          paymentMethod,
+
         payment_status:
           "pending",
 
@@ -1190,7 +1206,8 @@ const tipsController =
         booking:
           bookingId || null,
 
-        paymentMethod,
+        payment_method:
+          paymentMethod,
       });
 
 
@@ -1849,7 +1866,7 @@ const getBanks = catchAsync(async (req, res) => {
 
 const initializePayment = async (req, res) => {
   try {
-    const { amount, email, name } = req.body;
+    const { amount, email, name, paymentMethod = "card" } = req.body;
     const tx_ref = "txn_" + Date.now();
 
     // Save initial transaction as pending
@@ -1858,6 +1875,7 @@ const initializePayment = async (req, res) => {
       user_email: email,
       amount,
       currency: "NGN",
+      payment_method: paymentMethod,
       status: "pending",
     });
 
@@ -1868,7 +1886,7 @@ const initializePayment = async (req, res) => {
         amount,
         currency: "NGN",
         redirect_url: process.env.FLW_SUCCESS_URL || "https://api.auravive.ng/api/v1/transaction/success",
-        payment_options: "card,banktransfer",
+        payment_options: paymentMethod,
         customer: { email, name },
         customizations: {
           title: "My App Payment",
