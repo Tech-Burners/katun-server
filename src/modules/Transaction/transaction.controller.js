@@ -194,7 +194,6 @@ const renderSandboxCheckout = async (req, res) => {
       tx_ref: "${config.tx_ref}",
       amount: ${config.amount},
       currency: "${config.currency || 'NGN'}",
-      payment_options: "card,banktransfer,ussd",
       customer: ${JSON.stringify(config.customer || {})},
       meta: ${JSON.stringify(config.meta || {})},
       callback: function(res) {
