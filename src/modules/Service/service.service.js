@@ -417,6 +417,17 @@ const aServiceDetailsService = async (id, userId = null, locationOptions = null)
     },
     { $unwind: { path: "$provider", preserveNullAndEmptyArrays: true } },
 
+    // partner (for verification and certification badges)
+    {
+      $lookup: {
+        from: "partners",
+        localField: "user",
+        foreignField: "user",
+        as: "partner"
+      }
+    },
+    { $unwind: { path: "$partner", preserveNullAndEmptyArrays: true } },
+
     // availability
     {
       $lookup: {
@@ -552,6 +563,21 @@ const aServiceDetailsService = async (id, userId = null, locationOptions = null)
         providerName: "$provider.fullName",
         providerImage: "$provider.image",
         providerId: "$provider._id",
+        isVerified: {
+          $cond: [
+            { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$provider.isVerified", true] }] },
+            true,
+            false
+          ]
+        },
+        isCertified: {
+          $and: [
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+          ]
+        },
         number: "$provider.number",
         countryCode: "$provider.countryCode",
         location: "$provider.location",
@@ -1135,8 +1161,21 @@ const allServiceService = async (options) => {
       subCategory: "$subcategory.name",
       partnerName: "$partner.businessName",
       partnerId: "$partner.user",
-      isCertified: { $ifNull: ["$partner.isCertified", false] },
-      isVerified: { $ifNull: ["$partner.isVerified", false] },
+      isCertified: {
+        $and: [
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+        ]
+      },
+      isVerified: {
+        $cond: [
+          { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$user.isVerified", true] }] },
+          true,
+          false
+        ]
+      },
       distance: coordinates
         ? {
             $cond: [
@@ -1329,10 +1368,19 @@ const popularService = async (userId, options) => {
       partnerName: "$partner.businessName",
       partnerId: "$partner.user",
       isVerified: {
-        $ifNull: ["$partner.isVerified", false],
+        $cond: [
+          { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$user.isVerified", true] }] },
+          true,
+          false
+        ]
       },
       isCertified: {
-        $ifNull: ["$partner.isCertified", false],
+        $and: [
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+        ]
       },
 
       distance: coordinates
@@ -1502,8 +1550,21 @@ const nearestPopularService = async (options) => {
 
         partnerId: "$_id",
         partnerName: "$partner.businessName",
-        isVerified: { $ifNull: ["$partner.isVerified", false] },
-        isCertified: { $ifNull: ["$partner.isCertified", false] },
+        isVerified: {
+          $cond: [
+            { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$isVerified", true] }] },
+            true,
+            false
+          ]
+        },
+        isCertified: {
+          $and: [
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+          ]
+        },
 
         // meters -> km, rounded to 2 decimals
         distance: { $round: [{ $divide: ["$distance", 1000] }, 2] },
@@ -1594,8 +1655,21 @@ const nearestPopularService = async (options) => {
 
         partnerId: "$_id",
         partnerName: "$partner.businessName",
-        isVerified: { $ifNull: ["$partner.isVerified", false] },
-        isCertified: { $ifNull: ["$partner.isCertified", false] },
+        isVerified: {
+          $cond: [
+            { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$isVerified", true] }] },
+            true,
+            false
+          ]
+        },
+        isCertified: {
+          $and: [
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+          ]
+        },
 
         distance: { $ifNull: ["$distance", null] },
       },

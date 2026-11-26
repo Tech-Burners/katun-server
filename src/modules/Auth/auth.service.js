@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const ApiError = require('../../helpers/ApiError');
 const User = require('../User/user.model');
 const bcrypt = require('bcryptjs');
@@ -194,6 +195,12 @@ const addUser = async (userBody) => {
       userBody["subcategories[]"];
     const subcategories = normalizeArray(rawSubcategories);
 
+    const hasAllDocuments = Boolean(
+      userBody.certificate &&
+      userBody.identityProof &&
+      userBody.businessCertification &&
+      userBody.bankStatement
+    );
     const payload = {
       user: user._id,
       ...(userBody.businessName && { businessName: userBody.businessName }),
@@ -204,6 +211,8 @@ const addUser = async (userBody) => {
       ...(userBody.businessCertification && { businessCertification: userBody.businessCertification }),
       ...(userBody.identityProof && { identityProof: userBody.identityProof }),
       ...(userBody.certificate && { certificate: userBody.certificate }),
+      isCertified: hasAllDocuments,
+      isVerified: Boolean(userBody.isVerified || false),
       ...(userBody.aboutUs && { aboutUs: userBody.aboutUs }),
       ...(userBody.amenities && { amenities: userBody.amenities }),
     };
@@ -607,7 +616,16 @@ const partnerProfileService = async (userId) => {
         countryCode: 1,
         image: 1,
         location: 1,
-        address: 1
+        address: 1,
+        isVerified: { $ifNull: ['$partnerData.isVerified', '$isVerified', false] },
+        isCertified: {
+          $and: [
+            { $gt: [{ $strLenCP: { $ifNull: ['$partnerData.certificate', ''] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ['$partnerData.identityProof', ''] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ['$partnerData.businessCertification', ''] } }, 0] },
+            { $gt: [{ $strLenCP: { $ifNull: ['$partnerData.bankStatement', ''] } }, 0] }
+          ]
+        }
       }
     }
   ]);

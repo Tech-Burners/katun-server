@@ -18,7 +18,14 @@ const { addAuditReport } = require("../Audit/audit.service");
 
 
 const addPartnerService = async (data) => {
-    return await partnerModel.create(data);
+    const partnerData = { ...data };
+    partnerData.isCertified = Boolean(
+        partnerData.certificate &&
+        partnerData.identityProof &&
+        partnerData.businessCertification &&
+        partnerData.bankStatement
+    );
+    return await partnerModel.create(partnerData);
 };
 
 
@@ -311,8 +318,8 @@ const activePartnerService = async (id, user) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     try {
-        const result = await partnerModel.findByIdAndUpdate(id, { isBan: false }, { new: true }, { session });
-        const userData = await userModel.findByIdAndUpdate(result.user, { isBan: false }, { session });
+        const result = await partnerModel.findByIdAndUpdate(id, { isBan: false, isVerified: true }, { new: true, session });
+        const userData = await userModel.findByIdAndUpdate(result.user, { isBan: false, isVerified: true }, { session });
         await addAuditReport({
             action: "Activate",
             summary: `Partner ${userData.fullName} activated`,
@@ -361,6 +368,7 @@ const bulkActivePartnerService = async (partnerIds, adminId) => {
       {
         $set: {
           isBan: false,
+          isVerified: true,
         },
       },
       { session }
@@ -376,6 +384,7 @@ const bulkActivePartnerService = async (partnerIds, adminId) => {
       {
         $set: {
           isBan: false,
+          isVerified: true,
         },
       },
       { session }
@@ -731,6 +740,22 @@ const aPartnerDetailsService = async (id, userId = null, locationOptions = null)
                 amenities: { $ifNull: ["$partnerData.amenities", "$amenities", []] },
 
                 services: 1,
+
+                isVerified: {
+                    $cond: [
+                        { $or: [{ $eq: ["$isVerified", true] }, { $eq: ["$userData.isVerified", true] }, { $eq: ["$partnerData.isVerified", true] }] },
+                        true,
+                        false
+                    ]
+                },
+                isCertified: {
+                    $and: [
+                        { $gt: [{ $strLenCP: { $ifNull: [{ $ifNull: ["$certificate", "$partnerData.certificate"] }, ""] } }, 0] },
+                        { $gt: [{ $strLenCP: { $ifNull: [{ $ifNull: ["$identityProof", "$partnerData.identityProof"] }, ""] } }, 0] },
+                        { $gt: [{ $strLenCP: { $ifNull: [{ $ifNull: ["$businessCertification", "$partnerData.businessCertification"] }, ""] } }, 0] },
+                        { $gt: [{ $strLenCP: { $ifNull: [{ $ifNull: ["$bankStatement", "$partnerData.bankStatement"] }, ""] } }, 0] }
+                    ]
+                },
 
                 // ✅ provider distance (MAIN REQUIREMENT)
                 distance: userCoordinates
@@ -1145,6 +1170,21 @@ const allPartnerService = async (options) => {
                             address: 1,
                             rating: 1,
                             isBanned: "$userData.isBan",
+                            isVerified: {
+                                $cond: [
+                                    { $or: [{ $eq: ["$isVerified", true] }, { $eq: ["$userData.isVerified", true] }] },
+                                    true,
+                                    false
+                                ]
+                            },
+                            isCertified: {
+                                $and: [
+                                    { $gt: [{ $strLenCP: { $ifNull: ["$certificate", ""] } }, 0] },
+                                    { $gt: [{ $strLenCP: { $ifNull: ["$identityProof", ""] } }, 0] },
+                                    { $gt: [{ $strLenCP: { $ifNull: ["$businessCertification", ""] } }, 0] },
+                                    { $gt: [{ $strLenCP: { $ifNull: ["$bankStatement", ""] } }, 0] }
+                                ]
+                            },
                             totalRevenue: "$calculatedRevenue",
                             totalBookings: "$calculatedTotalBookings",
                             completeBookings: "$calculatedCompleteBookings",
@@ -1563,6 +1603,21 @@ const detailsForAdminService = async (userId) => {
                 completeBookings: "$calculatedCompleteBookings",
                 completionRate: 1,
                 isBan: 1,
+                isVerified: {
+                    $cond: [
+                        { $or: [{ $eq: ["$isVerified", true] }, { $eq: ["$userData.isVerified", true] }] },
+                        true,
+                        false
+                    ]
+                },
+                isCertified: {
+                    $and: [
+                        { $gt: [{ $strLenCP: { $ifNull: ["$certificate", ""] } }, 0] },
+                        { $gt: [{ $strLenCP: { $ifNull: ["$identityProof", ""] } }, 0] },
+                        { $gt: [{ $strLenCP: { $ifNull: ["$businessCertification", ""] } }, 0] },
+                        { $gt: [{ $strLenCP: { $ifNull: ["$bankStatement", ""] } }, 0] }
+                    ]
+                },
                 totalRevenue: "$calculatedRevenue",
                 reportCount: "$userData.reportCount",
                 flagCount: "$userData.flagCount",
@@ -1579,7 +1634,14 @@ const detailsForAdminService = async (userId) => {
 
 
 const updateDocumentsService = async (id, data) => {
-    return await partnerModel.findOneAndUpdate({ user: id }, data, { new: true });
+    const existing = await partnerModel.findOne({ user: id });
+    const updateData = { ...data };
+    const cert = updateData.certificate || existing?.certificate;
+    const identity = updateData.identityProof || existing?.identityProof;
+    const biz = updateData.businessCertification || existing?.businessCertification;
+    const bank = updateData.bankStatement || existing?.bankStatement;
+    updateData.isCertified = Boolean(cert && identity && biz && bank);
+    return await partnerModel.findOneAndUpdate({ user: id }, updateData, { new: true });
 }
 
 const partnerDashboardService = async (userId, year = new Date().getFullYear()) => {

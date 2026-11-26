@@ -7,6 +7,7 @@ const userModel = require('../User/user.model');
 const transactionModel = require('../Transaction/transaction.model');
 const ApiError = require('../../helpers/ApiError');
 const { addAuditReport } = require('../Audit/audit.service');
+const resolveCompanyId = require('../../helpers/resolveCompanyId');
 const { reclaimCreditEmployeeService, bulkReclaimCreditEmployeeService } = require('../Employee/employee.service');
 
 
@@ -114,31 +115,32 @@ const addAllocatedService = async (data) => {
     const session = await mongoose.startSession();
     session.startTransaction();
     
-    if(data.role==='hr'){ 
-        const company = await employerModel.findOne({ user: data.user });
-        // console.log({ company })
-        data.companyId = company._id ,
-        data.isCreatedByAdmin = false
+    if (!data.companyId) {
+        if (data.role === 'hr') {
+            try {
+                data.companyId = await resolveCompanyId(data.user);
+            } catch (e) {
+                const company = await employerModel.findOne({ user: data.user }).session(session);
+                if (company) data.companyId = company._id;
+            }
+            data.isCreatedByAdmin = false;
+        } else if (data.role === 'sub_hr_admin') {
+            try {
+                data.companyId = await resolveCompanyId(data.user);
+            } catch (e) {
+                // fallback handled below
+            }
+            data.isCreatedByAdmin = true;
+        } else if (data.role === 'admin' || data.role === 'sub_admin') {
+            data.isCreatedByAdmin = true;
+        }
+    } else {
+        data.isCreatedByAdmin = data.role === 'admin' || data.role === 'sub_admin' || data.role === 'sub_hr_admin';
     }
-    else if(data.role === 'sub_hr_admin' || data.role === 'admin'){ 
-        data.isCreatedByAdmin = true
-    }
-    const companyId = data.companyId
+
+    const companyId = data.companyId;
 
     try {
-        // Calculate expireDate for recurring or non-recurring
-        if (data.isRecurring && data.frequency && data.startDate) {
-            const expire = new Date(data.startDate);
-            expire.setDate(expire.getDate() + data.frequency);
-            data.expireDate = expire;
-            data.lastExecutedAt = null; // will be updated by cron
-        } else {
-            // Non-recurring allocation: executed immediately
-            data.lastExecutedAt = new Date(data.startDate);
-        }
-
-        const [allocation] = await allocatedModel.create([data], { session });
-
         // Fetch relevant employees
         let employees = [];
         if (data.allocateTo === 'all-employee') {
@@ -149,18 +151,116 @@ const addAllocatedService = async (data) => {
             employees = await employeeModel.find({ branch: data.branch, status: 'active' }).session(session);
         }
 
-        // Create wallet entries
-        const wallets = employees.map(emp => ({
-            user: emp.user,
-            allocation: allocation._id,
-            totalCredit: allocation.creditPerEmployee,
-            remainingCredit: allocation.creditPerEmployee,
-            usedCredit: 0,
-            periodStart: allocation.startDate,
-            periodEnd: allocation.expireDate
-        }));
+        const creditAmount = Number(data.creditPerEmployee || 0);
+        const totalAllocated = creditAmount * employees.length;
 
-        await allocationManagementModel.insertMany(wallets, { session });
+        // Verify and deduct company creditBalance if company exists
+        if (companyId) {
+            const company = await employerModel.findById(companyId).session(session);
+            if (!company) {
+                throw new ApiError(404, "Company not found");
+            }
+
+            if (totalAllocated > 0) {
+                if (Number(company.creditBalance || 0) < totalAllocated) {
+                    throw new ApiError(
+                        412,
+                        `Insufficient company credit balance. Available: ${company.creditBalance || 0}, Required: ${totalAllocated}`
+                    );
+                }
+
+                // Deduct from company credit balance & increment totalSpent
+                await employerModel.findByIdAndUpdate(
+                    companyId,
+                    {
+                        $inc: {
+                            creditBalance: -totalAllocated,
+                            totalSpent: totalAllocated,
+                        },
+                    },
+                    { session }
+                );
+            }
+        }
+
+        // Calculate expireDate for recurring or non-recurring
+        if (data.isRecurring && data.frequency && data.startDate) {
+            const expire = new Date(data.startDate);
+            expire.setDate(expire.getDate() + data.frequency);
+            data.expireDate = expire;
+            data.lastExecutedAt = null; // will be updated by cron
+        } else {
+            // Non-recurring allocation: executed immediately
+            data.lastExecutedAt = new Date(data.startDate || Date.now());
+        }
+
+        const [allocation] = await allocatedModel.create([data], { session });
+
+        // Credit the employees' user wallets and employee records
+        if (employees.length > 0 && creditAmount > 0) {
+            const userIds = employees.map(emp => emp.user).filter(Boolean);
+            if (userIds.length > 0) {
+                await userModel.updateMany(
+                    { _id: { $in: userIds } },
+                    {
+                        $inc: {
+                            digitalWallet: creditAmount,
+                            allocatedCredit: creditAmount,
+                        },
+                    },
+                    { session }
+                );
+            }
+
+            await employeeModel.updateMany(
+                { _id: { $in: employees.map(e => e._id) } },
+                {
+                    $inc: {
+                        credit: creditAmount,
+                    },
+                },
+                { session }
+            );
+
+            // Create allocation management wallet entries
+            const wallets = employees.map(emp => ({
+                user: emp.user,
+                allocation: allocation._id,
+                totalCredit: allocation.creditPerEmployee,
+                remainingCredit: allocation.creditPerEmployee,
+                usedCredit: 0,
+                periodStart: allocation.startDate,
+                periodEnd: allocation.expireDate
+            }));
+
+            await allocationManagementModel.insertMany(wallets, { session });
+
+            // Create Transaction records for each employee so they see it in their wallet-transactions
+            const companyDoc = companyId ? await employerModel.findById(companyId).session(session) : null;
+            const companyName = companyDoc?.companyName || 'Company HR';
+
+            const transactionDocs = employees
+                .filter(emp => emp.user)
+                .map((emp) => ({
+                    tx_ref: `allocate_${Date.now()}_${emp.user}_${Math.random().toString(36).substring(2, 7)}`,
+                    user: emp.user,
+                    credit_owner_type: 'company',
+                    credit_owner_id: companyId,
+                    currency: 'NGN',
+                    gross_amount: creditAmount,
+                    commission: 0,
+                    net_amount: creditAmount,
+                    status: 'successful',
+                    payment_status: 'successful',
+                    payment_method: 'wallet',
+                    paymentType: 'credit',
+                    description: `HR credit allocated by ${companyName}: ₦${creditAmount} (${data.name || data.creditPrgram || 'Wellness benefit'})`
+                }));
+
+            if (transactionDocs.length > 0) {
+                await transactionModel.insertMany(transactionDocs, { session });
+            }
+        }
 
         await session.commitTransaction();
         session.endSession();

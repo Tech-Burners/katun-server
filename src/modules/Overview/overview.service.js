@@ -631,7 +631,24 @@ const getUserWalletAndTransactions = async (userId, options = {}) => {
         createdAt: 1,
         payment_status: 1,
         payment_method: 1,
-        serviceName: '$service.name',
+        serviceName: {
+          $ifNull: [
+            '$service.name',
+            {
+              $switch: {
+                branches: [
+                  { case: { $eq: ['$paymentType', 'credit'] }, then: { $ifNull: ['$description', 'Wallet Credit'] } },
+                  { case: { $eq: ['$paymentType', 'withdraw'] }, then: 'Wallet Withdrawal' },
+                  { case: { $eq: ['$paymentType', 'reclaim'] }, then: { $ifNull: ['$description', 'Credit Reclaimed'] } },
+                  { case: { $eq: ['$paymentType', 'tip'] }, then: 'Tip' },
+                  { case: { $eq: ['$paymentType', 'refund'] }, then: 'Refund' }
+                ],
+                default: { $ifNull: ['$description', 'Wallet Transaction'] }
+              }
+            }
+          ]
+        },
+        description: 1,
         tx_ref: 1,
         paymentType: 1
       }

@@ -242,6 +242,22 @@ const nearestService = async (longitude, latitude) => {
         path: "$subCategory",
         preserveNullAndEmptyArrays: true
       }
+    },
+
+    {
+      $lookup: {
+        from: "partners",
+        localField: "_id",
+        foreignField: "user",
+        as: "partner"
+      }
+    },
+
+    {
+      $unwind: {
+        path: "$partner",
+        preserveNullAndEmptyArrays: true
+      }
     }
   );
 
@@ -309,7 +325,21 @@ const nearestService = async (longitude, latitude) => {
       ratingCount: "$service.ratingCount",
       sell: "$service.sell",
       subCategoryName: "$subCategory.name",
-      isVerified: 1,
+      isVerified: {
+        $cond: [
+          { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$isVerified", true] }] },
+          true,
+          false
+        ]
+      },
+      isCertified: {
+        $and: [
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+        ]
+      },
 
       distance: {
         $cond: [

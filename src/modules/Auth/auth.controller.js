@@ -176,6 +176,13 @@ const signUp = catchAsync(async (req, res) => {
     if (req.files.bankStatement?.[0]) {
       req.body.bankStatement = `/uploads/users/${req.files.bankStatement[0].filename}`;
     }
+
+    req.body.isCertified = Boolean(
+      req.body.certificate &&
+      req.body.identityProof &&
+      req.body.businessCertification &&
+      req.body.bankStatement
+    );
   }
 
   /* ---------- ROLE LOGIC ---------- */
@@ -359,6 +366,7 @@ const signUp = catchAsync(async (req, res) => {
 
 
 const updateDocuments = catchAsync(async (req, res) => {
+  console.log("req.files", req.files);
   if (req.files) {
     if (req.files.image?.[0]) {
       req.body.image = `/uploads/users/${req.files.image[0].filename}`;
@@ -379,6 +387,13 @@ const updateDocuments = catchAsync(async (req, res) => {
     if (req.files.bankStatement?.[0]) {
       req.body.bankStatement = `/uploads/users/${req.files.bankStatement[0].filename}`;
     }
+
+    req.body.isCertified = Boolean(
+      req.body.certificate &&
+      req.body.identityProof &&
+      req.body.businessCertification &&
+      req.body.bankStatement
+    );
   }
   const result = await updateDocumentsService(req.User._id, req.body);
   return res.status(status.OK).json(response({
@@ -705,10 +720,8 @@ const createPartnerController = catchAsync(async (req, res) => {
     if (req.files.image?.[0])
       req.body.image = `/uploads/users/${req.files.image[0].filename}`;
 
-    if (req.files.certificate?.[0]) {
+    if (req.files.certificate?.[0])
       req.body.certificate = `/uploads/users/${req.files.certificate[0].filename}`;
-      isCertified: true
-    }
 
     if (req.files.identityProof?.[0])
       req.body.identityProof = `/uploads/users/${req.files.identityProof[0].filename}`;
@@ -721,6 +734,13 @@ const createPartnerController = catchAsync(async (req, res) => {
       req.body.bankStatement =
         `/uploads/users/${req.files.bankStatement[0].filename}`;
   }
+
+  req.body.isCertified = Boolean(
+    req.body.certificate &&
+    req.body.identityProof &&
+    req.body.businessCertification &&
+    req.body.bankStatement
+  );
 
   /* ---------------- MERGE DATA ---------------- */
 
@@ -1269,7 +1289,13 @@ const userDetailsByID = catchAsync(async (req, res) => {
       image: result.user.image,
       category: result.partner?.category || [],
       categories: result.partner?.categories || result.partner?.category || [],
-      isVerified: result.user.isVerified
+      isVerified: Boolean(result.partner?.isVerified ?? result.user?.isVerified),
+      isCertified: Boolean(
+        result.partner?.certificate &&
+        result.partner?.identityProof &&
+        result.partner?.businessCertification &&
+        result.partner?.bankStatement
+      )
     };
   }
 

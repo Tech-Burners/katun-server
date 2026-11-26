@@ -42,7 +42,7 @@ const bulkSuspendUserService = async (userIds) => {
 };
 
 const activeUserService = async (id) => {
-    const user = await userModel.findOneAndUpdate({ _id: id }, { isBan: false }, { new: true });
+    const user = await userModel.findOneAndUpdate({ _id: id }, { isBan: false, isVerified: true }, { new: true });
     if (user?.email) {
         sendAccountActivatedEmail({
             email: user.email,
@@ -74,6 +74,7 @@ const bulkActiveUserService = async (userIds) => {
     {
       $set: {
         isBan: false,
+        isVerified: true,
       },
     }
   );

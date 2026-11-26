@@ -234,7 +234,13 @@ const getEmployeeService = async (id) => {
             $project: {
                 name: 1,
                 phone: 1,
-                email: { $ifNull: ["$email", "$user.email"] },
+                email: {
+                    $cond: {
+                        if: { $gt: [{ $strLenCP: { $ifNull: ["$email", ""] } }, 0] },
+                        then: "$email",
+                        else: { $ifNull: ["$user.email", ""] }
+                    }
+                },
                 number: "$user.number",
                 countryCode: "$user.countryCode",
                 createdAt: 1,
@@ -384,7 +390,13 @@ const getAllEmployeeService = async (option) => {
                             allocatedCredit: { $ifNull: ["$user.allocatedCredit", 0] },
                             rechargedCredit: { $ifNull: ["$user.rechargedCredit", 0] },
                             credit: { $ifNull: ["$credit", 0] },
-                            email: { $ifNull: ["$email", "$user.email"] },
+                            email: {
+                    $cond: {
+                        if: { $gt: [{ $strLenCP: { $ifNull: ["$email", ""] } }, 0] },
+                        then: "$email",
+                        else: { $ifNull: ["$user.email", ""] }
+                    }
+                },
                             number: "$user.number",
                             countryCode: "$user.countryCode",
                             phone: 1,
@@ -541,7 +553,13 @@ const getCompanyAllEmployeeService = async (user, option) => {
                             employeeName: "$user.fullName",
                             wallet: "$user.wallet",
                             usages: "$user.usages",
-                            email: { $ifNull: ["$email", "$user.email"] },
+                            email: {
+                    $cond: {
+                        if: { $gt: [{ $strLenCP: { $ifNull: ["$email", ""] } }, 0] },
+                        then: "$email",
+                        else: { $ifNull: ["$user.email", ""] }
+                    }
+                },
                             number: "$user.number",
                             countryCode: "$user.countryCode",
                             phone: 1,
@@ -665,41 +683,62 @@ const allocateCreditEmployeeService = async (employeeId, data) => {
 
     try {
         session.startTransaction();
-        let company = null;
-
-        if (data.role === 'hr') {
-            company = await employerModel.findOne({ user: data.performedBy })
-        } else if (data.role === 'sub_hr_admin') {
-            const parent = await adminModel.findOne({ user: data.performedBy })
-            if (parent) {
-                company = await employerModel.findOne({ user: parent.parent })
-            }
-        }
-
-        if (company) {
-            if (Number(company.creditBalance) < Number(data.amount)) {
-                throw new ApiError(412, "Insufficient balance")
-            }
-
-            company.creditBalance = Number(company.creditBalance) - Number(data.amount);
-            await company.save();
-        }
 
         const employee = await employeeModel
             .findById(employeeId)
-            .select('user')
+            .select('user company')
             .session(session);
 
         if (!employee) {
-            throw new Error("Employee not found");
+            throw new ApiError(404, "Employee not found");
+        }
+
+        let company = null;
+
+        if (data.role === 'hr') {
+            company = await employerModel.findOne({ user: data.performedBy }).session(session);
+        } else if (data.role === 'sub_hr_admin') {
+            const parent = await adminModel.findOne({ user: data.performedBy }).session(session);
+            if (parent) {
+                company = await employerModel.findOne({ user: parent.parent }).session(session);
+            }
+        }
+
+        // If not found by performedBy user reference, fallback to employee's company
+        if (!company && employee.company) {
+            company = await employerModel.findById(employee.company).session(session);
+        }
+
+        const amount = Number(data.amount);
+        if (isNaN(amount) || amount <= 0) {
+            throw new ApiError(400, "Please provide a valid amount");
+        }
+
+        if (company) {
+            if (Number(company.creditBalance || 0) < amount) {
+                throw new ApiError(412, `Insufficient balance. Available: ${company.creditBalance || 0}, Required: ${amount}`);
+            }
+
+            await employerModel.findByIdAndUpdate(
+                company._id,
+                {
+                    $inc: {
+                        creditBalance: -amount,
+                        totalSpent: amount
+                    }
+                },
+                { session }
+            );
+        } else if (data.role === 'hr' || data.role === 'sub_hr_admin') {
+            throw new ApiError(404, "Company not found to deduct credit from");
         }
 
         const userData = await userModel.findByIdAndUpdate(
             employee.user,
             {
                 $inc: {
-                    digitalWallet: Number(data.amount),
-                    allocatedCredit: Number(data.amount)
+                    digitalWallet: amount,
+                    allocatedCredit: amount
                 }
             },
             { new: true, session }
@@ -707,13 +746,33 @@ const allocateCreditEmployeeService = async (employeeId, data) => {
 
         await employeeModel.findByIdAndUpdate(
             employeeId,
-            { $inc: { credit: Number(data.amount) } },
+            { $inc: { credit: amount } },
             { session }
         );
 
         if (!userData) {
-            throw new Error("User not found");
+            throw new ApiError(404, "User not found");
         }
+
+        const companyName = company?.companyName || 'Company HR';
+        const tx_ref = `allocate_${Date.now()}_${employee.user}_${Math.random().toString(36).substring(2, 7)}`;
+        await transactionModel.create([
+            {
+                tx_ref,
+                user: employee.user,
+                credit_owner_type: 'company',
+                credit_owner_id: company?._id,
+                currency: 'NGN',
+                gross_amount: amount,
+                commission: 0,
+                net_amount: amount,
+                status: 'successful',
+                payment_status: 'successful',
+                payment_method: 'wallet',
+                paymentType: 'credit',
+                description: `HR credit allocated by ${companyName}: ₦${amount}`
+            }
+        ], { session, ordered: true });
 
         await addAuditReport(
             {
@@ -771,14 +830,18 @@ console.log({ employeeIds, data });
             throw new ApiError(404, "No employees found");
         }
 
+        if (!company && employees[0]?.company) {
+            company = await employerModel.findById(employees[0].company).session(session);
+        }
+
         const amount = Number(data.amount);
         const totalAmount = amount * employees.length;
 
         if (company) {
-            if (Number(company.creditBalance) < totalAmount) {
+            if (Number(company.creditBalance || 0) < totalAmount) {
                 throw new ApiError(
                     412,
-                    `Insufficient balance. Available ${company.creditBalance}, Required ${totalAmount}`
+                    `Insufficient balance. Available ${company.creditBalance || 0}, Required ${totalAmount}`
                 );
             }
 
@@ -787,10 +850,13 @@ console.log({ employeeIds, data });
                 {
                     $inc: {
                         creditBalance: -totalAmount,
+                        totalSpent: totalAmount,
                     },
                 },
                 { session }
             );
+        } else if (data.role === 'hr' || data.role === 'sub_hr_admin') {
+            throw new ApiError(404, "Company account not found to deduct credit from");
         }
 
         const userIds = employees.map((e) => e.user._id);
@@ -819,6 +885,29 @@ console.log({ employeeIds, data });
             },
             { session }
         );
+
+        const companyName = company?.companyName || 'Company HR';
+        const transactionDocs = employees
+            .filter((e) => e.user?._id || e.user)
+            .map((e) => ({
+                tx_ref: `allocate_${Date.now()}_${e.user?._id || e.user}_${Math.random().toString(36).substring(2, 7)}`,
+                user: e.user?._id || e.user,
+                credit_owner_type: 'company',
+                credit_owner_id: company?._id,
+                currency: 'NGN',
+                gross_amount: amount,
+                commission: 0,
+                net_amount: amount,
+                status: 'successful',
+                payment_status: 'successful',
+                payment_method: 'wallet',
+                paymentType: 'credit',
+                description: `HR credit allocated by ${companyName}: ₦${amount}`
+            }));
+
+        if (transactionDocs.length > 0) {
+            await transactionModel.insertMany(transactionDocs, { session });
+        }
 
         await Promise.all(
             employees.map((employee) =>

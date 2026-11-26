@@ -165,11 +165,20 @@ const myFavouriteService = async (userId, locationOptions = null) => {
       providerName: "$provider.fullName",
 
       isVerified: {
-        $ifNull: ["$partner.isVerified", false],
+        $cond: [
+          { $or: [{ $eq: ["$partner.isVerified", true] }, { $eq: ["$provider.isVerified", true] }] },
+          true,
+          false
+        ]
       },
 
       isCertified: {
-        $ifNull: ["$partner.isCertified", false],
+        $and: [
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.certificate", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.identityProof", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.businessCertification", ""] } }, 0] },
+          { $gt: [{ $strLenCP: { $ifNull: ["$partner.bankStatement", ""] } }, 0] }
+        ]
       },
 
       distance: coordinates
